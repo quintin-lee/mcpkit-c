@@ -13,6 +13,8 @@ add_library(mcpkit_core
   src/core/allocator.c
   src/core/context.c
   src/logging/logger.c
+  src/json/builtin.c
+  src/json/api.c
 )
 target_include_directories(mcpkit_core PUBLIC include)
 
