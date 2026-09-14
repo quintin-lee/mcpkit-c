@@ -11,6 +11,7 @@ add_library(mcpkit_core
   src/core/version.c
   src/core/error.c
   src/core/allocator.c
+  src/core/context.c
   src/logging/logger.c
 )
 target_include_directories(mcpkit_core PUBLIC include)
