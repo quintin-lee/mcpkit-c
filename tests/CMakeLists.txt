@@ -29,3 +29,7 @@ add_test(NAME test_json_negative COMMAND test_json_negative)
 add_executable(test_json_backend unit/test_json_backend.c)
 target_link_libraries(test_json_backend PRIVATE mcpkit_core)
 add_test(NAME test_json_backend COMMAND test_json_backend)
+
+add_executable(test_rpc_envelope unit/test_rpc_envelope.c)
+target_link_libraries(test_rpc_envelope PRIVATE mcpkit_core)
+add_test(NAME test_rpc_envelope COMMAND test_rpc_envelope)

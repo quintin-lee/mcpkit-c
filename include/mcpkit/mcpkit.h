@@ -10,5 +10,6 @@
 #include "mcpkit/logging/log.h"
 #include "mcpkit/logging/logger.h"
 #include "mcpkit/json/json.h"
+#include "mcpkit/protocol/message.h"
 
 #endif
