@@ -89,6 +89,15 @@ mcp_msg_kind_t mcp_message_kind(mcp_context_t *ctx, const mcp_message_t *msg) {
     return classify(ctx, msg->dom);
 }
 
+const char *mcp_message_jsonrpc(mcp_context_t *ctx, const mcp_message_t *msg) {
+    const mcp_json_value_t *jv = get_key(ctx, msg, "jsonrpc");
+    const char *s = NULL;
+    if (jv == NULL || mcp_json_string_value(ctx, jv, &s) != MCP_OK) {
+        return NULL;
+    }
+    return s;
+}
+
 const char *mcp_message_method(mcp_context_t *ctx, const mcp_message_t *msg) {
     const mcp_json_value_t *method = get_key(ctx, msg, "method");
     const char *name = NULL;

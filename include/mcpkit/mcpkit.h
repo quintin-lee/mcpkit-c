@@ -13,5 +13,6 @@
 #include "mcpkit/json/schema.h"
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/protocol/initialize.h"
+#include "mcpkit/protocol/validate.h"
 
 #endif

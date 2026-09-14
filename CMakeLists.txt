@@ -18,6 +18,7 @@ add_library(mcpkit_core
   src/json/schema.c
   src/protocol/message.c
   src/protocol/initialize.c
+  src/protocol/validate.c
 )
 target_include_directories(mcpkit_core PUBLIC include)
 

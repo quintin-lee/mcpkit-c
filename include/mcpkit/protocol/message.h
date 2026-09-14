@@ -38,6 +38,7 @@ mcp_message_t *mcp_message_parse(mcp_context_t *ctx, const char *text, size_t le
 void mcp_message_destroy(mcp_context_t *ctx, mcp_message_t *msg);
 
 mcp_msg_kind_t mcp_message_kind(mcp_context_t *ctx, const mcp_message_t *msg);
+const char *mcp_message_jsonrpc(mcp_context_t *ctx, const mcp_message_t *msg);
 const char *mcp_message_method(mcp_context_t *ctx, const mcp_message_t *msg);
 const mcp_json_value_t *mcp_message_params(mcp_context_t *ctx, const mcp_message_t *msg);
 mcp_id_type_t mcp_message_id_type(mcp_context_t *ctx, const mcp_message_t *msg);
