@@ -16,6 +16,7 @@ add_library(mcpkit_core
   src/json/builtin.c
   src/json/api.c
   src/protocol/message.c
+  src/protocol/initialize.c
 )
 target_include_directories(mcpkit_core PUBLIC include)
 
