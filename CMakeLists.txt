@@ -10,6 +10,7 @@ include(cmake/MCPKitOptions.cmake)
 add_library(mcpkit_core
   src/core/version.c
   src/core/error.c
+  src/core/allocator.c
 )
 target_include_directories(mcpkit_core PUBLIC include)
 
