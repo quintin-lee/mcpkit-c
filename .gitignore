@@ -1,0 +1,13 @@
+build/
+build-*/
+cmake-build-*/
+.worktrees/
+worktrees/
+*.o
+*.a
+*.so
+CTestTestfile.cmake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Testing/
