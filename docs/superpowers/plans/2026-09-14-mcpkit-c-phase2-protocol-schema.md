@@ -245,6 +245,8 @@ mcp_status_t mcp_message_validate(mcp_context_t *ctx, const mcp_message_t *msg,
 
 **Files:** Create `include/mcpkit/json/schema.h`, `src/json/schema.c`, `tests/unit/test_schema.c`; Modify 同上
 
+注：校验 `properties` 需枚举对象键，Phase 1 `object.h` 无此能力，故本任务附带最小扩展 `mcp_json_object_key_at`（object.h 声明 + backend ops 表 + api 分发 + builtin 实现；wrapper 测试用 memcpy 复制 ops 表，不受影响）。
+
 - [ ] **Step 1–2: 头 + 测试先行**（建 tools/call 形 schema：object{properties:{name:string, priority?:integer, tags?:array<string>, mode?:enum}, required:[name]}；好实例 OK；缺 name/错 type/enum 外值/items 错类型/min-max 越界 → INVALID_ARGUMENT；verbose buf 非空且 NUL 结尾）
 - [ ] **Step 3: 实现**（递归 validate_frame 带 path；integer 判 `floor(d)==d && isfinite`；enum 用类型+值比对）
 - [ ] **Step 4: 全绿** 预期 11/11 + ASan 干净（递归+深 DOM 易漏 free，asan 必跑）

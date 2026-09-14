@@ -105,6 +105,10 @@ size_t mcp_json_object_size(mcp_context_t *ctx, const mcp_json_value_t *obj) {
     return resolve(ctx)->object_size(ctx, obj);
 }
 
+const char *mcp_json_object_key_at(mcp_context_t *ctx, const mcp_json_value_t *obj, size_t i) {
+    return resolve(ctx)->object_key_at(ctx, obj, i);
+}
+
 mcp_status_t mcp_json_array_append(mcp_context_t *ctx, mcp_json_value_t *arr,
                                    mcp_json_value_t *val) {
     return resolve(ctx)->array_append(ctx, arr, val);

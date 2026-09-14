@@ -312,6 +312,15 @@ static size_t builtin_object_size(mcp_context_t *ctx, const mcp_json_value_t *ob
     return obj->u.object.len;
 }
 
+static const char *builtin_object_key_at(mcp_context_t *ctx, const mcp_json_value_t *obj,
+                                         size_t i) {
+    (void)ctx;
+    if (obj == NULL || obj->type != MCP_JSON_OBJECT || i >= obj->u.object.len) {
+        return NULL;
+    }
+    return obj->u.object.keys[i];
+}
+
 static mcp_status_t builtin_array_append(mcp_context_t *ctx, mcp_json_value_t *arr,
                                          mcp_json_value_t *val) {
     if (arr == NULL || arr->type != MCP_JSON_ARRAY || val == NULL) {
@@ -907,6 +916,7 @@ static const mcp_json_backend_ops_t k_builtin_backend = {
     .object_get = builtin_object_get,
     .object_has = builtin_object_has,
     .object_size = builtin_object_size,
+    .object_key_at = builtin_object_key_at,
     .array_append = builtin_array_append,
     .array_get = builtin_array_get,
     .array_size = builtin_array_size,

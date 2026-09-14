@@ -15,6 +15,7 @@ add_library(mcpkit_core
   src/logging/logger.c
   src/json/builtin.c
   src/json/api.c
+  src/json/schema.c
   src/protocol/message.c
   src/protocol/initialize.c
 )

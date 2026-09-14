@@ -37,3 +37,7 @@ add_test(NAME test_rpc_envelope COMMAND test_rpc_envelope)
 add_executable(test_initialize unit/test_initialize.c)
 target_link_libraries(test_initialize PRIVATE mcpkit_core)
 add_test(NAME test_initialize COMMAND test_initialize)
+
+add_executable(test_schema unit/test_schema.c)
+target_link_libraries(test_schema PRIVATE mcpkit_core)
+add_test(NAME test_schema COMMAND test_schema)
