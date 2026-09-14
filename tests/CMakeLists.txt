@@ -45,3 +45,7 @@ add_test(NAME test_schema COMMAND test_schema)
 add_executable(test_validate_negative unit/test_validate_negative.c)
 target_link_libraries(test_validate_negative PRIVATE mcpkit_core)
 add_test(NAME test_validate_negative COMMAND test_validate_negative)
+
+add_executable(test_error_mapping unit/test_error_mapping.c)
+target_link_libraries(test_error_mapping PRIVATE mcpkit_core)
+add_test(NAME test_error_mapping COMMAND test_error_mapping)
