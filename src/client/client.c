@@ -2,6 +2,7 @@
 
 #include "mcpkit/core/context.h"
 #include "mcpkit/json/json.h"
+#include "mcpkit/json/object.h"
 #include "mcpkit/protocol/initialize.h"
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/transport/transport.h"
@@ -134,4 +135,162 @@ mcp_status_t mcp_client_request(mcp_context_t *ctx, mcp_client_t *client,
     }
     mcp_message_destroy(ctx, resp);
     return MCP_OK;
+}
+
+mcp_status_t mcp_client_initialize(mcp_context_t *ctx, mcp_client_t *client,
+                                   const char *client_name, const char *client_version,
+                                   mcp_json_value_t **server_info_out) {
+    if (client == NULL || client_name == NULL || client_version == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (server_info_out != NULL) {
+        *server_info_out = NULL;
+    }
+    mcp_json_value_t *params =
+        mcp_initialize_params_new_v(ctx, MCP_PROTOCOL_VERSION_LATEST, client_name, client_version);
+    if (params == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_message_t *resp = NULL;
+    mcp_status_t st = roundtrip(ctx, client, "initialize", params, &resp);
+    if (st != MCP_OK) {
+        return st;
+    }
+    int code = 0;
+    if (mcp_message_error_code(ctx, resp, &code) == MCP_OK) {
+        mcp_message_destroy(ctx, resp);
+        return mcp_rpc_code_to_status(code);
+    }
+    const mcp_json_value_t *result = mcp_message_result(ctx, resp);
+    const mcp_json_value_t *pv =
+        result != NULL ? mcp_json_object_get(ctx, result, "protocolVersion") : NULL;
+    const char *version = NULL;
+    if (pv == NULL || mcp_json_string_value(ctx, pv, &version) != MCP_OK || version == NULL) {
+        mcp_message_destroy(ctx, resp);
+        return MCP_ERR_PROTOCOL;
+    }
+    const mcp_allocator_t *a = alloc_of(ctx);
+    size_t n = strlen(version) + 1;
+    char *copy = a->malloc_fn(n, a->userdata);
+    if (copy == NULL) {
+        mcp_message_destroy(ctx, resp);
+        return MCP_ERR_NOMEM;
+    }
+    memcpy(copy, version, n);
+    if (server_info_out != NULL) {
+        mcp_json_value_t *info = mcp_json_clone(ctx, mcp_json_object_get(ctx, result, "serverInfo"));
+        if (info == NULL) {
+            a->free_fn(copy, a->userdata);
+            mcp_message_destroy(ctx, resp);
+            return MCP_ERR_NOMEM;
+        }
+        *server_info_out = info;
+    }
+    if (client->version != NULL) {
+        a->free_fn(client->version, a->userdata);
+    }
+    client->version = copy;
+    mcp_message_destroy(ctx, resp);
+    mcp_message_t *ntf = mcp_initialized_notification_new(ctx);
+    if (ntf == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    char *out = mcp_message_serialize(ctx, ntf);
+    mcp_message_destroy(ctx, ntf);
+    if (out == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    st = mcp_transport_send(ctx, client->t, out, strlen(out));
+    mcp_json_free_string(ctx, out);
+    return st;
+}
+
+mcp_status_t mcp_client_ping(mcp_context_t *ctx, mcp_client_t *client) {
+    if (client == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    return mcp_client_request(ctx, client, "ping", NULL, NULL);
+}
+
+mcp_status_t mcp_client_list_tools(mcp_context_t *ctx, mcp_client_t *client,
+                                   mcp_json_value_t **tools_out) {
+    if (client == NULL || tools_out == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    return mcp_client_request(ctx, client, "tools/list", NULL, tools_out);
+}
+
+mcp_status_t mcp_client_call_tool(mcp_context_t *ctx, mcp_client_t *client,
+                                  const char *name, mcp_json_value_t *args,
+                                  mcp_json_value_t **result_out) {
+    if (client == NULL || name == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_value_t *nv = params != NULL ? mcp_json_string_new(ctx, name) : NULL;
+    if (params == NULL || nv == NULL) {
+        if (params != NULL) {
+            mcp_json_destroy(ctx, params);
+        }
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set(ctx, params, "name", nv) != MCP_OK) {
+        mcp_json_destroy(ctx, nv);
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    if (args != NULL && mcp_json_object_set(ctx, params, "arguments", args) != MCP_OK) {
+        mcp_json_destroy(ctx, args);
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    return mcp_client_request(ctx, client, "tools/call", params, result_out);
+}
+
+mcp_status_t mcp_client_read_resource(mcp_context_t *ctx, mcp_client_t *client,
+                                      const char *uri, mcp_json_value_t **result_out) {
+    if (client == NULL || uri == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_value_t *uv = params != NULL ? mcp_json_string_new(ctx, uri) : NULL;
+    if (params == NULL || uv == NULL) {
+        if (params != NULL) {
+            mcp_json_destroy(ctx, params);
+        }
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set(ctx, params, "uri", uv) != MCP_OK) {
+        mcp_json_destroy(ctx, uv);
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    return mcp_client_request(ctx, client, "resources/read", params, result_out);
+}
+
+mcp_status_t mcp_client_get_prompt(mcp_context_t *ctx, mcp_client_t *client,
+                                   const char *name, mcp_json_value_t *args,
+                                   mcp_json_value_t **result_out) {
+    if (client == NULL || name == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_value_t *nv = params != NULL ? mcp_json_string_new(ctx, name) : NULL;
+    if (params == NULL || nv == NULL) {
+        if (params != NULL) {
+            mcp_json_destroy(ctx, params);
+        }
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set(ctx, params, "name", nv) != MCP_OK) {
+        mcp_json_destroy(ctx, nv);
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    if (args != NULL && mcp_json_object_set(ctx, params, "arguments", args) != MCP_OK) {
+        mcp_json_destroy(ctx, args);
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    return mcp_client_request(ctx, client, "prompts/get", params, result_out);
 }
