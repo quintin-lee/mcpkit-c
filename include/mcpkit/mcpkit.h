@@ -23,5 +23,8 @@
 #include "mcpkit/transport/transport.h"
 #include "mcpkit/transport/stdio.h"
 #include "mcpkit/client/client.h"
+#include "mcpkit/runtime/task.h"
+#include "mcpkit/runtime/executor.h"
+#include "mcpkit/runtime/sync.h"
 
 #endif

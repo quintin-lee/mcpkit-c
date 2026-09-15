@@ -26,6 +26,8 @@ add_library(mcpkit_core
   src/transport/transport.c
   src/transport/stdio.c
   src/client/client.c
+  src/runtime/executor.c
+  src/runtime/sync.c
 )
 target_include_directories(mcpkit_core PUBLIC include)
 
