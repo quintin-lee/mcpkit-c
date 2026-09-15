@@ -33,6 +33,7 @@ add_library(mcpkit_core
   src/runtime/threadpool.c
   src/runtime/timer.c
   src/runtime/loop.c
+  src/plugin/plugin.c
 )
 target_include_directories(mcpkit_core PUBLIC include)
 

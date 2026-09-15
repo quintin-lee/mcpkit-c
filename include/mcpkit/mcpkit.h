@@ -31,5 +31,6 @@
 #include "mcpkit/runtime/loop.h"
 #include "mcpkit/apps/csp.h"
 #include "mcpkit/apps/ui.h"
+#include "mcpkit/plugin/plugin.h"
 
 #endif
