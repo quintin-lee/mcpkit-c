@@ -5,6 +5,9 @@ set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+# Always emit compile_commands.json for LSP/clangd; harmless for other generators.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 include(cmake/MCPKitOptions.cmake)
 
 add_library(mcpkit_core
