@@ -122,3 +122,67 @@ const mcp_json_value_t *mcp_json_array_get(mcp_context_t *ctx, const mcp_json_va
 size_t mcp_json_array_size(mcp_context_t *ctx, const mcp_json_value_t *arr) {
     return resolve(ctx)->array_size(ctx, arr);
 }
+
+mcp_json_value_t *mcp_json_clone(mcp_context_t *ctx, const mcp_json_value_t *v) {
+    if (v == NULL) {
+        return NULL;
+    }
+    switch (mcp_json_type(ctx, v)) {
+        case MCP_JSON_NULL:
+            return mcp_json_null_new(ctx);
+        case MCP_JSON_BOOL: {
+            bool b = false;
+            if (mcp_json_bool_value(ctx, v, &b) != MCP_OK) {
+                return NULL;
+            }
+            return mcp_json_bool_new(ctx, b);
+        }
+        case MCP_JSON_NUMBER: {
+            double n = 0;
+            if (mcp_json_number_value(ctx, v, &n) != MCP_OK) {
+                return NULL;
+            }
+            return mcp_json_number_new(ctx, n);
+        }
+        case MCP_JSON_STRING: {
+            const char *s = NULL;
+            if (mcp_json_string_value(ctx, v, &s) != MCP_OK || s == NULL) {
+                return NULL;
+            }
+            return mcp_json_string_new(ctx, s);
+        }
+        case MCP_JSON_ARRAY: {
+            mcp_json_value_t *out = mcp_json_array_new(ctx);
+            if (out == NULL) {
+                return NULL;
+            }
+            for (size_t i = 0, n = mcp_json_array_size(ctx, v); i < n; i++) {
+                mcp_json_value_t *item = mcp_json_clone(ctx, mcp_json_array_get(ctx, v, i));
+                if (item == NULL || mcp_json_array_append(ctx, out, item) != MCP_OK) {
+                    mcp_json_destroy(ctx, item);
+                    mcp_json_destroy(ctx, out);
+                    return NULL;
+                }
+            }
+            return out;
+        }
+        case MCP_JSON_OBJECT: {
+            mcp_json_value_t *out = mcp_json_object_new(ctx);
+            if (out == NULL) {
+                return NULL;
+            }
+            for (size_t i = 0, n = mcp_json_object_size(ctx, v); i < n; i++) {
+                const char *key = mcp_json_object_key_at(ctx, v, i);
+                mcp_json_value_t *item = mcp_json_clone(ctx, mcp_json_object_get(ctx, v, key));
+                if (key == NULL || item == NULL ||
+                    mcp_json_object_set(ctx, out, key, item) != MCP_OK) {
+                    mcp_json_destroy(ctx, item);
+                    mcp_json_destroy(ctx, out);
+                    return NULL;
+                }
+            }
+            return out;
+        }
+    }
+    return NULL;
+}

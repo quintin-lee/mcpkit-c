@@ -57,3 +57,7 @@ add_test(NAME test_registry COMMAND test_registry)
 add_executable(test_session unit/test_session.c)
 target_link_libraries(test_session PRIVATE mcpkit_core)
 add_test(NAME test_session COMMAND test_session)
+
+add_executable(test_dispatcher unit/test_dispatcher.c)
+target_link_libraries(test_dispatcher PRIVATE mcpkit_core)
+add_test(NAME test_dispatcher COMMAND test_dispatcher)

@@ -33,4 +33,7 @@ mcp_json_value_t *mcp_json_string_new_n(mcp_context_t *ctx, const char *s, size_
 mcp_json_value_t *mcp_json_array_new(mcp_context_t *ctx);
 mcp_json_value_t *mcp_json_object_new(mcp_context_t *ctx);
 
+// Deep copy through the active backend. Returns NULL on NOMEM or bad input.
+mcp_json_value_t *mcp_json_clone(mcp_context_t *ctx, const mcp_json_value_t *v);
+
 #endif
