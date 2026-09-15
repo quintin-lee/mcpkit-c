@@ -83,6 +83,7 @@ mcp_resource_t *mcp_resource_new(mcp_context_t *ctx, const char *uri, const char
     }
     res->on_read = on_read;
     res->user_data = user_data;
+    res->cleanup = NULL;
     return res;
 }
 
@@ -90,10 +91,22 @@ void mcp_resource_destroy(mcp_context_t *ctx, mcp_resource_t *res) {
     if (res == NULL) {
         return;
     }
+    if (res->cleanup != NULL) {
+        res->cleanup(ctx, res->user_data);
+    }
     srv_free(ctx, res->uri);
     srv_free(ctx, res->name);
     srv_free(ctx, res->mime_type);
     srv_free(ctx, res);
+}
+
+mcp_status_t mcp_resource_set_cleanup(mcp_context_t *ctx, mcp_resource_t *res,
+                                      mcp_resource_cleanup_fn fn_or_null) {
+    if (ctx == NULL || res == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    res->cleanup = fn_or_null;
+    return MCP_OK;
 }
 
 mcp_prompt_t *mcp_prompt_new(mcp_context_t *ctx, const char *name, const char *description_or_null,

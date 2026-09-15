@@ -29,5 +29,7 @@
 #include "mcpkit/runtime/threadpool.h"
 #include "mcpkit/runtime/timer.h"
 #include "mcpkit/runtime/loop.h"
+#include "mcpkit/apps/csp.h"
+#include "mcpkit/apps/ui.h"
 
 #endif

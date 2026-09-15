@@ -23,6 +23,8 @@ add_library(mcpkit_core
   src/server/registry.c
   src/server/session.c
   src/server/dispatcher.c
+  src/apps/csp.c
+  src/apps/ui.c
   src/transport/transport.c
   src/transport/stdio.c
   src/client/client.c

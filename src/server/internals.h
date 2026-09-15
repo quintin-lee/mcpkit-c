@@ -26,6 +26,7 @@ struct mcp_resource {
     char *mime_type;
     mcp_resource_read_fn on_read;
     void *user_data;
+    mcp_resource_cleanup_fn cleanup;
 };
 
 struct mcp_prompt {
