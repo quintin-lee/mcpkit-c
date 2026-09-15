@@ -65,3 +65,7 @@ add_test(NAME test_dispatcher COMMAND test_dispatcher)
 add_executable(test_transport unit/test_transport.c)
 target_link_libraries(test_transport PRIVATE mcpkit_core)
 add_test(NAME test_transport COMMAND test_transport)
+
+add_executable(test_stdio_limits unit/test_stdio_limits.c)
+target_link_libraries(test_stdio_limits PRIVATE mcpkit_core)
+add_test(NAME test_stdio_limits COMMAND test_stdio_limits)

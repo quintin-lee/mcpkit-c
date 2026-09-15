@@ -41,6 +41,13 @@ void *mcp_transport_backend(mcp_context_t *ctx, const mcp_transport_t *t) {
     return t != NULL ? t->backend : NULL;
 }
 
+void mcp_transport_set_backend(mcp_context_t *ctx, mcp_transport_t *t, void *backend) {
+    (void)ctx;
+    if (t != NULL) {
+        t->backend = backend;
+    }
+}
+
 mcp_status_t mcp_transport_start(mcp_context_t *ctx, mcp_transport_t *t) {
     if (t == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;

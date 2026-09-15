@@ -24,6 +24,7 @@ add_library(mcpkit_core
   src/server/session.c
   src/server/dispatcher.c
   src/transport/transport.c
+  src/transport/stdio.c
 )
 target_include_directories(mcpkit_core PUBLIC include)
 

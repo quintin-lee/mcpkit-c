@@ -21,5 +21,6 @@
 #include "mcpkit/server/session.h"
 #include "mcpkit/server/dispatcher.h"
 #include "mcpkit/transport/transport.h"
+#include "mcpkit/transport/stdio.h"
 
 #endif
