@@ -55,3 +55,7 @@ endif()
 if(MCPKIT_BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
+
+if(MCPKIT_BUILD_TOOLS)
+  add_subdirectory(tools)
+endif()
