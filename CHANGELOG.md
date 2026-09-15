@@ -24,3 +24,6 @@ Format follows Keep a Changelog. Versions follow SemVer.
 - Phase 8: static plugin registry, buffer-level HTTP/1.1, Streamable HTTP
   serve loop with session map + SSE compat, adapters landing zone,
   http-server example (MCPKIT_BUILD_HTTP=ON).
+- Phase 9: mcpkit-cli (inspect/call/validate/test), deterministic JSON
+  fuzz corpus, CMake sanitizer presets, CPack TGZ packaging, CLI
+  acceptance test against P3/P7 example services.
