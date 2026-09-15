@@ -9,3 +9,6 @@ target_link_libraries(stdio-server PRIVATE mcpkit_core)
 
 add_executable(client client/main.c)
 target_link_libraries(client PRIVATE mcpkit_core)
+
+add_executable(threadpool-server threadpool-server/main.c)
+target_link_libraries(threadpool-server PRIVATE mcpkit_core)

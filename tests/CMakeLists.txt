@@ -89,3 +89,7 @@ add_test(NAME test_executor COMMAND test_executor)
 add_executable(test_timer unit/test_timer.c)
 target_link_libraries(test_timer PRIVATE mcpkit_core)
 add_test(NAME test_timer COMMAND test_timer)
+
+add_executable(test_loop unit/test_loop.c)
+target_link_libraries(test_loop PRIVATE mcpkit_core)
+add_test(NAME test_loop COMMAND test_loop)
