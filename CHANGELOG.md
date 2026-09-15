@@ -19,3 +19,5 @@ Format follows Keep a Changelog. Versions follow SemVer.
 - Phase 5: sync client (initialize, tools/resources/prompts) over any transport.
 - Phase 6: runtime layer — sync executor, C11 threadpool executor, timer,
   and transport-agnostic event loop; threadpool-server example.
+- Phase 7: MCP Apps extension — tool visibility, session permission masks,
+  CSP builder, UI resource with lifecycle, apps-host example.
