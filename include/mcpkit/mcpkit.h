@@ -27,5 +27,6 @@
 #include "mcpkit/runtime/executor.h"
 #include "mcpkit/runtime/sync.h"
 #include "mcpkit/runtime/threadpool.h"
+#include "mcpkit/runtime/timer.h"
 
 #endif
