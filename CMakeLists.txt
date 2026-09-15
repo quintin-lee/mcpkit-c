@@ -1,5 +1,18 @@
 cmake_minimum_required(VERSION 3.28)
-project(mcpkit VERSION 0.1.0 LANGUAGES C)
+
+file(READ "${CMAKE_SOURCE_DIR}/VERSION" MCPKIT_VERSION_FILE)
+string(STRIP "${MCPKIT_VERSION_FILE}" MCPKIT_VERSION_FILE)
+string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _mcpkit_version_re "${MCPKIT_VERSION_FILE}")
+if(NOT _mcpkit_version_re)
+  message(FATAL_ERROR "VERSION file must contain a value of the form MAJOR.MINOR.PATCH")
+endif()
+set(MCPKIT_VERSION "${_mcpkit_version_re}")
+string(REPLACE "." ";" _mcpkit_version_parts "${MCPKIT_VERSION}")
+list(GET _mcpkit_version_parts 0 MCPKIT_VERSION_MAJOR)
+list(GET _mcpkit_version_parts 1 MCPKIT_VERSION_MINOR)
+list(GET _mcpkit_version_parts 2 MCPKIT_VERSION_PATCH)
+
+project(mcpkit VERSION "${MCPKIT_VERSION}" LANGUAGES C)
 
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -7,6 +20,9 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 # Always emit compile_commands.json for LSP/clangd; harmless for other generators.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+configure_file(cmake/mcpkit_version_generated.h.in
+               "${CMAKE_BINARY_DIR}/include/mcpkit_version_generated.h")
 
 include(cmake/MCPKitOptions.cmake)
 include(cmake/MCPKitSanitizers.cmake)
@@ -48,6 +64,7 @@ if(MCPKIT_BUILD_HTTP)
   )
 endif()
 target_include_directories(mcpkit_core PUBLIC include)
+target_include_directories(mcpkit_core PRIVATE "${CMAKE_BINARY_DIR}/include")
 
 if(MCPKIT_BUILD_TESTS)
   enable_testing()
