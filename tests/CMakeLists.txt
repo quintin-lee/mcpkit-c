@@ -123,6 +123,15 @@ add_executable(test_json_fuzz fuzz/test_json_fuzz.c)
 target_link_libraries(test_json_fuzz PRIVATE mcpkit_core)
 add_test(NAME test_json_fuzz COMMAND test_json_fuzz)
 
+if(MCPKIT_BUILD_TOOLS AND MCPKIT_BUILD_EXAMPLES)
+  add_test(NAME cli_acceptance
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/cli_accept.sh
+                   ${CMAKE_BINARY_DIR}/tools/mcpkit-cli
+                   ${CMAKE_BINARY_DIR}/examples/stdio-server
+                   ${CMAKE_BINARY_DIR}/examples/threadpool-server
+                   ${CMAKE_BINARY_DIR}/examples/apps-host)
+endif()
+
 if(MCPKIT_BUILD_FUZZ)
   add_executable(fuzz_json_stdin fuzz/fuzz_json_stdin.c)
   target_link_libraries(fuzz_json_stdin PRIVATE mcpkit_core)
