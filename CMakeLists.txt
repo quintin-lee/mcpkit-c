@@ -9,6 +9,8 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(cmake/MCPKitOptions.cmake)
+include(cmake/MCPKitSanitizers.cmake)
+mcpkit_apply_sanitizers()
 
 add_library(mcpkit_core
   src/core/version.c
@@ -59,3 +61,11 @@ endif()
 if(MCPKIT_BUILD_TOOLS)
   add_subdirectory(tools)
 endif()
+
+# Packaging
+install(TARGETS mcpkit_core LIBRARY DESTINATION lib ARCHIVE DESTINATION lib RUNTIME DESTINATION bin)
+install(DIRECTORY include/mcpkit DESTINATION include)
+set(CPACK_PACKAGE_NAME "mcpkit")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_GENERATOR "TGZ")
+include(CPack)
