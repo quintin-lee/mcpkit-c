@@ -14,3 +14,5 @@ Format follows Keep a Changelog. Versions follow SemVer.
 - Phase 3: server registry (tool/resource/prompt), multi-session lifecycle,
   dispatch pipeline with queue and session gating, minimal-server and
   multi-session examples.
+- Phase 4: four-method transport interface, stdio line-delimited framing
+  with 4MB cap, stdio serve loop over server dispatch, stdio-server example.
