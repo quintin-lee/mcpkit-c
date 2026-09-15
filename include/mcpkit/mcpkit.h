@@ -14,5 +14,11 @@
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/protocol/initialize.h"
 #include "mcpkit/protocol/validate.h"
+#include "mcpkit/server/server.h"
+#include "mcpkit/server/tool.h"
+#include "mcpkit/server/resource.h"
+#include "mcpkit/server/prompt.h"
+#include "mcpkit/server/session.h"
+#include "mcpkit/server/dispatcher.h"
 
 #endif

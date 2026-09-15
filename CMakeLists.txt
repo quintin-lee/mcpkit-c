@@ -19,6 +19,9 @@ add_library(mcpkit_core
   src/protocol/message.c
   src/protocol/initialize.c
   src/protocol/validate.c
+  src/server/server.c
+  src/server/registry.c
+  src/server/session.c
 )
 target_include_directories(mcpkit_core PUBLIC include)
 
