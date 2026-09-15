@@ -28,6 +28,8 @@ mcp_tool_t *mcp_tool_new(mcp_context_t *ctx, const char *name, const char *descr
     tool->schema = input_schema;
     tool->handler = handler;
     tool->user_data = user_data;
+    tool->vis = MCP_TOOL_VIS_BOTH;
+    tool->required = 0;
     return tool;
 }
 
@@ -39,6 +41,23 @@ void mcp_tool_destroy(mcp_context_t *ctx, mcp_tool_t *tool) {
     srv_free(ctx, tool->description);
     mcp_json_destroy(ctx, tool->schema);
     srv_free(ctx, tool);
+}
+
+mcp_status_t mcp_tool_set_visibility(mcp_context_t *ctx, mcp_tool_t *tool,
+                                     mcp_tool_visibility_t vis) {
+    if (ctx == NULL || tool == NULL || vis > MCP_TOOL_VIS_BOTH) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    tool->vis = vis;
+    return MCP_OK;
+}
+
+mcp_status_t mcp_tool_require_perms(mcp_context_t *ctx, mcp_tool_t *tool, uint32_t perm_mask) {
+    if (ctx == NULL || tool == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    tool->required = perm_mask;
+    return MCP_OK;
 }
 
 mcp_resource_t *mcp_resource_new(mcp_context_t *ctx, const char *uri, const char *name,

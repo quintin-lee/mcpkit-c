@@ -62,6 +62,10 @@ add_executable(test_dispatcher unit/test_dispatcher.c)
 target_link_libraries(test_dispatcher PRIVATE mcpkit_core)
 add_test(NAME test_dispatcher COMMAND test_dispatcher)
 
+add_executable(test_visibility unit/test_visibility.c)
+target_link_libraries(test_visibility PRIVATE mcpkit_core)
+add_test(NAME test_visibility COMMAND test_visibility)
+
 add_executable(test_transport unit/test_transport.c)
 target_link_libraries(test_transport PRIVATE mcpkit_core)
 add_test(NAME test_transport COMMAND test_transport)

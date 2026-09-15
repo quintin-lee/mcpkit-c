@@ -108,7 +108,7 @@ static mcp_message_t *route_initialize(mcp_context_t *ctx, mcp_server_t *srv, mc
 }
 
 static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
-                                       const mcp_message_t *req) {
+                                       mcp_session_t *s, const mcp_message_t *req) {
     mcp_json_value_t *result = mcp_json_object_new(ctx);
     mcp_json_value_t *arr = mcp_json_array_new(ctx);
     if (result == NULL || arr == NULL) {
@@ -118,6 +118,9 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
     }
     for (size_t i = 0; i < srv->n_tools; i++) {
         const mcp_tool_t *t = srv->tools[i];
+        if (t->vis != MCP_TOOL_VIS_BOTH && (t->vis == MCP_TOOL_VIS_APP) != s->apps_host) {
+            continue;
+        }
         mcp_json_value_t *entry = mcp_json_object_new(ctx);
         if (entry == NULL || set_string(ctx, entry, "name", t->name) != MCP_OK ||
             (t->description != NULL && set_string(ctx, entry, "description", t->description) != MCP_OK)) {
@@ -189,6 +192,9 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
     if (tool == NULL) {
         return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "tools/call: unknown tool");
     }
+    if (tool->vis != MCP_TOOL_VIS_BOTH && (tool->vis == MCP_TOOL_VIS_APP) != s->apps_host) {
+        return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "tools/call: unknown tool");
+    }
     const mcp_json_value_t *args = mcp_json_object_get(ctx, params, "arguments");
     if (tool->schema != NULL) {
         mcp_status_t vst;
@@ -202,6 +208,9 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
         if (vst != MCP_OK) {
             return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "tools/call: invalid arguments");
         }
+    }
+    if ((tool->required & ~s->granted) != 0) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "tools/call: permission denied");
     }
     mcp_json_value_t *result = NULL;
     mcp_status_t st = tool->handler(ctx, s, args, tool->user_data, &result);
@@ -380,7 +389,7 @@ static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_s
         return resp;
     }
     if (strcmp(method, "tools/list") == 0) {
-        return route_tools_list(ctx, srv, req);
+        return route_tools_list(ctx, srv, s, req);
     }
     if (strcmp(method, "tools/call") == 0) {
         return route_tools_call(ctx, srv, s, req);

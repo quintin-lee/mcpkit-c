@@ -11,6 +11,7 @@ static mcp_session_t *session_new(mcp_context_t *ctx) {
         return NULL;
     }
     memset(s, 0, sizeof(*s));
+    s->granted = 0xFFFFFFFFu;
     s->ids = mcp_idset_create(ctx);
     if (s->ids == NULL) {
         srv_free(ctx, s);
@@ -32,6 +33,41 @@ void session_free(mcp_context_t *ctx, mcp_session_t *s) {
 bool mcp_session_is_initialized(mcp_context_t *ctx, const mcp_session_t *session) {
     (void)ctx;
     return session != NULL && session->initialized;
+}
+
+mcp_status_t mcp_session_set_apps_host(mcp_context_t *ctx, mcp_session_t *session,
+                                       bool apps_host) {
+    if (ctx == NULL || session == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    session->apps_host = apps_host;
+    return MCP_OK;
+}
+
+bool mcp_session_is_apps_host(mcp_context_t *ctx, const mcp_session_t *session) {
+    (void)ctx;
+    return session != NULL && session->apps_host;
+}
+
+mcp_status_t mcp_session_grant(mcp_context_t *ctx, mcp_session_t *session, uint32_t perm_mask) {
+    if (ctx == NULL || session == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    session->granted |= perm_mask;
+    return MCP_OK;
+}
+
+mcp_status_t mcp_session_revoke(mcp_context_t *ctx, mcp_session_t *session, uint32_t perm_mask) {
+    if (ctx == NULL || session == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    session->granted &= ~perm_mask;
+    return MCP_OK;
+}
+
+bool mcp_session_grants(mcp_context_t *ctx, const mcp_session_t *session, uint32_t perm_mask) {
+    (void)ctx;
+    return session != NULL && (session->granted & perm_mask) == perm_mask;
 }
 
 mcp_session_t *mcp_server_create_session(mcp_context_t *ctx, mcp_server_t *srv) {

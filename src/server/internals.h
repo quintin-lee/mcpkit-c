@@ -16,6 +16,8 @@ struct mcp_tool {
     mcp_json_value_t *schema;
     mcp_tool_handler_fn handler;
     void *user_data;
+    mcp_tool_visibility_t vis;
+    uint32_t required;
 };
 
 struct mcp_resource {
@@ -35,6 +37,8 @@ struct mcp_prompt {
 
 struct mcp_session {
     bool initialized;
+    bool apps_host;
+    uint32_t granted;
     char *client_name;
     char *client_version;
     mcp_idset_t *ids;
