@@ -39,6 +39,7 @@ add_library(mcpkit_core
 if(MCPKIT_BUILD_HTTP)
   target_sources(mcpkit_core PRIVATE
     src/transport/http.c
+    src/transport/streamable_http.c
   )
 endif()
 target_include_directories(mcpkit_core PUBLIC include)
