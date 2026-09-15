@@ -90,8 +90,31 @@ int main(void) {
     expect_bad(ctx, schema, "{\"name\":\"ls\",\"tags\":[\"a\",5]}");
     expect_bad(ctx, schema, "{\"name\":\"ls\",\"mode\":\"weird\"}");
     expect_bad(ctx, schema, "{\"name\":\"ls\",\"address\":{}}");
+    /* 2^53+1 is a finite double outside int64 range; the buggy is_integer_value
+       returned isfinite(d) for such values, incorrectly accepting them. */
+    expect_bad(ctx, schema, "{\"name\":\"ls\",\"priority\":9007199254740993.0}");
 
     mcp_json_destroy(ctx, schema);
+
+    /* Pure integer type check, isolated from min/maximum bounds:
+     * a value like 1.5 must fail the "integer" type itself, not just a max bound. */
+    mcp_json_value_t *int_schema = mcp_schema_object_new(ctx);
+    assert(int_schema != NULL);
+    mcp_json_value_t *n = mcp_schema_integer_new(ctx);
+    assert(n != NULL);
+    assert(mcp_schema_add_property(ctx, int_schema, "n", n) == MCP_OK);
+    expect_ok(ctx, int_schema, "{\"n\":3}");
+    expect_ok(ctx, int_schema, "{\"n\":-17}");
+    expect_bad(ctx, int_schema, "{\"n\":3.5}");
+    expect_bad(ctx, int_schema, "{\"n\":0.5}");
+    expect_bad(ctx, int_schema, "{\"n\":1.5}");
+    /* 1e300 is a finite double far outside int64 range; the buggy
+       is_integer_value returned isfinite(d) for values above 2^53,
+       incorrectly accepting them as integers. */
+    expect_bad(ctx, int_schema, "{\"n\":1e300}");
+    expect_bad(ctx, int_schema, "{\"n\":-1e300}");
+    mcp_json_destroy(ctx, int_schema);
+
     mcp_context_destroy(ctx);
     return 0;
 }

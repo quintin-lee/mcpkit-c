@@ -166,8 +166,9 @@ mcp_status_t mcp_schema_set_description(mcp_context_t *ctx, mcp_json_value_t *sc
 }
 
 static bool is_integer_value(double d) {
-    if (!isfinite(d) || d < -9007199254740991.0 || d > 9007199254740992.0) {
-        return isfinite(d);
+    // JSON Schema "integer": value must be finite and exactly representable as int64.
+    if (!isfinite(d) || d < -9007199254740991.0 || d > 9007199254740991.0) {
+        return false;
     }
     return d == (double)(int64_t)d;
 }
