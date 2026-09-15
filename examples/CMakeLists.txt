@@ -6,3 +6,6 @@ target_link_libraries(multi-session PRIVATE mcpkit_core)
 
 add_executable(stdio-server stdio-server/main.c)
 target_link_libraries(stdio-server PRIVATE mcpkit_core)
+
+add_executable(client client/main.c)
+target_link_libraries(client PRIVATE mcpkit_core)
