@@ -92,7 +92,7 @@ static int cli_init(cli_t *cli) {
     cli->client = mcp_client_create(cli->ctx, cli->transport);
     if (cli->client == NULL) return -1;
     if (mcp_client_connect(cli->ctx, cli->client) != MCP_OK) return -1;
-    if (mcp_client_initialize(cli->ctx, cli->client, "mcpkit-cli", "0.1.0", NULL) != MCP_OK)
+    if (mcp_client_initialize(cli->ctx, cli->client, "mcpkit-cli", mcpkit_version_string(), NULL) != MCP_OK)
         return -1;
     return 0;
 }
