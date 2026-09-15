@@ -70,6 +70,10 @@ add_executable(test_apps unit/test_apps.c)
 target_link_libraries(test_apps PRIVATE mcpkit_core)
 add_test(NAME test_apps COMMAND test_apps)
 
+add_executable(test_apps_e2e unit/test_apps_e2e.c)
+target_link_libraries(test_apps_e2e PRIVATE mcpkit_core)
+add_test(NAME test_apps_e2e COMMAND test_apps_e2e)
+
 add_executable(test_transport unit/test_transport.c)
 target_link_libraries(test_transport PRIVATE mcpkit_core)
 add_test(NAME test_transport COMMAND test_transport)
