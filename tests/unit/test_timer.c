@@ -13,7 +13,9 @@ static void rec(mcp_context_t *ctx, void *arg) {
 }
 
 int main(void) {
-    assert(mcp_timer_create(NULL) != NULL);
+    mcp_timer_t *probe = mcp_timer_create(NULL);
+    assert(probe != NULL);
+    mcp_timer_destroy(NULL, probe);
     mcp_timer_t *t = mcp_timer_create(NULL);
     assert(t != NULL);
 
