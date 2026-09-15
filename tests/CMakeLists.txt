@@ -77,3 +77,7 @@ add_test(NAME test_stdio_loopback COMMAND test_stdio_loopback)
 add_executable(test_client unit/test_client.c)
 target_link_libraries(test_client PRIVATE mcpkit_core)
 add_test(NAME test_client COMMAND test_client)
+
+add_executable(test_client_e2e unit/test_client_e2e.c)
+target_link_libraries(test_client_e2e PRIVATE mcpkit_core)
+add_test(NAME test_client_e2e COMMAND test_client_e2e)
