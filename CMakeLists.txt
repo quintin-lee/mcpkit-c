@@ -30,3 +30,7 @@ if(MCPKIT_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
+
+if(MCPKIT_BUILD_EXAMPLES)
+  add_subdirectory(examples)
+endif()
