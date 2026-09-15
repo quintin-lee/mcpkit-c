@@ -1,0 +1,83 @@
+#include "mcpkit/transport/transport.h"
+
+#include "internals.h"
+#include "mcpkit/core/context.h"
+#include "mcpkit/core/types.h"
+
+struct mcp_transport {
+    mcp_transport_ops_t ops;
+    void *backend;
+};
+
+static const mcp_allocator_t *alloc_of(mcp_context_t *ctx) {
+    return ctx != NULL ? mcp_context_allocator(ctx) : mcp_default_allocator();
+}
+
+mcp_transport_t *mcp_transport_create(mcp_context_t *ctx, const mcp_transport_ops_t *ops,
+                                      void *backend) {
+    if (ops == NULL) {
+        return NULL;
+    }
+    const mcp_allocator_t *a = alloc_of(ctx);
+    mcp_transport_t *t = a->malloc_fn(sizeof(*t), a->userdata);
+    if (t == NULL) {
+        return NULL;
+    }
+    t->ops = *ops;
+    t->backend = backend;
+    return t;
+}
+
+void mcp_transport_destroy(mcp_context_t *ctx, mcp_transport_t *t) {
+    if (t == NULL) {
+        return;
+    }
+    const mcp_allocator_t *a = alloc_of(ctx);
+    a->free_fn(t, a->userdata);
+}
+
+void *mcp_transport_backend(mcp_context_t *ctx, const mcp_transport_t *t) {
+    (void)ctx;
+    return t != NULL ? t->backend : NULL;
+}
+
+mcp_status_t mcp_transport_start(mcp_context_t *ctx, mcp_transport_t *t) {
+    if (t == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (t->ops.start == NULL) {
+        return MCP_ERR_UNSUPPORTED;
+    }
+    return t->ops.start(ctx, t);
+}
+
+mcp_status_t mcp_transport_send(mcp_context_t *ctx, mcp_transport_t *t, const char *data,
+                                size_t len) {
+    if (t == NULL || (data == NULL && len > 0)) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (t->ops.send == NULL) {
+        return MCP_ERR_UNSUPPORTED;
+    }
+    return t->ops.send(ctx, t, data, len);
+}
+
+mcp_status_t mcp_transport_recv(mcp_context_t *ctx, mcp_transport_t *t, char **line_out) {
+    if (t == NULL || line_out == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (t->ops.recv == NULL) {
+        return MCP_ERR_UNSUPPORTED;
+    }
+    return t->ops.recv(ctx, t, line_out);
+}
+
+mcp_status_t mcp_transport_stop(mcp_context_t *ctx, mcp_transport_t *t) {
+    if (t == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (t->ops.stop == NULL) {
+        return MCP_ERR_UNSUPPORTED;
+    }
+    return t->ops.stop(ctx, t);
+}

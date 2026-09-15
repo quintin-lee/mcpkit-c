@@ -23,6 +23,7 @@ add_library(mcpkit_core
   src/server/registry.c
   src/server/session.c
   src/server/dispatcher.c
+  src/transport/transport.c
 )
 target_include_directories(mcpkit_core PUBLIC include)
 

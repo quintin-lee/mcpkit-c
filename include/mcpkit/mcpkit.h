@@ -20,5 +20,6 @@
 #include "mcpkit/server/prompt.h"
 #include "mcpkit/server/session.h"
 #include "mcpkit/server/dispatcher.h"
+#include "mcpkit/transport/transport.h"
 
 #endif
