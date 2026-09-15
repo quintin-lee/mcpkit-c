@@ -21,3 +21,6 @@ Format follows Keep a Changelog. Versions follow SemVer.
   and transport-agnostic event loop; threadpool-server example.
 - Phase 7: MCP Apps extension — tool visibility, session permission masks,
   CSP builder, UI resource with lifecycle, apps-host example.
+- Phase 8: static plugin registry, buffer-level HTTP/1.1, Streamable HTTP
+  serve loop with session map + SSE compat, adapters landing zone,
+  http-server example (MCPKIT_BUILD_HTTP=ON).
