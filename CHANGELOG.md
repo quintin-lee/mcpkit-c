@@ -16,3 +16,4 @@ Format follows Keep a Changelog. Versions follow SemVer.
   multi-session examples.
 - Phase 4: four-method transport interface, stdio line-delimited framing
   with 4MB cap, stdio serve loop over server dispatch, stdio-server example.
+- Phase 5: sync client (initialize, tools/resources/prompts) over any transport.
