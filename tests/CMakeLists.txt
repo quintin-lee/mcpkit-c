@@ -73,3 +73,7 @@ add_test(NAME test_stdio_limits COMMAND test_stdio_limits)
 add_executable(test_stdio_loopback unit/test_stdio_loopback.c)
 target_link_libraries(test_stdio_loopback PRIVATE mcpkit_core)
 add_test(NAME test_stdio_loopback COMMAND test_stdio_loopback)
+
+add_executable(test_client unit/test_client.c)
+target_link_libraries(test_client PRIVATE mcpkit_core)
+add_test(NAME test_client COMMAND test_client)
