@@ -22,6 +22,7 @@
 #include "mcpkit/server/dispatcher.h"
 #include "mcpkit/transport/transport.h"
 #include "mcpkit/transport/stdio.h"
+#include "mcpkit/transport/http.h"
 #include "mcpkit/client/client.h"
 #include "mcpkit/runtime/task.h"
 #include "mcpkit/runtime/executor.h"

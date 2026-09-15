@@ -35,6 +35,12 @@ add_library(mcpkit_core
   src/runtime/loop.c
   src/plugin/plugin.c
 )
+
+if(MCPKIT_BUILD_HTTP)
+  target_sources(mcpkit_core PRIVATE
+    src/transport/http.c
+  )
+endif()
 target_include_directories(mcpkit_core PUBLIC include)
 
 if(MCPKIT_BUILD_TESTS)

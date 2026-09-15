@@ -77,7 +77,7 @@ mcp_status_t mcp_http_response_set_header(mcp_context_t *ctx, mcp_http_response_
                                           const char *name, const char *value);
 mcp_status_t mcp_http_response_set_body(mcp_context_t *ctx, mcp_http_response_t *resp,
                                         const char *body, size_t len);
-char *mcp_http_response_serialize(mcp_context_t *ctx, const mcp_http_response_t *resp);
+const char *mcp_http_response_serialize(mcp_context_t *ctx, const mcp_http_response_t *resp);
 void mcp_http_response_destroy(mcp_context_t *ctx, mcp_http_response_t *resp);
 ```
 
@@ -174,7 +174,7 @@ int main(void) {
 
 **Files:**
 - Create: `include/mcpkit/transport/http.h` (verbatim), `src/transport/http.c`, `tests/unit/test_http.c`
-- Modify: root `CMakeLists.txt` (`if(MCPKIT_BUILD_HTTP) target_sources(... src/transport/http.c src/transport/streamable_http.c) endif()` + note streamable file lands in T3), `mcpkit.h` (+http.h include, unconditional — headers always installed), `tests/CMakeLists.txt` (`if(MCPKIT_BUILD_HTTP)` block for test_http)
+- Modify: root `CMakeLists.txt` (`if(MCPKIT_BUILD_HTTP) target_sources(... src/transport/http.c) endif()`; T3 appends `src/transport/streamable_http.c`), `mcpkit.h` (+http.h include now, +streamable include in T3), `tests/CMakeLists.txt` (`if(MCPKIT_BUILD_HTTP)` block for test_http)
 
 - [ ] Step 1: Write `tests/unit/test_http.c`:
 
@@ -217,7 +217,7 @@ int main(void) {
 }
 ```
 
-NOTE: decide string ownership in impl — `mcp_http_response_serialize` returns ctx-allocated string; free it with the allocator's free (expose `mcp_http_free(ctx, s)`? context exposes allocator — test can `mcp_context_allocator(NULL)->free_fn(s)`? Simpler: impl keeps a `char *owned` inside response and serialize returns BORROWED pointer valid until destroy. Fix contract in code + plan before writing test: **serialize returns borrowed, no free needed**. Adjust test: no free call, destroy response after asserts.
+NOTE (resolved): `mcp_http_response_serialize` returns BORROWED pointer valid until destroy — no free call; impl keeps the serialized bytes owned inside the response struct.
 
 - [ ] Step 2: Configure with `-DMCPKIT_BUILD_HTTP=ON`, build — Expected: FAIL (test_http registered, no impl)
 - [ ] Step 3: Write `src/transport/http.c`: request-line manual token scan (no sscanf), header split at first `:`, trim OWS, case-insensitive lookup via tolower loop, Content-Length strict strtoul, body bounds check, MAX_BODY → NULL. Alloc pattern: copy `alloc_of` NULL-ctx fallback from transport.c. Response: fixed 16-slot header array, serialize into grown buffer.
@@ -228,7 +228,7 @@ NOTE: decide string ownership in impl — `mcp_http_response_serialize` returns 
 
 **Files:**
 - Create: `include/mcpkit/transport/streamable_http.h` (verbatim), `src/transport/streamable_http.c` (CMake already wired in T2), `tests/unit/test_http_serve.c`
-- Modify: `mcpkit.h` (+streamable include), `tests/CMakeLists.txt` (test_http_serve in HTTP block)
+- Modify: `mcpkit.h` (+streamable include + CMake appends `src/transport/streamable_http.c` in the HTTP block), `tests/CMakeLists.txt` (test_http_serve in HTTP block)
 
 - [ ] Step 1: Write `tests/unit/test_http_serve.c` with in-memory IO: scripted request buffers, capturing writer. Cases: (a) POST initialize without session → 200 + `Mcp-Session-Id: sess-1` + body contains `2025-06-18`; (b) POST notifications/initialized with id → 202; (c) POST tools/call with id → 200 echo; (d) POST tools/call without id → 400; (e) unknown id → 404; (f) GET with Accept: text/event-stream → 200 + `text/event-stream` + `data: ` prefix; (g) GET without → 405; (h) DELETE id → 200, then reuse → 404; (i) `mcp_sse_wrap(NULL, "{\"a\":1}")` equals `"data: {\"a\":1}\n\n"`, NULL args → NULL. Server fixture: echo tool (copy shape from test_stdio_loopback / dispatcher tests — read that file first). IO read feeds one request per call then clean EOF → serve returns MCP_OK.
 - [ ] Step 2: Build HTTP=ON — Expected: FAIL (undeclared serve/sse)
