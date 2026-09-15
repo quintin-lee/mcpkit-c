@@ -53,3 +53,7 @@ add_test(NAME test_error_mapping COMMAND test_error_mapping)
 add_executable(test_registry unit/test_registry.c)
 target_link_libraries(test_registry PRIVATE mcpkit_core)
 add_test(NAME test_registry COMMAND test_registry)
+
+add_executable(test_session unit/test_session.c)
+target_link_libraries(test_session PRIVATE mcpkit_core)
+add_test(NAME test_session COMMAND test_session)
