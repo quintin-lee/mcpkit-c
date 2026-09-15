@@ -12,6 +12,7 @@
 #include <sys/types.h>
 
 #include "mcpkit/mcpkit.h"
+#include "mcpkit/protocol/validate.h"
 
 typedef struct {
     mcp_context_t *ctx;
@@ -131,6 +132,119 @@ static int cmd_inspect(const char *server_bin) {
     return 0;
 }
 
+static int cmd_call(const char *server_bin, const char *tool_name, const char *args_json) {
+    cli_t cli = {NULL};
+    if (spawn(server_bin, &cli) != 0 || cli_init(&cli) != 0) {
+        cli_cleanup(&cli);
+        return 1;
+    }
+    mcp_json_value_t *args = NULL;
+    if (args_json != NULL) {
+        args = mcp_json_parse(cli.ctx, args_json, strlen(args_json));
+        if (args == NULL) {
+            fprintf(stderr, "mcpkit-cli: invalid args JSON\n");
+            mcp_client_disconnect(cli.ctx, cli.client);
+            cli_cleanup(&cli);
+            return 1;
+        }
+    }
+    mcp_json_value_t *result = NULL;
+    if (mcp_client_call_tool(cli.ctx, cli.client, tool_name, args, &result) != MCP_OK) {
+        mcp_client_disconnect(cli.ctx, cli.client);
+        cli_cleanup(&cli);
+        return 1;
+    }
+    print_result(&cli, result);
+    mcp_json_destroy(cli.ctx, result);
+    mcp_client_disconnect(cli.ctx, cli.client);
+    cli_cleanup(&cli);
+    return 0;
+}
+
+static int cmd_validate(const char *file_path) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    mcp_idset_t *ids = mcp_idset_create(ctx);
+    if (ctx == NULL || ids == NULL) {
+        fprintf(stderr, "mcpkit-cli: init failed\n");
+        if (ctx != NULL) mcp_context_destroy(ctx);
+        return 1;
+    }
+    FILE *f = fopen(file_path, "r");
+    if (f == NULL) {
+        fprintf(stderr, "mcpkit-cli: cannot open %s\n", file_path);
+        mcp_idset_destroy(ctx, ids);
+        mcp_context_destroy(ctx);
+        return 1;
+    }
+    int rc = 0;
+    long line_no = 0;
+    char line[8192];
+    while (fgets(line, sizeof(line), f) != NULL) {
+        line_no++;
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) line[--len] = 0;
+        if (len == 0) continue;
+        mcp_message_t *msg = mcp_message_parse(ctx, line, len);
+        if (msg == NULL) {
+            printf("%ld: -32700\n", line_no);
+            rc = 1;
+            continue;
+        }
+        int code = 0;
+        mcp_status_t st = mcp_message_validate(ctx, msg, &code);
+        mcp_message_destroy(ctx, msg);
+        if (st == MCP_OK) {
+            printf("%ld: OK\n", line_no);
+        } else {
+            printf("%ld: %d\n", line_no, code);
+            rc = 1;
+        }
+    }
+    fclose(f);
+    mcp_idset_destroy(ctx, ids);
+    mcp_context_destroy(ctx);
+    return rc;
+}
+
+static int cmd_test(const char *server_bin) {
+    cli_t cli = {NULL};
+    if (spawn(server_bin, &cli) != 0) {
+        fprintf(stderr, "FAIL: spawn failed\n");
+        cli_cleanup(&cli);
+        return 1;
+    }
+    if (cli_init(&cli) != 0) {
+        fprintf(stderr, "FAIL: initialize\n");
+        cli_cleanup(&cli);
+        return 1;
+    }
+    if (mcp_client_ping(cli.ctx, cli.client) != MCP_OK) {
+        fprintf(stderr, "FAIL: ping\n");
+        mcp_client_disconnect(cli.ctx, cli.client);
+        cli_cleanup(&cli);
+        return 1;
+    }
+    mcp_json_value_t *tools = NULL;
+    if (mcp_client_list_tools(cli.ctx, cli.client, &tools) != MCP_OK) {
+        fprintf(stderr, "FAIL: tools/list\n");
+        mcp_client_disconnect(cli.ctx, cli.client);
+        cli_cleanup(&cli);
+        return 1;
+    }
+    const mcp_json_value_t *tools_arr = mcp_json_object_get(cli.ctx, tools, "tools");
+    bool has_tools = tools_arr != NULL && mcp_json_array_size(cli.ctx, tools_arr) > 0;
+    mcp_json_destroy(cli.ctx, tools);
+    if (!has_tools) {
+        fprintf(stderr, "FAIL: no tools\n");
+        mcp_client_disconnect(cli.ctx, cli.client);
+        cli_cleanup(&cli);
+        return 1;
+    }
+    mcp_client_disconnect(cli.ctx, cli.client);
+    cli_cleanup(&cli);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr,
@@ -147,6 +261,20 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "inspect") == 0) {
         return cmd_inspect(argv[2]);
     }
-    fprintf(stderr, "mcpkit-cli: subcommand '%s' not implemented in T1\n", argv[1]);
+    if (strcmp(argv[1], "call") == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "usage: mcpkit-cli call <server-bin> <tool> [args-json]\n");
+            return 2;
+        }
+        const char *args_json = argc >= 5 ? argv[4] : NULL;
+        return cmd_call(argv[2], argv[3], args_json);
+    }
+    if (strcmp(argv[1], "validate") == 0) {
+        return cmd_validate(argv[2]);
+    }
+    if (strcmp(argv[1], "test") == 0) {
+        return cmd_test(argv[2]);
+    }
+    fprintf(stderr, "mcpkit-cli: unknown subcommand '%s'\n", argv[1]);
     return 2;
 }
