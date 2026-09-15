@@ -26,5 +26,6 @@
 #include "mcpkit/runtime/task.h"
 #include "mcpkit/runtime/executor.h"
 #include "mcpkit/runtime/sync.h"
+#include "mcpkit/runtime/threadpool.h"
 
 #endif

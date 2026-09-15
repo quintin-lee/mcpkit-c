@@ -28,6 +28,7 @@ add_library(mcpkit_core
   src/client/client.c
   src/runtime/executor.c
   src/runtime/sync.c
+  src/runtime/threadpool.c
 )
 target_include_directories(mcpkit_core PUBLIC include)
 
