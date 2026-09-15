@@ -34,6 +34,14 @@ Toolchain baseline: GCC >= 13 or Clang >= 17, CMake >= 3.28, C23
 (`-std=c2x` must compile `nullptr`, `bool`, `static_assert`,
 `<threads.h>`, `<stdatomic.h>`).
 
+## Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [Quickstart](docs/quickstart.md) | Minimal server + client, build options |
+| [Module reference](docs/module-reference.md) | All public headers grouped by layer |
+| [Architecture](docs/architecture/overview.md) | Layering, ownership, threading model |
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
