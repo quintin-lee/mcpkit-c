@@ -151,6 +151,7 @@ static const char *const k_known_methods[] = {
     "prompts/list",
     "prompts/get",
     "completion/complete",
+    "completion/list",
     "logging/setLevel",
     "notifications/initialized",
     "notifications/cancelled",

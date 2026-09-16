@@ -109,6 +109,48 @@ static mcp_json_value_t *text_schema(mcp_context_t *ctx) {
     return schema;
 }
 
+// Completion provider: returns an array of suggestion strings.
+static mcp_json_value_t *compl_provider(mcp_context_t *ctx, mcp_session_t *s,
+                                        const mcp_json_value_t *ref, void *ud) {
+    (void)s;
+    (void)ud;
+    mcp_json_value_t *arr = mcp_json_array_new(ctx);
+    if (arr == NULL) {
+        return NULL;
+    }
+    // ref is {"type":"ref","value":"prompt/greet"} — we return a couple of hints.
+    const char *val = "hint";
+    if (ref != NULL) {
+        const mcp_json_value_t *v = mcp_json_object_get(ctx, ref, "value");
+        if (v != NULL) {
+            const char *s = NULL;
+            if (mcp_json_string_value(ctx, v, &s) == MCP_OK && s != NULL) {
+                val = s;
+            }
+        }
+    }
+    mcp_json_value_t *s1 = mcp_json_string_new(ctx, val);
+    mcp_json_value_t *s2 = mcp_json_string_new(ctx, "other");
+    if (s1 == NULL || s2 == NULL || mcp_json_array_append(ctx, arr, s1) != MCP_OK ||
+        mcp_json_array_append(ctx, arr, s2) != MCP_OK) {
+        mcp_json_destroy(ctx, s1);
+        mcp_json_destroy(ctx, s2);
+        mcp_json_destroy(ctx, arr);
+        return NULL;
+    }
+    return arr;
+}
+
+// Returns NULL (simulating provider failure).
+static mcp_json_value_t *compl_fail(mcp_context_t *ctx, mcp_session_t *s,
+                                    const mcp_json_value_t *ref, void *ud) {
+    (void)ctx;
+    (void)s;
+    (void)ref;
+    (void)ud;
+    return NULL;
+}
+
 static mcp_json_value_t *params1(mcp_context_t *ctx, const char *text) {
     mcp_json_value_t *p = mcp_json_object_new(ctx);
     mcp_json_value_t *v = mcp_json_string_new(ctx, text);
@@ -171,7 +213,9 @@ static void setup(mcp_context_t **ctx, mcp_server_t **srv, mcp_session_t **s) {
                                                                "text/plain", static_read,
                                                                NULL)) == MCP_OK);
     assert(mcp_server_add_prompt(*ctx, *srv, mcp_prompt_new(*ctx, "greet", "say hi", static_prompt,
-                                                           NULL)) == MCP_OK);
+                                                            NULL)) == MCP_OK);
+    assert(mcp_server_register_completion_provider(*ctx, *srv, "prompt/", compl_provider,
+                                                    NULL) == MCP_OK);
     *s = mcp_server_create_session(*ctx, *srv);
     assert(*s);
 }
@@ -300,6 +344,59 @@ int main(void) {
     p = mcp_json_object_new(ctx);
     assert(mcp_json_object_set(ctx, p, "name", mcp_json_string_new(ctx, "nope")) == MCP_OK);
     r = dispatch_new(ctx, srv, s, "m3", "prompts/get", p);
+    assert(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
+    mcp_message_destroy(ctx, r);
+
+    // completion/list returns empty array
+    r = dispatch_new(ctx, srv, s, "cl1", "completion/list", NULL);
+    res = mcp_message_result(ctx, r);
+    assert(res);
+    const mcp_json_value_t *comps = mcp_json_object_get(ctx, res, "completions");
+    assert(comps && mcp_json_array_size(ctx, comps) == 0);
+    mcp_message_destroy(ctx, r);
+
+    // completion/complete: build params with ref object + argument
+    p = mcp_json_object_new(ctx);
+    mcp_json_value_t *ref_obj = mcp_json_object_new(ctx);
+    mcp_json_value_t *type_v = mcp_json_string_new(ctx, "ref");
+    mcp_json_value_t *val_v = mcp_json_string_new(ctx, "prompt/greet");
+    assert(ref_obj && type_v && val_v);
+    assert(mcp_json_object_set(ctx, ref_obj, "type", type_v) == MCP_OK);
+    assert(mcp_json_object_set(ctx, ref_obj, "value", val_v) == MCP_OK);
+    assert(mcp_json_object_set(ctx, p, "ref", ref_obj) == MCP_OK);
+    mcp_json_value_t *arg_obj = mcp_json_object_new(ctx);
+    assert(arg_obj && mcp_json_object_set(ctx, arg_obj, "name", mcp_json_string_new(ctx, "greet")) == MCP_OK);
+    assert(mcp_json_object_set(ctx, p, "argument", arg_obj) == MCP_OK);
+    r = dispatch_new(ctx, srv, s, "cc1", "completion/complete", p);
+    res = mcp_message_result(ctx, r);
+    assert(res);
+    comps = mcp_json_object_get(ctx, res, "completions");
+    assert(comps && mcp_json_array_size(ctx, comps) == 2);
+    const mcp_json_value_t *c0 = mcp_json_array_get(ctx, comps, 0);
+    const char *c0s = NULL;
+    assert(mcp_json_string_value(ctx, c0, &c0s) == MCP_OK && strcmp(c0s, "hint") == 0);
+    mcp_message_destroy(ctx, r);
+
+    // completion/complete: unknown reference -> empty completions (no provider match)
+    p = mcp_json_object_new(ctx);
+    ref_obj = mcp_json_object_new(ctx);
+    type_v = mcp_json_string_new(ctx, "ref");
+    val_v = mcp_json_string_new(ctx, "tool/echo");
+    arg_obj = mcp_json_object_new(ctx);
+    assert(ref_obj && type_v && val_v && arg_obj);
+    assert(mcp_json_object_set(ctx, ref_obj, "type", type_v) == MCP_OK);
+    assert(mcp_json_object_set(ctx, ref_obj, "value", val_v) == MCP_OK);
+    assert(mcp_json_object_set(ctx, p, "ref", ref_obj) == MCP_OK);
+    assert(mcp_json_object_set(ctx, p, "argument", arg_obj) == MCP_OK);
+    r = dispatch_new(ctx, srv, s, "cc2", "completion/complete", p);
+    res = mcp_message_result(ctx, r);
+    assert(res);
+    comps = mcp_json_object_get(ctx, res, "completions");
+    assert(comps && mcp_json_array_size(ctx, comps) == 0);
+    mcp_message_destroy(ctx, r);
+
+    // completion/complete: missing ref param -> -32602
+    r = dispatch_new(ctx, srv, s, "cc3", "completion/complete", NULL);
     assert(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
     mcp_message_destroy(ctx, r);
 

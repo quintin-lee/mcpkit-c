@@ -167,6 +167,8 @@ int main(void) {
     assert(mcp_client_get_prompt(ctx, c2, "p", NULL, &pres) == MCP_OK && pres != NULL);
     mcp_json_destroy(ctx, pres);
     assert(mcp_client_get_prompt(ctx, c2, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    // completion/complete via mcp_client_complete
+    assert(mcp_client_complete(ctx, c2, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
     mcp_client_destroy(ctx, c2);
     mcp_transport_destroy(ctx, t2);
     mcp_client_destroy(ctx, NULL);

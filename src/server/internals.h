@@ -9,6 +9,13 @@
 #include "mcpkit/server/resource.h"
 #include "mcpkit/server/prompt.h"
 #include "mcpkit/server/tool.h"
+#include "mcpkit/server/server.h"
+
+typedef struct {
+    char *ref_prefix;
+    mcp_completion_provider_fn fn;
+    void *user_data;
+} mcp_completion_entry_t;
 
 struct mcp_tool {
     char *name;
@@ -57,6 +64,9 @@ struct mcp_server {
     mcp_prompt_t **prompts;
     size_t n_prompts;
     size_t cap_prompts;
+    mcp_completion_entry_t *completions;
+    size_t n_completions;
+    size_t cap_completions;
     mcp_session_t **sessions;
     size_t n_sessions;
     size_t cap_sessions;

@@ -38,7 +38,12 @@ mcp_status_t mcp_client_call_tool(mcp_context_t *ctx, mcp_client_t *client,
 mcp_status_t mcp_client_read_resource(mcp_context_t *ctx, mcp_client_t *client,
                                       const char *uri, mcp_json_value_t **result_out);
 mcp_status_t mcp_client_get_prompt(mcp_context_t *ctx, mcp_client_t *client,
-                                   const char *name, mcp_json_value_t *args,
-                                   mcp_json_value_t **result_out);
+                                    const char *name, mcp_json_value_t *args,
+                                    mcp_json_value_t **result_out);
+// completion/complete: ref must be a string like "prompt/argName".
+// Returns a cloned completions array.
+mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
+                                 const char *ref, mcp_json_value_t *args,
+                                 mcp_json_value_t **result_out);
 
 #endif

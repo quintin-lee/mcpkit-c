@@ -372,6 +372,91 @@ static mcp_message_t *route_prompts_get(mcp_context_t *ctx, mcp_server_t *srv, m
     return resp;
 }
 
+static mcp_message_t *route_completion_list(mcp_context_t *ctx, mcp_server_t *srv,
+                                            const mcp_message_t *req) {
+    // Return an empty array – completion/list has no meaningful payload.
+    mcp_json_value_t *result = mcp_json_object_new(ctx);
+    mcp_json_value_t *comps = mcp_json_array_new(ctx);
+    if (result == NULL || comps == NULL) {
+        mcp_json_destroy(ctx, result);
+        mcp_json_destroy(ctx, comps);
+        return NULL;
+    }
+    if (mcp_json_object_set(ctx, result, "completions", comps) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        mcp_json_destroy(ctx, comps);
+        return NULL;
+    }
+    mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
+    if (resp == NULL) {
+        mcp_json_destroy(ctx, result);
+    }
+    return resp;
+}
+
+static mcp_message_t *route_completion_complete(mcp_context_t *ctx, mcp_server_t *srv,
+                                                mcp_session_t *s, const mcp_message_t *req) {
+    const mcp_json_value_t *params = mcp_message_params(ctx, req);
+    const mcp_json_value_t *ref_obj = params != NULL ? mcp_json_object_get(ctx, params, "ref") : NULL;
+    if (ref_obj == NULL || mcp_json_type(ctx, ref_obj) != MCP_JSON_OBJECT) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS,
+                        "completion/complete: missing ref object");
+    }
+    const char *ref_str = NULL;
+    if (get_string(ctx, ref_obj, "value", &ref_str) != MCP_OK || ref_str == NULL) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS,
+                        "completion/complete: ref.value missing or not a string");
+    }
+    // Find the first registered provider whose ref_prefix matches the reference.
+    for (size_t i = 0; i < srv->n_completions; i++) {
+        size_t plen = strlen(srv->completions[i].ref_prefix);
+        if (strncmp(ref_str, srv->completions[i].ref_prefix, plen) == 0) {
+            const mcp_json_value_t *args = mcp_json_object_get(ctx, params, "argument");
+            mcp_json_value_t *comps = srv->completions[i].fn(ctx, s, args,
+                                                              srv->completions[i].user_data);
+            if (comps == NULL) {
+                return err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR,
+                                "completion/complete: provider returned NULL");
+            }
+            if (mcp_json_type(ctx, comps) != MCP_JSON_ARRAY) {
+                mcp_json_destroy(ctx, comps);
+                return err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR,
+                                "completion/complete: provider returned non-array");
+            }
+            mcp_json_value_t *result = mcp_json_object_new(ctx);
+            if (result == NULL ||
+                mcp_json_object_set(ctx, result, "completions", comps) != MCP_OK) {
+                mcp_json_destroy(ctx, result);
+                mcp_json_destroy(ctx, comps);
+                return NULL;
+            }
+            mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
+            if (resp == NULL) {
+                mcp_json_destroy(ctx, result);
+            }
+            return resp;
+        }
+    }
+    // No matching provider registered – return empty completions.
+    mcp_json_value_t *result = mcp_json_object_new(ctx);
+    mcp_json_value_t *comps = mcp_json_array_new(ctx);
+    if (result == NULL || comps == NULL) {
+        mcp_json_destroy(ctx, result);
+        mcp_json_destroy(ctx, comps);
+        return NULL;
+    }
+    if (mcp_json_object_set(ctx, result, "completions", comps) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        mcp_json_destroy(ctx, comps);
+        return NULL;
+    }
+    mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
+    if (resp == NULL) {
+        mcp_json_destroy(ctx, result);
+    }
+    return resp;
+}
+
 static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s,
                                     const mcp_message_t *req, const char *method) {
     if (strcmp(method, "initialize") == 0) {
@@ -405,6 +490,12 @@ static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_s
     }
     if (strcmp(method, "prompts/get") == 0) {
         return route_prompts_get(ctx, srv, s, req);
+    }
+    if (strcmp(method, "completion/list") == 0) {
+        return route_completion_list(ctx, srv, req);
+    }
+    if (strcmp(method, "completion/complete") == 0) {
+        return route_completion_complete(ctx, srv, s, req);
     }
     return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "unknown method");
 }

@@ -82,6 +82,13 @@ static void free_all_sessions(mcp_context_t *ctx, mcp_server_t *srv) {
     srv_free(ctx, srv->sessions);
 }
 
+static void free_all_completions(mcp_context_t *ctx, mcp_server_t *srv) {
+    for (size_t i = 0; i < srv->n_completions; i++) {
+        srv_free(ctx, srv->completions[i].ref_prefix);
+    }
+    srv_free(ctx, srv->completions);
+}
+
 void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     if (srv == NULL) {
         return;
@@ -90,6 +97,7 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     free_all_tools(ctx, srv);
     free_all_resources(ctx, srv);
     free_all_prompts(ctx, srv);
+    free_all_completions(ctx, srv);
     srv_free(ctx, srv->name);
     srv_free(ctx, srv->version);
     srv_free(ctx, srv);
@@ -202,6 +210,54 @@ mcp_status_t mcp_server_remove_prompt(mcp_context_t *ctx, mcp_server_t *srv, con
         if (strcmp(srv->prompts[i]->name, name) == 0) {
             mcp_prompt_destroy(ctx, srv->prompts[i]);
             srv->prompts[i] = srv->prompts[--srv->n_prompts];
+            return MCP_OK;
+        }
+    }
+    return MCP_ERR_NOT_FOUND;
+}
+
+mcp_status_t mcp_server_register_completion_provider(mcp_context_t *ctx, mcp_server_t *srv,
+                                                     const char *ref_prefix,
+                                                     mcp_completion_provider_fn fn,
+                                                     void *user_data) {
+    if (srv == NULL || ref_prefix == NULL || fn == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    // Reject duplicate prefixes.
+    for (size_t i = 0; i < srv->n_completions; i++) {
+        if (strcmp(srv->completions[i].ref_prefix, ref_prefix) == 0) {
+            return MCP_ERR_ALREADY_EXISTS;
+        }
+    }
+    if (srv->n_completions == srv->cap_completions) {
+        size_t ncap = srv->cap_completions == 0 ? 4 : srv->cap_completions * 2;
+        mcp_completion_entry_t *nc = srv_realloc(ctx, srv->completions, ncap * sizeof(*nc));
+        if (nc == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+        srv->completions = nc;
+        srv->cap_completions = ncap;
+    }
+    char *copy = srv_strdup(ctx, ref_prefix);
+    if (copy == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    srv->completions[srv->n_completions].ref_prefix = copy;
+    srv->completions[srv->n_completions].fn = fn;
+    srv->completions[srv->n_completions].user_data = user_data;
+    srv->n_completions++;
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_remove_completion_provider(mcp_context_t *ctx, mcp_server_t *srv,
+                                                   const char *ref_prefix) {
+    if (srv == NULL || ref_prefix == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    for (size_t i = 0; i < srv->n_completions; i++) {
+        if (strcmp(srv->completions[i].ref_prefix, ref_prefix) == 0) {
+            srv_free(ctx, srv->completions[i].ref_prefix);
+            srv->completions[i] = srv->completions[--srv->n_completions];
             return MCP_OK;
         }
     }

@@ -294,3 +294,47 @@ mcp_status_t mcp_client_get_prompt(mcp_context_t *ctx, mcp_client_t *client,
     }
     return mcp_client_request(ctx, client, "prompts/get", params, result_out);
 }
+
+mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
+                                 const char *ref, mcp_json_value_t *args,
+                                 mcp_json_value_t **result_out) {
+    if (client == NULL || ref == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    // ref is a JSON object {"type":"ref","value":ref}; args is a JSON object.
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_value_t *ref_obj = params != NULL ? mcp_json_object_new(ctx) : NULL;
+    if (params == NULL || ref_obj == NULL) {
+        mcp_json_destroy(ctx, params);
+        mcp_json_destroy(ctx, ref_obj);
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_value_t *type_v = mcp_json_string_new(ctx, "ref");
+    mcp_json_value_t *val_v = mcp_json_string_new(ctx, ref);
+    if (type_v == NULL || val_v == NULL) {
+        mcp_json_destroy(ctx, type_v);
+        mcp_json_destroy(ctx, val_v);
+        mcp_json_destroy(ctx, params);
+        mcp_json_destroy(ctx, ref_obj);
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set(ctx, ref_obj, "type", type_v) != MCP_OK ||
+        mcp_json_object_set(ctx, ref_obj, "value", val_v) != MCP_OK) {
+        mcp_json_destroy(ctx, type_v);
+        mcp_json_destroy(ctx, val_v);
+        mcp_json_destroy(ctx, params);
+        mcp_json_destroy(ctx, ref_obj);
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set(ctx, params, "ref", ref_obj) != MCP_OK) {
+        mcp_json_destroy(ctx, params);
+        mcp_json_destroy(ctx, ref_obj);
+        return MCP_ERR_NOMEM;
+    }
+    if (args != NULL && mcp_json_object_set(ctx, params, "argument", args) != MCP_OK) {
+        mcp_json_destroy(ctx, args);
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    return mcp_client_request(ctx, client, "completion/complete", params, result_out);
+}
