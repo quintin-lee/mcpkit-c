@@ -24,6 +24,7 @@
 #include "mcpkit/transport/stdio.h"
 #include "mcpkit/transport/http.h"
 #include "mcpkit/transport/streamable_http.h"
+#include "mcpkit/transport/socket.h"
 #include "mcpkit/client/client.h"
 #include "mcpkit/runtime/task.h"
 #include "mcpkit/runtime/executor.h"

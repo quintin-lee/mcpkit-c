@@ -20,3 +20,8 @@ if(MCPKIT_BUILD_HTTP)
   add_executable(http-server http-server/main.c)
   target_link_libraries(http-server PRIVATE mcpkit_core)
 endif()
+
+if(MCPKIT_BUILD_SOCKET)
+  add_executable(socket-server socket-server/main.c)
+  target_link_libraries(socket-server PRIVATE mcpkit_core)
+endif()

@@ -63,6 +63,11 @@ if(MCPKIT_BUILD_HTTP)
     src/transport/streamable_http.c
   )
 endif()
+if(MCPKIT_BUILD_SOCKET)
+  target_sources(mcpkit_core PRIVATE
+    src/transport/socket.c
+  )
+endif()
 target_include_directories(mcpkit_core PUBLIC include)
 target_include_directories(mcpkit_core PRIVATE "${CMAKE_BINARY_DIR}/include")
 
