@@ -83,6 +83,9 @@ All functions take `ctx` as first argument. `ctx == NULL` → builtin JSON
 backend. NULL backend pointer → builtin.
 
 ### `value.h`
+Kind enum (`mcp_json_type_t`): `MCP_JSON_NULL, MCP_JSON_BOOL,
+MCP_JSON_NUMBER, MCP_JSON_STRING, MCP_JSON_ARRAY, MCP_JSON_OBJECT`.
+
 Constructors (each returns a caller-owned value or NULL on OOM):
 ```c
 mcp_json_value_t *mcp_json_null_new(ctx);
@@ -90,36 +93,42 @@ mcp_json_value_t *mcp_json_bool_new(ctx, bool);
 mcp_json_value_t *mcp_json_number_new(ctx, double);   /* NaN/Inf rejected */
 mcp_json_value_t *mcp_json_string_new(ctx, const char *);
 mcp_json_value_t *mcp_json_string_new_n(ctx, const char *, size_t);
-mcp_json_value_t *mcp_json_object_new(ctx);
 mcp_json_value_t *mcp_json_array_new(ctx);
-```
-Accessors:
-```c
-mcp_json_kind_t mcp_json_kind(ctx, const mcp_json_value_t *);
-int             mcp_json_string_value(ctx, const mcp_json_value_t *, const char **);
-int             mcp_json_number_value(ctx, const mcp_json_value_t *, double *);
-int             mcp_json_bool_value(ctx, const mcp_json_value_t *, bool *);
-void            mcp_json_destroy(ctx, mcp_json_value_t *);   /* frees tree */
+mcp_json_value_t *mcp_json_object_new(ctx);
+
+/* Deep copy through the active backend */
 mcp_json_value_t *mcp_json_clone(ctx, const mcp_json_value_t *);
+void              mcp_json_destroy(ctx, mcp_json_value_t *);   /* frees tree */
+
+/* Accessors: MCP_OK on kind match, MCP_ERR_INVALID_ARGUMENT otherwise */
+mcp_json_type_t   mcp_json_type(ctx, const mcp_json_value_t *);
+mcp_status_t      mcp_json_bool_value(ctx, const mcp_json_value_t *, bool *out);
+mcp_status_t      mcp_json_number_value(ctx, const mcp_json_value_t *, double *out);
+mcp_status_t      mcp_json_string_value(ctx, const mcp_json_value_t *, const char **out);
 ```
 
 ### `object.h`
 ```c
-int             mcp_json_object_get(ctx, mcp_json_value_t *obj, const char *key,
-                                    mcp_json_value_t **out);  /* borrowed */
-int             mcp_json_object_set(ctx, mcp_json_value_t *obj, const char *key,
-                                    mcp_json_value_t *val);
 /* container takes ownership of val on OK; caller keeps it on ERR */
-int             mcp_json_object_key_at(ctx, mcp_json_value_t *obj, size_t i,
-                                       const char **key, size_t *len);
+mcp_status_t          mcp_json_object_set(ctx, mcp_json_value_t *obj,
+                                          const char *key, mcp_json_value_t *val);
+const mcp_json_value_t *mcp_json_object_get(ctx, const mcp_json_value_t *obj,
+                                             const char *key);   /* borrowed */
+bool                  mcp_json_object_has(ctx, const mcp_json_value_t *obj,
+                                           const char *key);
+size_t                mcp_json_object_size(ctx, const mcp_json_value_t *obj);
+const char           *mcp_json_object_key_at(ctx, const mcp_json_value_t *obj,
+                                              size_t i);   /* borrowed, NULL past end */
 ```
 
 ### `array.h`
 ```c
-int             mcp_json_array_append(ctx, mcp_json_value_t *arr, mcp_json_value_t *val);
-int             mcp_json_array_at(ctx, const mcp_json_value_t *arr, size_t i,
-                                   mcp_json_value_t **out);  /* borrowed */
-size_t          mcp_json_array_size(ctx, const mcp_json_value_t *arr);
+/* container takes ownership of val on OK; caller keeps it on ERR */
+mcp_status_t              mcp_json_array_append(ctx, mcp_json_value_t *arr,
+                                                mcp_json_value_t *val);
+const mcp_json_value_t   *mcp_json_array_get(ctx, const mcp_json_value_t *arr,
+                                              size_t i);   /* borrowed */
+size_t                    mcp_json_array_size(ctx, const mcp_json_value_t *arr);
 ```
 
 ### `json.h`
@@ -128,7 +137,6 @@ Parse / serialize / backend ops:
 mcp_json_value_t *mcp_json_parse(ctx, const char *text, size_t len);
 char             *mcp_json_serialize(ctx, const mcp_json_value_t *);  /* owned */
 void              mcp_json_free_string(ctx, char *s);                  /* same ctx */
-/* backend ops table (mcp_json_backend_ops_t) — swap via mcp_json_set_backend */
 void              mcp_json_set_backend(ctx, const mcp_json_backend_ops_t *ops);
 #define MCP_JSON_MAX_DEPTH 128
 ```
@@ -287,13 +295,17 @@ int           mcp_tool_require_perms(ctx, mcp_tool_t *, uint32_t perm_mask);
 
 ### `resource.h` / `prompt.h`
 ```c
+/* handler: (ctx, session, uri, user_data, mcp_json_value_t **result) */
 mcp_resource_t *mcp_resource_new(ctx, const char *uri, const char *name,
                                  mcp_resource_handler_fn handler, void *ud);
 void            mcp_resource_destroy(ctx, mcp_resource_t *);
+/* cleanup hook: called by mcp_resource_destroy with the stored user_data */
 int             mcp_resource_set_cleanup(ctx, mcp_resource_t *,
                                          mcp_resource_cleanup_fn cleanup);
-/* handler: (ctx, session, uri, user_data, mcp_json_value_t **result) */
+int             mcp_resource_set_contents(ctx, mcp_resource_t *, mcp_json_value_t *);
+int             mcp_resource_set_mime(ctx, mcp_resource_t *, const char *);
 
+/* handler: (ctx, session, args, user_data, mcp_json_value_t **result) */
 mcp_prompt_t   *mcp_prompt_new(ctx, const char *name, const char *desc,
                                mcp_json_value_t *args_schema,
                                mcp_prompt_handler_fn handler, void *ud);
@@ -366,25 +378,26 @@ and `recv` returns `MCP_ERR_PROTOCOL`.
 ### `http.h`
 Buffer-level HTTP/1.1 parser/builder (no sockets).
 ```c
-mcp_http_request_t *mcp_http_request_parse(ctx, const char *buf, size_t len);
+mcp_http_request_t *mcp_http_parse_request(ctx, const char *data, size_t len);
+void                mcp_http_request_destroy(ctx, mcp_http_request_t *req);
+mcp_http_method_t   mcp_http_request_method(ctx, const mcp_http_request_t *);
+const char         *mcp_http_request_target(ctx, const mcp_http_request_t *);
+const char         *mcp_http_header(ctx, const mcp_http_request_t *, const char *name);
+const char         *mcp_http_request_body(ctx, const mcp_http_request_t *, size_t *len_out);
+
 mcp_http_response_t *mcp_http_response_new(ctx, int status, const char *reason);
-int                  mcp_http_response_send(ctx, mcp_http_response_t *,
-                                            FILE *out);
-void                 mcp_http_request_destroy(ctx, mcp_http_request_t *);
-void                 mcp_http_response_destroy(ctx, mcp_http_response_t *);
+int                  mcp_http_response_set_header(ctx, resp, const char *name, const char *value);
+int                  mcp_http_response_set_body(ctx, resp, const char *body, size_t len);
+const char          *mcp_http_response_serialize(ctx, mcp_http_response_t *resp);
+void                 mcp_http_response_destroy(ctx, mcp_http_response_t *resp);
 ```
 
 ### `streamable_http.h`
-Session-management serve loop over `mcp_http_io` (read/write callbacks):
+Session-management serve loop over `mcp_http_io_t` (opaque read/write callbacks):
 ```c
-typedef struct {
-    int (*read)(void *ud, char *buf, size_t cap, size_t *got);
-    int (*write)(void *ud, const char *buf, size_t len);
-} mcp_http_io;
-
-int mcp_http_serve(ctx, mcp_server_t *, mcp_http_io *io, void *io_ud);
-/* Wraps a response body as an SSE-compatible event stream */
-int mcp_sse_wrap(ctx, const char *body, char **sse_out);
+mcp_status_t mcp_http_serve(ctx, mcp_server_t *, mcp_http_io_t *io);
+/* Wraps a JSON-RPC body as an SSE-compatible event stream (owned string) */
+char       *mcp_sse_wrap(ctx, const char *json_text);
 ```
 Accepts `POST` (JSON-RPC body), `GET` (SSE stream or 405), `DELETE`
 (session teardown). Sessions are loop-local (up to 16, `sess-N` ids);
@@ -422,7 +435,10 @@ int          mcp_client_get_prompt(ctx, c, const char *name,
                                    mcp_json_value_t *args,
                                    mcp_json_value_t **result_out);
 
-/* Low-level request: any method; result_out may be NULL */
+/* Low-level request: any method; result_out may be NULL.
+   mcp_status_t: OK on success (result_out set), MCP_ERR_PROTOCOL on
+   a real JSON-RPC error response (error_code maps via mcp_rpc_code_to_status),
+   transport/alloc status otherwise. */
 int          mcp_client_request(ctx, c, const char *method,
                                 mcp_json_value_t *params,
                                 mcp_json_value_t **result_out);
