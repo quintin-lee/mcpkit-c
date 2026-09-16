@@ -26,11 +26,9 @@ typedef struct {
 
 ### `error.h`
 `mcp_status_t` — 11 codes:
-`MCP_OK=0, MCP_ERR_NOMEM=1, MCP_ERR_INVALID_ARGUMENT=2, MCP_ERR_IO=3,
-MCP_ERR_PROTOCOL=4, MCP_ERR_UNSUPPORTED=5, MCP_ERR_NOMEM=1 …`
-plus `MCP_ERR_NOT_FOUND`, `MCP_ERR_ALREADY_EXISTS`,
-`MCP_ERR_SESSION_NOT_INITIALIZED`, `MCP_ERR_PERMISSION_DENIED`,
-`MCP_ERR_INTERNAL`.
+`MCP_OK=0, MCP_ERR_INVALID_ARGUMENT, MCP_ERR_NOMEM, MCP_ERR_IO,
+MCP_ERR_PROTOCOL, MCP_ERR_TIMEOUT, MCP_ERR_CANCELLED, MCP_ERR_NOT_FOUND,
+MCP_ERR_ALREADY_EXISTS, MCP_ERR_UNSUPPORTED, MCP_ERR_PERMISSION`.
 `mcp_status_string()` returns a human-readable name for any value, including
 out-of-range (returns `"MCP_ERR_UNKNOWN"`).
 
@@ -145,16 +143,20 @@ mcp_json_value_t *mcp_schema_string_new(ctx);
 mcp_json_value_t *mcp_schema_number_new(ctx);
 mcp_json_value_t *mcp_schema_integer_new(ctx);
 mcp_json_value_t *mcp_schema_boolean_new(ctx);
-mcp_json_value_t *mcp_schema_array_new(ctx);
-mcp_json_value_t *mcp_schema_null_new(ctx);
-int               mcp_schema_add_property(ctx, schema, key, subschema);
-int               mcp_schema_add_required(ctx, schema, key);
-int               mcp_schema_add_min(ctx, schema, double);
-int               mcp_schema_add_max(ctx, schema, double);
-int               mcp_schema_add_enum(ctx, schema, value);
-/* validate — returns MCP_OK or MCP_ERR_INVALID_ARGUMENT */
+mcp_json_value_t *mcp_schema_array_new(ctx, mcp_json_value_t *items);
+
+int               mcp_schema_add_property(ctx, schema, name, subschema);
+int               mcp_schema_add_required(ctx, schema, name);
+int               mcp_schema_add_enum(ctx, schema, mcp_json_value_t *values);
+int               mcp_schema_set_minimum(ctx, schema, double);
+int               mcp_schema_set_maximum(ctx, schema, double);
+int               mcp_schema_set_description(ctx, schema, const char *);
+
+/* MCP_OK on match, MCP_ERR_INVALID_ARGUMENT on mismatch */
 int               mcp_schema_validate(ctx, const mcp_json_value_t *schema,
                                        const mcp_json_value_t *instance);
+/* same, plus a human-readable failure path on mismatch */
+int               mcp_schema_validate_verbose(ctx, schema, instance, char **path_out);
 ```
 
 ---
@@ -162,8 +164,8 @@ int               mcp_schema_validate(ctx, const mcp_json_value_t *schema,
 ## Protocol (`mcpkit/protocol/`)
 
 ### `message.h`
-Opaque `mcp_message_t` wrapping a JSON DOM. Three kinds:
-request, response, notification.
+Opaque `mcp_message_t` wrapping a JSON DOM. Kinds (`mcp_msg_kind_t`):
+`MCP_MSG_INVALID / MCP_MSG_REQUEST / MCP_MSG_NOTIFICATION / MCP_MSG_RESPONSE`.
 
 ```c
 /* Builders */
@@ -171,25 +173,30 @@ mcp_message_t *mcp_request_new_number_id(ctx, double id, const char *method,
                                          mcp_json_value_t *params);
 mcp_message_t *mcp_request_new_string_id(ctx, const char *id, const char *method,
                                          mcp_json_value_t *params);
-mcp_message_t *mcp_response_new_number_id(ctx, double id, mcp_json_value_t *result);
-mcp_message_t *mcp_response_err_new(ctx, double id, int code, const char *message,
+mcp_message_t *mcp_response_ok_new(ctx, const mcp_message_t *req,
+                                   mcp_json_value_t *result);
+mcp_message_t *mcp_response_err_new(ctx, const mcp_message_t *req_or_null,
+                                    int code, const char *message,
                                     mcp_json_value_t *data);
-mcp_message_t *mcp_notification_new(ctx, const char *method, mcp_json_value_t *params);
+mcp_message_t *mcp_notification_new(ctx, const char *method,
+                                    mcp_json_value_t *params);
 
 /* Lifecycle */
 void           mcp_message_destroy(ctx, mcp_message_t *);
 char          *mcp_message_serialize(ctx, const mcp_message_t *);  /* owned */
 mcp_message_t *mcp_message_parse(ctx, const char *text, size_t len); /* NULL on fail */
 
-/* Accessors (return MCP_OK on success) */
+/* Accessors */
 mcp_msg_kind_t mcp_message_kind(ctx, const mcp_message_t *);
+const char    *mcp_message_jsonrpc(ctx, const mcp_message_t *);
+const char    *mcp_message_method(ctx, const mcp_message_t *);
+const mcp_json_value_t *mcp_message_params(ctx, const mcp_message_t *);
+mcp_id_type_t  mcp_message_id_type(ctx, const mcp_message_t *);
+const char    *mcp_message_id_string(ctx, const mcp_message_t *);
 int            mcp_message_id_number(ctx, const mcp_message_t *, double *out);
-int            mcp_message_id_string(ctx, const mcp_message_t *, const char **out);
-int            mcp_message_method(ctx, const mcp_message_t *, const char **out);
-int            mcp_message_error_code(ctx, const mcp_message_t *, int *out);
-int            mcp_message_error_message(ctx, const mcp_message_t *, const char **out);
 const mcp_json_value_t *mcp_message_result(ctx, const mcp_message_t *);
-const char    *mcp_message_jsonrpc(ctx, const mcp_message_t *);  /* "2.0" */
+int            mcp_message_error_code(ctx, const mcp_message_t *, int *out);
+const char    *mcp_message_error_text(ctx, const mcp_message_t *);
 ```
 
 RPC status codes used in `mcp_response_err_new` and `mcp_message_error_code`:
@@ -200,7 +207,6 @@ RPC status codes used in `mcp_response_err_new` and `mcp_message_error_code`:
 | `MCP_RPC_METHOD_NOT_FOUND` | -32601 | unknown method |
 | `MCP_RPC_INVALID_PARAMS` | -32602 | params failed validation |
 | `MCP_RPC_INTERNAL_ERROR` | -32603 | server-internal failure |
-| `MCP_RPC_SERVER_ERROR` | -32000 | custom server error range |
 
 ### `initialize.h`
 ```c
@@ -270,7 +276,11 @@ typedef mcp_status_t (*mcp_tool_handler_fn)(
 void          mcp_tool_destroy(ctx, mcp_tool_t *);
 
 /* Visibility (MCP Apps layer; default = BOTH) */
-typedef enum { MCP_VIS_MODEL=1, MCP_VIS_APP=2, MCP_VIS_BOTH=3 } mcp_tool_visibility_t;
+typedef enum mcp_tool_visibility {
+    MCP_TOOL_VIS_MODEL = 0,
+    MCP_TOOL_VIS_APP   = 1,
+    MCP_TOOL_VIS_BOTH  = 2,
+} mcp_tool_visibility_t;
 int           mcp_tool_set_visibility(ctx, mcp_tool_t *, mcp_tool_visibility_t);
 int           mcp_tool_require_perms(ctx, mcp_tool_t *, uint32_t perm_mask);
 ```
@@ -292,13 +302,15 @@ void           mcp_prompt_destroy(ctx, mcp_prompt_t *);
 
 ### `session.h`
 ```c
+bool mcp_session_is_initialized(ctx, const mcp_session_t *);
 /* Apps-host flag: affects tool visibility filter in tools/list */
 int  mcp_session_set_apps_host(ctx, mcp_session_t *, int flag);
-int  mcp_session_is_apps_host(ctx, const mcp_session_t *);
+bool mcp_session_is_apps_host(ctx, const mcp_session_t *);
 /* Permission grants (mask semantics: 0 = none; all-bits = all granted) */
 int  mcp_session_grant(ctx, mcp_session_t *, uint32_t perm_mask);
 int  mcp_session_revoke(ctx, mcp_session_t *, uint32_t perm_mask);
-int  mcp_session_grants(ctx, const mcp_session_t *, uint32_t perm_mask); /* nonzero if any */
+bool mcp_session_grants(ctx, const mcp_session_t *, uint32_t perm_mask);
+/* nonzero if any bit in mask is granted */
 ```
 
 ### `dispatcher.h`
@@ -447,7 +459,7 @@ mcp_executor_t *mcp_sync_executor_create(ctx);
 C11 `<threads.h>` backed. `0` threads → returns NULL.
 Destroy without wait discards pending tasks.
 ```c
-mcp_executor_t *mcp_threadpool_create(ctx, unsigned int n_threads);
+mcp_executor_t *mcp_threadpool_create(ctx, size_t thread_count);
 /* task runs with the ctx captured at submit time (per-node) */
 ```
 
@@ -456,7 +468,7 @@ Monotonic (`CLOCK_MONOTONIC`) timer wheel.
 ```c
 mcp_timer_t  *mcp_timer_create(ctx);
 void          mcp_timer_destroy(ctx, mcp_timer_t *t);
-int           mcp_timer_schedule(ctx, t, unsigned ms, mcp_task_fn fn, void *arg);
+int           mcp_timer_schedule(ctx, t, uint64_t delay_ms, mcp_task_fn fn, void *arg);
 int           mcp_timer_poll(ctx, t);   /* runs all due tasks in FIFO order */
 int           mcp_timer_cancel(ctx, t, mcp_task_fn fn, void *arg);
 ```
@@ -478,34 +490,40 @@ every recv.
 ## Apps (`mcpkit/apps/`)
 
 ### `csp.h`
-Default-deny 4-domain Content-Security-Policy builder.
+Content-Security-Policy builder; default-deny instance is the starting point.
 ```c
-mcp_csp_t *mcp_csp_create(ctx);
+mcp_csp_t *mcp_csp_default_deny_new(ctx);
 void       mcp_csp_destroy(ctx, mcp_csp_t *csp);
-int        mcp_csp_set(ctx, csp, mcp_csp_domain_t domain, const char *directive);
-int        mcp_csp_clear(ctx, csp, mcp_csp_domain_t domain);
-char      *mcp_csp_serialize(ctx, csp);  /* owned string */
+int        mcp_csp_set(ctx, csp, const char *directive, const char *sources_or_null);
+int        mcp_csp_serialize(ctx, const mcp_csp_t *csp, char **out);  /* owned */
 ```
-Domains: `MCP_CSP_DEFAULT`, `MCP_CSP_SCRIPT`, `MCP_CSP_STYLE`,
-`MCP_CSP_CONNECT`. Default = `none` (deny all).
+Directives are CSP keywords (`default-src`, `script-src`, `style-src`,
+`connect-src`, …); `sources_or_null == NULL` means the directive applies
+with no sources.
 
 ### `ui.h`
-`ui://` UI resource with optional lifecycle hooks and `_meta.ui` stamping.
+`ui://` UI resources, permission macros, and mount lifecycle.
 ```c
-mcp_ui_resource_t *mcp_ui_resource_create(ctx,
-    const char *uri,          /* must start with "ui://" */
-    const char *html,
-    const mcp_csp_t *csp,    /* NULL → default-deny snapshot */
-    mcp_ui_on_mount_fn on_mount,       /* called when host mounts */
-    mcp_ui_on_unmount_fn on_unmount,   /* called when host unmounts */
-    void *user_data);
+#define MCP_APPS_UI_MIME "text/html;profile=mcp-app"
+#define MCP_APPS_UI_SCHEME "ui://"
+#define MCP_APPS_PERM_CALL_TOOL (1u << 0)
+#define MCP_APPS_PERM_READ_STATE (1u << 1)
 
-/* Result helper: overwrites _meta.ui.resourceUri in the result object */
-int mcp_ui_result_with_ui(ctx, mcp_json_value_t *result, const char *uri);
+/* UI resource: a regular resource tagged for Apps hosts */
+mcp_resource_t *mcp_apps_ui_resource_new(ctx, const char *uri, const char *name,
+                                         const char *html,
+                                         const mcp_csp_t *csp_or_null);
+/* Stamps _meta.ui.resourceUri into a tool-call result object */
+int mcp_apps_result_with_ui(ctx, mcp_json_value_t *result,
+                            const char *resource_uri);
 
-/* Stamps the resource contents array into a resources/read result */
-int mcp_ui_resource_read_result(ctx, mcp_ui_resource_t *res,
-                                mcp_json_value_t **result_out);
+/* Mount lifecycle: host calls mount, runs on_mount, unmount runs on_unmount */
+typedef void (*mcp_apps_lifecycle_fn)(ctx, mcp_session_t *session, void *user_data);
+int mcp_apps_mount(ctx, mcp_session_t *session,
+                   mcp_apps_lifecycle_fn on_mount_or_null,
+                   mcp_apps_lifecycle_fn on_unmount_or_null,
+                   void *user_data, mcp_apps_mount_t **handle_out);
+int mcp_apps_unmount(ctx, mcp_apps_mount_t *handle);
 ```
 
 ---

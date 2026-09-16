@@ -81,42 +81,34 @@ int main(void) {
 
 ## Minimal client call
 
+The `mcpkit-cli` tool demonstrates the full client flow. A raw C client
+needs a transport (e.g. pipes to a spawned server); see
+`tools/mcpkit-cli/main.c` for the spawn + fdopen wiring and
+`examples/client/` for the client-side API usage:
+
 ```c
-#include <stdio.h>
 #include "mcpkit/mcpkit.h"
 
-int main(int argc, char *argv[]) {
-    /* argv[1] = path to stdio-server binary. */
-    mcp_context_t *ctx = mcp_context_create(NULL);
+mcp_transport_t *t = mcp_stdio_transport_create(ctx, file_in, file_out);
+mcp_client_t    *c = mcp_client_create(ctx, t);
+mcp_client_connect(ctx, c);
+mcp_client_initialize(ctx, c, "demo-client", mcpkit_version_string(), NULL);
 
-    /* Pipe the server's stdin/stdout through the transport.  */
-    FILE *in  = popen(argv[1], "r");   /* example: read side */
-    /* In practice use a process-launch helper or the CLI example. */
-
-    mcp_transport_t *t = mcp_stdio_transport_create(ctx, in, stdout);
-    mcp_client_t    *c = mcp_client_create(ctx, t);
-    mcp_client_connect(ctx, c);
-    mcp_client_initialize(ctx, c, "demo-client", mcpkit_version_string(), NULL);
-
-    /* Call the echo tool. */
-    mcp_json_value_t *args = mcp_json_parse(ctx, "{\"text\":\"hello\"}", 15);
-    mcp_json_value_t *result;
-    mcp_client_call_tool(ctx, c, "echo", args, &result);
-    if (result) {
-        const char *out = mcp_message_serialize(ctx, result);
-        if (out) { puts(out); mcp_json_free_string(ctx, out); }
-        mcp_json_destroy(ctx, result);
-    }
-    mcp_client_destroy(ctx, c);
-    mcp_transport_destroy(ctx, t);
-    mcp_context_destroy(ctx);
-    return 0;
+mcp_json_value_t *args =
+    mcp_json_parse(ctx, "{\"text\":\"hello\"}", 15);
+mcp_json_value_t *result = NULL;
+mcp_client_call_tool(ctx, c, "echo", args, &result);
+if (result) {
+    char *out = mcp_json_serialize(ctx, result);
+    if (out) { puts(out); mcp_json_free_string(ctx, out); }
+    mcp_json_destroy(ctx, result);
 }
+mcp_client_destroy(ctx, c);
+mcp_transport_destroy(ctx, t);
 ```
 
-> For a fully working client example see `examples/client/` and the
-> `mcpkit-cli test` subcommand, which exercises the full init → list →
-> call → ping cycle against a live stdio-server.
+> `args` is owned by the client on every failure path (no leak); on
+> success the client takes it and `result` is caller-owned.
 
 ## CMake options
 
