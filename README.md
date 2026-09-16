@@ -29,15 +29,14 @@ core.
   filters, and session permission masks.
 - **CLI** — `mcpkit-cli` with `inspect`, `call`, `validate`, and
   `test` subcommands that spawn and drive a server process over pipes.
-- **Tested** — 30 unit + acceptance tests, deterministic fuzz corpus,
+- **Tested** — 32 unit + acceptance tests, deterministic fuzz corpus,
   AddressSanitizer + UBSanitizer build presets.
 
 ## Quick start
 
 ```sh
-# build with tests and examples
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-     -DMCPKIT_BUILD_EXAMPLES=ON -DMCPKIT_BUILD_TOOLS=ON
+# build with tests and examples (both ON by default)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 
 # run the test suite
@@ -60,7 +59,7 @@ client you can compile against the library.
 | Option | Default | Description |
 |---|---|---|
 | `MCPKIT_BUILD_TESTS` | `ON` | Build unit and acceptance tests |
-| `MCPKIT_BUILD_EXAMPLES` | `OFF` | Build all examples |
+| `MCPKIT_BUILD_EXAMPLES` | `ON` | Build all examples |
 | `MCPKIT_BUILD_TOOLS` | `ON` | Build `mcpkit-cli` |
 | `MCPKIT_BUILD_HTTP` | `OFF` | Build the HTTP transport and `http-server` example |
 | `MCPKIT_BUILD_FUZZ` | `OFF` | Build the `fuzz_json_stdin` driver |

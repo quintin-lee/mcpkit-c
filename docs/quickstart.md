@@ -17,7 +17,7 @@ After a successful build, run any example:
 ./build/examples/stdio-server
 ./build/examples/multi-session
 ./build/examples/threadpool-server
-./build/examples/client          # interactive client against a running server
+./build/examples/client list   # client against a running stdio server
 ```
 
 ## Minimal echo server (server side)
@@ -115,7 +115,7 @@ mcp_transport_destroy(ctx, t);
 | Option                     | Default | Description                          |
 |----------------------------|---------|--------------------------------------|
 | `MCPKIT_BUILD_TESTS`       | `ON`    | Build unit + acceptance tests        |
-| `MCPKIT_BUILD_EXAMPLES`    | `OFF`   | Build all examples                   |
+| `MCPKIT_BUILD_EXAMPLES`    | `ON`    | Build all examples                   |
 | `MCPKIT_BUILD_TOOLS`       | `ON`    | Build `mcpkit-cli`                   |
 | `MCPKIT_BUILD_HTTP`        | `OFF`   | Build HTTP transport + http example  |
 | `MCPKIT_BUILD_FUZZ`        | `OFF`   | Build fuzz-stdin target              |
