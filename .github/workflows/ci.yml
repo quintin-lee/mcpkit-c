@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cc: gcc
+            flags: ""
+          - cc: clang
+            flags: ""
+          - cc: gcc
+            flags: -DMCPKIT_ENABLE_ASAN=ON -DMCPKIT_ENABLE_UBSAN=ON
+            name: asan
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (${{ matrix.name || matrix.cc }})
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DMCPKIT_BUILD_HTTP=ON \
+            -DMCPKIT_BUILD_SOCKET=ON \
+            ${{ matrix.flags }}
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
