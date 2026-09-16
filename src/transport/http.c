@@ -71,7 +71,7 @@ static const char *find_headers_end(const char *data, size_t len) {
     if (len < 4) {
         return NULL;
     }
-    for (size_t i = 0; i + 3 < len + 1 && i + 4 <= len; i++) {
+    for (size_t i = 0; i + 4 <= len; i++) {
         if (data[i] == '\r' && data[i + 1] == '\n' && data[i + 2] == '\r'
             && data[i + 3] == '\n') {
             return data + i;

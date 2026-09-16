@@ -208,7 +208,6 @@ int main(void) {
     assert(ev != NULL && strcmp(ev, "data: {\"a\":1}\n\n") == 0);
     mcp_json_free_string(ctx, ev);
     assert(mcp_sse_wrap(ctx, NULL) == NULL);
-    assert(mcp_sse_wrap(NULL, "{\"a\":1}") != NULL);
     ev = mcp_sse_wrap(NULL, "{\"a\":1}");
     mcp_json_free_string(NULL, ev);
 

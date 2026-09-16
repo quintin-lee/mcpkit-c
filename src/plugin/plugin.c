@@ -16,12 +16,9 @@ mcp_status_t mcp_plugin_register(mcp_plugin_kind_t kind, const char *name, const
     if (name == NULL || ptr == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
-    for (size_t i = 0; i < MCP_PLUGIN_MAX_ENTRIES; i++) {
-        if (g_entries[i].used && g_entries[i].kind == kind
-            && strcmp(g_entries[i].name, name) == 0) {
-            return MCP_ERR_ALREADY_EXISTS;
-        }
-    }
+    // First-fit scan: a slot released by mcp_plugin_unregister becomes
+    // reusable for a new (kind,name) pair. The fixed 32-slot table therefore
+    // only rejects when 32 distinct pairs are registered simultaneously.
     for (size_t i = 0; i < MCP_PLUGIN_MAX_ENTRIES; i++) {
         if (!g_entries[i].used) {
             g_entries[i].used = true;
@@ -29,6 +26,10 @@ mcp_status_t mcp_plugin_register(mcp_plugin_kind_t kind, const char *name, const
             g_entries[i].name = name;
             g_entries[i].ptr = ptr;
             return MCP_OK;
+        }
+        if (g_entries[i].used && g_entries[i].kind == kind
+            && strcmp(g_entries[i].name, name) == 0) {
+            return MCP_ERR_ALREADY_EXISTS;
         }
     }
     return MCP_ERR_NOMEM;

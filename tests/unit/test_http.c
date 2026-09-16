@@ -20,6 +20,18 @@ int main(void) {
     assert(mcp_http_parse_request(NULL, "GARBAGE", 7) == NULL);
     assert(mcp_http_parse_request(NULL, "POST /mcp HTTP/1.1\r\n", 19) == NULL);
     assert(mcp_http_parse_request(NULL, NULL, 0) == NULL);
+
+    /* \r\n\r\n at the very end of the buffer (i+4==len) must be detected. */
+    {
+        const char *hdrs = "GET / HTTP/1.1\r\nHost: x\r\n\r\n";
+        size_t hlen = strlen(hdrs);
+        mcp_http_request_t *r2 = mcp_http_parse_request(NULL, hdrs, hlen);
+        assert(r2 != NULL);
+        assert(mcp_http_request_method(NULL, r2) == MCP_HTTP_GET);
+        size_t bl = 0;
+        assert(mcp_http_request_body(NULL, r2, &bl) == NULL || bl == 0);
+        mcp_http_request_destroy(NULL, r2);
+    }
     assert(mcp_http_parse_request(NULL,
         "POST /mcp HTTP/1.1\r\nContent-Length: 10\r\n\r\n{}", 44) == NULL);
 
