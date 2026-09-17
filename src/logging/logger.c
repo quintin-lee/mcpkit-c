@@ -2,13 +2,20 @@
 
 #include <stdio.h>
 
+/* Private logger layout. The allocator snapshot captured at create time is
+ * the one used by mcp_logger_destroy, so the logger always frees with the
+ * allocator that created it (counting-allocator observability is preserved). */
 struct mcp_logger {
-    mcp_allocator_t alloc;
-    mcp_log_sink_fn sink;
-    void *userdata;
-    mcp_log_level_t level;
+    mcp_allocator_t alloc;   /* snapshot of the create-time allocator */
+    mcp_log_sink_fn sink;    /* NULL sink is replaced with stderr at create */
+    void *userdata;          /* forwarded to sink on every log call */
+    mcp_log_level_t level;   /* minimum level emitted; default DEBUG */
 };
 
+/*
+ * Returns a statically-allocated level name; no allocation, caller must not
+ * free. "UNKNOWN" for out-of-range values so the map is total.
+ */
 const char *mcp_log_level_string(mcp_log_level_t level) {
     switch (level) {
         case MCP_LOG_DEBUG: return "DEBUG";
