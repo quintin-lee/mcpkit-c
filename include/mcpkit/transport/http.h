@@ -50,7 +50,7 @@ typedef enum {
  * buffer must outlive the request handle.
  *
  * @param ctx Context; may be NULL (default allocator).
- * @data Byte buffer containing the full request.
+ * @param data Byte buffer containing the full request.
  * @param len Number of bytes in data.
  * @return Owned mcp_http_request_t, or NULL on parse failure or OOM.
  */

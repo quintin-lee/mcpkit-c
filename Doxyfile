@@ -1,0 +1,32 @@
+# Doxyfile for mcpkit-c
+PROJECT_NAME           = "mcpkit-c"
+PROJECT_BRIEF          = "Modular production-grade MCP SDK / runtime for C23"
+PROJECT_NUMBER         = 0.1.0
+
+OUTPUT_DIRECTORY       = docs/api
+INPUT                = include src
+RECURSIVE            = YES
+EXCLUDE_PATTERNS     = */examples/* */tools/* */tests/*
+
+FILE_PATTERNS          = *.h *.c
+EXCLUDE_SYMBOLS       = test_ fuzz_
+
+PREDEFINED             = _POSIX_C_SOURCE=200809L \
+                         _DEFAULT_SOURCE \
+                         MCPKIT_VERSION=0.1.0 \
+                         MCPKIT_VERSION_MAJOR=0 \
+                         MCPKIT_VERSION_MINOR=1 \
+                         MCPKIT_VERSION_PATCH=0
+
+GENERATE_HTML        = YES
+HTML_OUTPUT          = doxygen
+GENERATE_LATEX       = NO
+
+QUIET                = NO
+WARNINGS             = NO
+WARN_IF_UNDOCUMENTED = NO
+
+BRIEF_MEMBER_DESC    = YES
+INHERIT_DOCS         = YES
+
+
