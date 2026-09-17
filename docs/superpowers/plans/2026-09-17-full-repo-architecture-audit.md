@@ -37,7 +37,7 @@ touch docs/audit/NOTES.tmp
 
 Purpose: one scratch file for raw findings as they are discovered; the final deliverable is assembled in Task 8.
 
-- [ ] **Step 2: Verify build options exist as documented**
+- [ ] **Step 2: Verify build options are declared and README drift**
 
 Read `cmake/MCPKitOptions.cmake`. Confirm these options are declared:
 `MCPKIT_BUILD_TESTS`, `MCPKIT_BUILD_EXAMPLES`, `MCPKIT_BUILD_TOOLS`,
@@ -159,7 +159,7 @@ grep -rn "add_test" tests/CMakeLists.txt
 ```
 
 - `shared` build, `plugin` registry: expected gaps — confirm and note why (no test target exists).
-- socket transport and Streamable HTTP: dedicated tests `test_socket`, `test_http`/`test_http_serve` exist but are option-gated (default OFF) — confirm they run under the Task 6 gate build; a gate build where they silently don't run is a finding.
+- socket transport and Streamable HTTP: dedicated tests `test_socket`, `test_http`/`test_http_serve` exist; their gating defaults differ — `MCPKIT_BUILD_SOCKET` defaults ON (test_socket runs in the baseline build) while `MCPKIT_BUILD_HTTP` defaults OFF. Confirm test_socket ran in the Task 1 baseline and test_http ran under the Task 6 gate build; a gate build where an expected test silently does not run is a finding.
 - Any unit area with zero test references → finding (Medium, untested critical path).
 
 - [ ] **Step 2: Cross-check docs vs. reality**
@@ -214,6 +214,9 @@ envelopes, malformed JSON, oversized lines — e.g.:
 cmake -S . -B build-asan -DMCPKIT_BUILD_FUZZ=ON -DCMAKE_BUILD_TYPE=Debug -DMCPKIT_ENABLE_ASAN=ON -DMCPKIT_ENABLE_UBSAN=ON
 cmake --build build-asan -j   # all fuzz targets: fuzz_json_stdin, fuzz_schema_stdin, fuzz_message_stdin, fuzz_http_stdin (HTTP-gated)
 ```
+
+Note: with `-DMCPKIT_BUILD_HTTP=OFF` (default), only the first three targets build. To also exercise `fuzz_http_stdin`:
+`cmake -S . -B build-asan -DMCPKIT_BUILD_HTTP=ON -DMCPKIT_BUILD_FUZZ=ON -DCMAKE_BUILD_TYPE=Debug -DMCPKIT_ENABLE_ASAN=ON -DMCPKIT_ENABLE_UBSAN=ON && cmake --build build-asan -j`
 
 Run the drivers and record any crash report (full ASan text) as evidence for a Critical finding.
 
