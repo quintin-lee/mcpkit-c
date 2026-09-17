@@ -107,9 +107,10 @@ int main(void) {
         "{\"jsonrpc\":\"2.0\",\"id\":6,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}}",
         "{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"contents\":[]}}",
         "{\"jsonrpc\":\"2.0\",\"id\":8,\"result\":{\"messages\":[]}}",
+        "{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{\"completions\":[]}}",
     };
     fake2.script = kShake;
-    fake2.nscript = 8;
+    fake2.nscript = 9;
     mcp_transport_t *t2 = mcp_transport_create(ctx, &kFake, &fake2);
     assert(t2 != NULL);
     mcp_client_t *c2 = mcp_client_create(ctx, t2);
@@ -169,6 +170,13 @@ int main(void) {
     assert(mcp_client_get_prompt(ctx, c2, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
     // completion/complete via mcp_client_complete
     assert(mcp_client_complete(ctx, c2, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    mcp_json_value_t *crow = mcp_json_object_new(ctx);
+    assert(mcp_json_object_set(ctx, crow, "text", mcp_json_string_new(ctx, "x")) == MCP_OK);
+    mcp_json_value_t *cre = NULL;
+    assert(mcp_client_complete(ctx, c2, "prompt/greet", crow, &cre) == MCP_OK && cre != NULL);
+    const mcp_json_value_t *carr = mcp_json_object_get(ctx, cre, "completions");
+    assert(carr != NULL && mcp_json_array_size(ctx, carr) == 0);
+    mcp_json_destroy(ctx, cre);
     mcp_client_destroy(ctx, c2);
     mcp_transport_destroy(ctx, t2);
     mcp_client_destroy(ctx, NULL);

@@ -328,17 +328,22 @@ mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
         mcp_json_destroy(ctx, ref_obj);
         return MCP_ERR_NOMEM;
     }
-    if (mcp_json_object_set(ctx, ref_obj, "type", type_v) != MCP_OK ||
-        mcp_json_object_set(ctx, ref_obj, "value", val_v) != MCP_OK) {
-        mcp_json_destroy(ctx, type_v);
+    if (mcp_json_object_set(ctx, ref_obj, "type", type_v) != MCP_OK) {
+        mcp_json_destroy(ctx, type_v); /* not attached */
         mcp_json_destroy(ctx, val_v);
         mcp_json_destroy(ctx, params);
         mcp_json_destroy(ctx, ref_obj);
         return MCP_ERR_NOMEM;
     }
-    if (mcp_json_object_set(ctx, params, "ref", ref_obj) != MCP_OK) {
+    if (mcp_json_object_set(ctx, ref_obj, "value", val_v) != MCP_OK) {
+        mcp_json_destroy(ctx, val_v); /* not attached */
+        mcp_json_destroy(ctx, ref_obj); /* recursively frees attached type_v */
         mcp_json_destroy(ctx, params);
-        mcp_json_destroy(ctx, ref_obj);
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set(ctx, params, "ref", ref_obj) != MCP_OK) {
+        mcp_json_destroy(ctx, ref_obj); /* not attached to params */
+        mcp_json_destroy(ctx, params);
         return MCP_ERR_NOMEM;
     }
     if (args != NULL && mcp_json_object_set(ctx, params, "argument", args) != MCP_OK) {
