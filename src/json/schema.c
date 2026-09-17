@@ -1,3 +1,16 @@
+// schema.c — JSON-Schema builder and validator.
+//
+// Builders (mcp_schema_*_new, mcp_schema_add_*, mcp_schema_set_*)
+// produce standard JSON-Schema document trees on the JSON DOM.
+// Validators (mcp_schema_validate, mcp_schema_validate_verbose)
+// perform recursive top-down type-checking; verbose mode fills a
+// caller-owned buffer with a dotted-path failure description.
+//
+// "integer" type check: a JSON number is an integer only when it is
+// finite and exactly representable as int64 (|d| <= 2^53-1 and d ==
+// (double)(int64_t)d). This is a libm-free approximation of the
+// JSON-Schema spec's "value is an integer" rule.
+
 #include "mcpkit/json/schema.h"
 
 #include <math.h>
@@ -11,6 +24,9 @@
 
 #define SCHEMA_MAX_PATH 256
 
+// Helper: create a schema object whose "type" key is set to the given
+// JSON-Schema type name. On any allocation or set failure both the
+// schema object and the type string are destroyed and NULL is returned.
 static mcp_json_value_t *typed_new(mcp_context_t *ctx, const char *type) {
     mcp_json_value_t *s = mcp_json_object_new(ctx);
     mcp_json_value_t *t = s != NULL ? mcp_json_string_new(ctx, type) : NULL;
@@ -68,6 +84,10 @@ mcp_json_value_t *mcp_schema_array_new(mcp_context_t *ctx, mcp_json_value_t *ite
     return s;
 }
 
+// Returns a mutable pointer to the schema's "key" child, creating it
+// (object or array per want_array) if absent. Returns NULL if the
+// child exists with the wrong type or if creation fails; in neither
+// case is any allocation leaked.
 static mcp_json_value_t *ensure_child(mcp_context_t *ctx, mcp_json_value_t *schema,
                                       const char *key, bool want_array) {
     const mcp_json_value_t *old = mcp_json_object_get(ctx, schema, key);
@@ -165,6 +185,10 @@ mcp_status_t mcp_schema_set_description(mcp_context_t *ctx, mcp_json_value_t *sc
     return MCP_OK;
 }
 
+// Checks whether a JSON number is an integer per JSON-Schema rules.
+// A finite double is an integer when |d| <= 2^53-1 and d casts
+// losslessly to int64_t. Values beyond 2^53-1 (e.g. 1e300) must
+// be rejected even though they are finite.
 static bool is_integer_value(double d) {
     // JSON Schema "integer": value must be finite and exactly representable as int64.
     if (!isfinite(d) || d < -9007199254740991.0 || d > 9007199254740991.0) {

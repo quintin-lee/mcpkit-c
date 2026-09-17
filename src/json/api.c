@@ -1,7 +1,21 @@
+// api.c — public JSON API dispatch layer.
+//
+// Every public JSON function resolves the active backend for `ctx`
+// (falling back to the built-in when ctx is NULL or has no custom
+// backend) and delegates. This file contains no JSON logic itself;
+// all parsing/serialization lives in builtin.c (or in user-supplied
+// backend implementations).
+
 #include "mcpkit/json/json.h"
 
 #include "mcpkit/core/context.h"
 
+/**
+ * Resolves which backend ops table to use:
+ *  1. The backend bound to `ctx`, if one was set.
+ *  2. Otherwise the built-in backend.
+ * `ctx` NULL → built-in.
+ */
 static const mcp_json_backend_ops_t *resolve(mcp_context_t *ctx) {
     if (ctx != NULL) {
         const mcp_json_backend_ops_t *ops = mcp_context_json_backend(ctx);

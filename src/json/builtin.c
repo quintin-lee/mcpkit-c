@@ -1,3 +1,15 @@
+// builtin.c — built-in JSON backend: strict-JSON DOM, parser,
+// serializer, and UTF-8 validation (Hoehrmann DFA).
+//
+// This translation unit implements mcp_json_backend_ops_t and
+// registers it as the process-wide built-in. It is the reference
+// backend; user code can swap it per-context via
+// mcp_json_set_backend.
+//
+// Concurrency: this module is allocation-only and holds no global
+// mutable state beyond the static ops table, so it is safe to use
+// from multiple threads simultaneously.
+
 #include "mcpkit/json/json.h"
 
 #include <math.h>
@@ -8,6 +20,15 @@
 
 #include "mcpkit/core/context.h"
 
+/**
+ * Private JSON DOM node. Opaque to public API consumers.
+ *
+ * - Scalar types (NULL, BOOL, NUMBER, STRING) use the corresponding
+ *   union member.
+ * - ARRAY and OBJECT carry growable backing arrays; `cap` doubles
+ *   on overflow. The object variant stores parallel keys[] and vals[]
+ *   arrays (insertion order preserved).
+ */
 struct mcp_json_value {
     mcp_json_type_t type;
     union {
@@ -28,6 +49,14 @@ struct mcp_json_value {
     } u;
 };
 
+// --- Allocator routing ---
+
+/**
+ * Resolves the allocator for a context: the ctx's bound allocator,
+ * or the default libc allocator when ctx is NULL. This is the only
+ * path through which builtin.c allocates or frees memory, so the
+ * "free with the same ctx that allocated" rule is enforced here.
+ */
 static const mcp_allocator_t *alloc_of(mcp_context_t *ctx) {
     return ctx != NULL ? mcp_context_allocator(ctx) : mcp_default_allocator();
 }
@@ -51,6 +80,12 @@ static void *xrealloc(mcp_context_t *ctx, void *p, size_t n) {
 }
 
 // --- Hoehrmann UTF-8 DFA ---
+// State table (little-endian) for validating each byte of a UTF-8
+// sequence. The DFA is derived from the public-domain implementation
+// at http://brynh_hash.github.io/utf8/; entries are (type, next-state)
+// pairs: byte types 2–6 are the 1–5 byte sequence start/continue
+// classes, 0/1 are ASCII/invalid, 7–9 are UTF-16 surrogate halves
+// that appear as bytes inside well-formed 3/4-byte sequences.
 
 static const uint8_t k_utf8d[] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
