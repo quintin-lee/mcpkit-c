@@ -2,6 +2,21 @@
 
 #include <stdio.h>
 
+/*
+ * @file logger.c
+ *
+ * Implementation of the pluggable log sink. A logger owns exactly one sink
+ * (userdata + level + sink triple) and routes log() calls to it, subject to
+ * the configured minimum level. There is no lock: logging is not
+ * thread-safe, and consumers must serialize from their own context.
+ *
+ * Ownership: a logger created with a non-NULL allocator snapshots that
+ * allocator at create time; destroy() frees with the snapshot, so counting
+ * allocators observe the allocation. NULL allocator routes to the default
+ * libc allocator. The sink is borrowed (not owned) — its lifetime must
+ * outlive the logger.
+ */
+
 /* Private logger layout. The allocator snapshot captured at create time is
  * the one used by mcp_logger_destroy, so the logger always frees with the
  * allocator that created it (counting-allocator observability is preserved). */
