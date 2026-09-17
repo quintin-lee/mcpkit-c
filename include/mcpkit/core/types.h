@@ -3,18 +3,42 @@
 
 #include <stddef.h>
 
-// Opaque forward declarations (ABI stability).
-// Users only ever hold pointers; internals can move from
-// pthread to libuv without touching user code.
+/**
+ * @file types.h
+ * Opaque forward declarations for all core handle types plus the
+ * pluggable allocator struct.
+ *
+ * All handle types are opaque: user code holds only pointers. The
+ * concrete struct definitions live in internal headers so the ABI
+ * can evolve (e.g. switching the thread pool from std::thread to
+ * libuv) without breaking downstream binaries.
+ */
+
+/** Execution context. Owns allocator, logger, and JSON backend selection. */
 typedef struct mcp_context mcp_context_t;
+/** Server registry: tools, resources, prompts, sessions. */
 typedef struct mcp_server mcp_server_t;
+/** A single MCP session (one client connection). */
 typedef struct mcp_session mcp_session_t;
+/** A registered tool and its handler. */
 typedef struct mcp_tool mcp_tool_t;
+/** A registered resource and its reader handler. */
 typedef struct mcp_resource mcp_resource_t;
+/** A registered prompt and its generator handler. */
 typedef struct mcp_prompt mcp_prompt_t;
 
-// Pluggable allocator. Any NULL function pointer falls back to libc
-// at context creation time. userdata is passed through to each call.
+/**
+ * Pluggable allocator.
+ *
+ * Each function pointer is optional: a NULL entry is resolved to the
+ * corresponding libc function at `mcp_context_create` time. The
+ * `userdata` pointer is passed through to every call, so the same
+ * allocator instance can be shared across contexts that use
+ * different backends.
+ *
+ * @note A context created with a given allocator must use that
+ * allocator for every free; do not mix allocators across calls.
+ */
 typedef struct mcp_allocator {
     void *(*malloc_fn)(size_t size, void *userdata);
     void (*free_fn)(void *ptr, void *userdata);
@@ -23,6 +47,11 @@ typedef struct mcp_allocator {
     void *userdata;
 } mcp_allocator_t;
 
+/**
+ * Returns a pointer to the process-wide default (libc-backed) allocator.
+ * The pointer is valid for the lifetime of the process and needs no
+ * release.
+ */
 const mcp_allocator_t *mcp_default_allocator(void);
 
 #endif
