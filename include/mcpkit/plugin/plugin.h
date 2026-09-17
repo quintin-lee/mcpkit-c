@@ -1,6 +1,10 @@
 /**
  * @brief Global static plugin registry (no ctx; uses builtin allocation).
  *
+ * Thread safety: all four entry points (register/unregister/find/count)
+ * take a process-wide mutex before touching the table; it is safe to
+ * call them concurrently from multiple threads.
+ *
  * - At most MCP_PLUGIN_MAX_ENTRIES (32) distinct (kind, name) pairs may
  *   be registered simultaneously; first-fit slot reuse is used on
  *   unregister, so cycles of register/unregister of different names

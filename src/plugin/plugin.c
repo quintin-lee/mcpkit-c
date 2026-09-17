@@ -10,6 +10,7 @@
  */
 #include "mcpkit/plugin/plugin.h"
 
+#include <pthread.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -21,11 +22,14 @@ typedef struct {
 } plugin_entry_t;
 
 static plugin_entry_t g_entries[MCP_PLUGIN_MAX_ENTRIES];
+// Guards all reads/writes to g_entries; safe to use from any thread.
+static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 
 mcp_status_t mcp_plugin_register(mcp_plugin_kind_t kind, const char *name, const void *ptr) {
     if (name == NULL || ptr == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
+    pthread_mutex_lock(&g_lock);
     // First-fit scan: a slot released by mcp_plugin_unregister becomes
     // reusable for a new (kind,name) pair. The fixed 32-slot table therefore
     // only rejects when 32 distinct pairs are registered simultaneously.
@@ -35,13 +39,16 @@ mcp_status_t mcp_plugin_register(mcp_plugin_kind_t kind, const char *name, const
             g_entries[i].kind = kind;
             g_entries[i].name = name;
             g_entries[i].ptr = ptr;
+            pthread_mutex_unlock(&g_lock);
             return MCP_OK;
         }
         if (g_entries[i].used && g_entries[i].kind == kind
             && strcmp(g_entries[i].name, name) == 0) {
+            pthread_mutex_unlock(&g_lock);
             return MCP_ERR_ALREADY_EXISTS;
         }
     }
+    pthread_mutex_unlock(&g_lock);
     return MCP_ERR_NOMEM;
 }
 
@@ -49,15 +56,18 @@ mcp_status_t mcp_plugin_unregister(mcp_plugin_kind_t kind, const char *name) {
     if (name == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
+    pthread_mutex_lock(&g_lock);
     for (size_t i = 0; i < MCP_PLUGIN_MAX_ENTRIES; i++) {
         if (g_entries[i].used && g_entries[i].kind == kind
             && strcmp(g_entries[i].name, name) == 0) {
             g_entries[i].used = false;
             g_entries[i].name = NULL;
             g_entries[i].ptr = NULL;
+            pthread_mutex_unlock(&g_lock);
             return MCP_OK;
         }
     }
+    pthread_mutex_unlock(&g_lock);
     return MCP_ERR_NOT_FOUND;
 }
 
@@ -65,21 +75,27 @@ const void *mcp_plugin_find(mcp_plugin_kind_t kind, const char *name) {
     if (name == NULL) {
         return NULL;
     }
+    pthread_mutex_lock(&g_lock);
+    const void *result = NULL;
     for (size_t i = 0; i < MCP_PLUGIN_MAX_ENTRIES; i++) {
         if (g_entries[i].used && g_entries[i].kind == kind
             && strcmp(g_entries[i].name, name) == 0) {
-            return g_entries[i].ptr;
+            result = g_entries[i].ptr;
+            break;
         }
     }
-    return NULL;
+    pthread_mutex_unlock(&g_lock);
+    return result;
 }
 
 size_t mcp_plugin_count(mcp_plugin_kind_t kind) {
     size_t n = 0;
+    pthread_mutex_lock(&g_lock);
     for (size_t i = 0; i < MCP_PLUGIN_MAX_ENTRIES; i++) {
         if (g_entries[i].used && g_entries[i].kind == kind) {
             n++;
         }
     }
+    pthread_mutex_unlock(&g_lock);
     return n;
 }
