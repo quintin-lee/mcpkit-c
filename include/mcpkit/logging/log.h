@@ -1,6 +1,3 @@
-#ifndef MCPKIT_LOGGING_LOG_H
-#define MCPKIT_LOGGING_LOG_H
-
 /**
  * @brief Log level definitions.
  *
@@ -8,6 +5,10 @@
  * to `MCP_LOG_WARN` will emit WARN and ERROR messages but suppress
  * DEBUG and INFO.
  */
+
+#ifndef MCPKIT_LOGGING_LOG_H
+#define MCPKIT_LOGGING_LOG_H
+
 
 /**
  * @brief Severity levels, ordered ascending by importance.

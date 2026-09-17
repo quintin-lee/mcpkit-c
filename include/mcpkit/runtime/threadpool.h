@@ -1,8 +1,3 @@
-#ifndef MCPKIT_RUNTIME_THREADPOOL_H
-#define MCPKIT_RUNTIME_THREADPOOL_H
-
-#include <stddef.h>
-
 /**
  * @brief C11 fixed-size thread pool executor.
  *
@@ -12,6 +7,12 @@
  * - mcp_executor_destroy discards still-pending tasks without running
  *   them. Call mcp_executor_wait first if every task must complete.
  */
+
+#ifndef MCPKIT_RUNTIME_THREADPOOL_H
+#define MCPKIT_RUNTIME_THREADPOOL_H
+
+#include <stddef.h>
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_executor mcp_executor_t;

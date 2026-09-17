@@ -1,9 +1,3 @@
-#ifndef MCPKIT_SERVER_RESOURCE_H
-#define MCPKIT_SERVER_RESOURCE_H
-
-#include "mcpkit/core/error.h"
-#include "mcpkit/json/value.h"
-
 /**
  * @brief Resource descriptor: URI, name, MIME type, a read handler, and an
  *        optional cleanup callback.
@@ -15,6 +9,13 @@
  * - If the resource is already added to a server, remove it from the
  *   server first (mcp_server_remove_resource).
  */
+
+#ifndef MCPKIT_SERVER_RESOURCE_H
+#define MCPKIT_SERVER_RESOURCE_H
+
+#include "mcpkit/core/error.h"
+#include "mcpkit/json/value.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_session mcp_session_t;

@@ -1,11 +1,3 @@
-#ifndef MCPKIT_CORE_CONTEXT_H
-#define MCPKIT_CORE_CONTEXT_H
-
-#include "mcpkit/core/types.h"
-#include "mcpkit/logging/logger.h"
-
-typedef struct mcp_json_backend_ops mcp_json_backend_ops_t;
-
 /**
  * @brief Configuration for `mcp_context_create`.
  *
@@ -16,6 +8,15 @@ typedef struct mcp_json_backend_ops mcp_json_backend_ops_t;
  *       must keep it alive at least as long as the context.
  * @note `json_backend` - NULL means use the built-in DOM.
  */
+
+#ifndef MCPKIT_CORE_CONTEXT_H
+#define MCPKIT_CORE_CONTEXT_H
+
+#include "mcpkit/core/types.h"
+#include "mcpkit/logging/logger.h"
+
+typedef struct mcp_json_backend_ops mcp_json_backend_ops_t;
+
 typedef struct {
     const mcp_allocator_t *allocator;
     mcp_logger_t *logger;

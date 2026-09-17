@@ -1,11 +1,3 @@
-#ifndef MCPKIT_JSON_ARRAY_H
-#define MCPKIT_JSON_ARRAY_H
-
-#include <stddef.h>
-
-#include "mcpkit/core/error.h"
-#include "mcpkit/json/value.h"
-
 /**
  * @file array.h
  * JSON array accessors.
@@ -15,6 +7,15 @@
  * `mcp_json_array_get` returns a BORROWED pointer valid while the
  * array is alive.
  */
+
+#ifndef MCPKIT_JSON_ARRAY_H
+#define MCPKIT_JSON_ARRAY_H
+
+#include <stddef.h>
+
+#include "mcpkit/core/error.h"
+#include "mcpkit/json/value.h"
+
 
 /**
  * @brief Appends a value to the end of a JSON array.

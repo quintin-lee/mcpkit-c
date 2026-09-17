@@ -1,11 +1,3 @@
-#ifndef MCPKIT_TRANSPORT_SOCKET_H
-#define MCPKIT_TRANSPORT_SOCKET_H
-
-#include <stdint.h>
-#include <stdbool.h>
-
-#include "mcpkit/core/error.h"
-
 /**
  * @brief POSIX TCP socket transport.
  *
@@ -21,6 +13,15 @@
  * - Port 0 in server mode binds to an ephemeral port; retrieve it via
  *   getsockname() on the listening socket before calling start().
  */
+
+#ifndef MCPKIT_TRANSPORT_SOCKET_H
+#define MCPKIT_TRANSPORT_SOCKET_H
+
+#include <stdint.h>
+#include <stdbool.h>
+
+#include "mcpkit/core/error.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_transport mcp_transport_t;

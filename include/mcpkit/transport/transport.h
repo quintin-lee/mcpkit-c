@@ -1,10 +1,3 @@
-#ifndef MCPKIT_TRANSPORT_TRANSPORT_H
-#define MCPKIT_TRANSPORT_TRANSPORT_H
-
-#include <stddef.h>
-
-#include "mcpkit/core/error.h"
-
 /**
  * @brief Abstract line-transport with pluggable backend.
  *
@@ -20,6 +13,14 @@
  *   lifetime; send/recv may be called any number of times between
  *   start and stop.
  */
+
+#ifndef MCPKIT_TRANSPORT_TRANSPORT_H
+#define MCPKIT_TRANSPORT_TRANSPORT_H
+
+#include <stddef.h>
+
+#include "mcpkit/core/error.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_transport mcp_transport_t;

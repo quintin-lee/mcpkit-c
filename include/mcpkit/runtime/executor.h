@@ -1,4 +1,19 @@
 /**
+ * @brief Executor backend operation table.
+ *
+ * All three slots are required; a NULL ops pointer or any NULL op
+ * callback is rejected by the dispatcher.
+ *
+ * - submit: enqueues (or runs) a task. fn/arg are borrowed until
+ *   wait/destroy drains pending work. NULL fn yields INVALID_ARGUMENT.
+ * - wait: blocks until all submitted tasks have finished. Idempotent.
+ * - destroy_backend: backend teardown, called once by mcp_executor_destroy
+ *   before the shell is freed. The executor has no start/stop to
+ *   piggyback on (unlike transport), so teardown needs its own slot.
+ *   (sync backend: no-op; threadpool: stop-workers + join + free pool.)
+ */
+
+/**
  * @brief Executor shell + backend ops table (sync and threadpool both fit).
  *
  * The shell stores an opaque backend pointer plus the ops table. NULL ops
@@ -14,20 +29,6 @@
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_executor mcp_executor_t;
 
-/**
- * @brief Executor backend operation table.
- *
- * All three slots are required; a NULL ops pointer or any NULL op
- * callback is rejected by the dispatcher.
- *
- * - submit: enqueues (or runs) a task. fn/arg are borrowed until
- *   wait/destroy drains pending work. NULL fn yields INVALID_ARGUMENT.
- * - wait: blocks until all submitted tasks have finished. Idempotent.
- * - destroy_backend: backend teardown, called once by mcp_executor_destroy
- *   before the shell is freed. The executor has no start/stop to
- *   piggyback on (unlike transport), so teardown needs its own slot.
- *   (sync backend: no-op; threadpool: stop-workers + join + free pool.)
- */
 typedef struct mcp_executor_ops {
     mcp_status_t (*submit)(mcp_context_t *ctx, mcp_executor_t *ex, mcp_task_fn fn, void *arg);
     mcp_status_t (*wait)(mcp_context_t *ctx, mcp_executor_t *ex);

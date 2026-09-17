@@ -1,6 +1,3 @@
-#ifndef MCPKIT_CORE_VERSION_H
-#define MCPKIT_CORE_VERSION_H
-
 /**
  * @file version.h
  * Exposes the mcpkit version string.
@@ -9,6 +6,10 @@
  * and baked into `mcpkit_version_generated.h` in the build tree, so
  * all translation units agree without hardcoding.
  */
+
+#ifndef MCPKIT_CORE_VERSION_H
+#define MCPKIT_CORE_VERSION_H
+
 
 /**
  * @brief Returns the mcpkit version string (e.g. `"0.1.0"`).

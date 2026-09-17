@@ -1,10 +1,3 @@
-#ifndef MCPKIT_PLUGIN_PLUGIN_H
-#define MCPKIT_PLUGIN_PLUGIN_H
-
-#include <stddef.h>
-
-#include "mcpkit/core/error.h"
-
 /**
  * @brief Global static plugin registry (no ctx; uses builtin allocation).
  *
@@ -20,6 +13,14 @@
  * - The stored pointer is NOT dereferenced or validated; the caller
  *   is responsible for its lifetime.
  */
+
+#ifndef MCPKIT_PLUGIN_PLUGIN_H
+#define MCPKIT_PLUGIN_PLUGIN_H
+
+#include <stddef.h>
+
+#include "mcpkit/core/error.h"
+
 
 typedef enum {
     MCP_PLUGIN_JSON_BACKEND,

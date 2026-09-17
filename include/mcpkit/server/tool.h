@@ -1,11 +1,3 @@
-#ifndef MCPKIT_SERVER_TOOL_H
-#define MCPKIT_SERVER_TOOL_H
-
-#include <stdint.h>
-
-#include "mcpkit/core/error.h"
-#include "mcpkit/json/value.h"
-
 /**
  * @brief Tool descriptor: name, description, input schema, and a handler
  *        callback.
@@ -18,6 +10,15 @@
  *   If the tool was already added to a server, remove it from the server
  *   first (mcp_server_remove_tool).
  */
+
+#ifndef MCPKIT_SERVER_TOOL_H
+#define MCPKIT_SERVER_TOOL_H
+
+#include <stdint.h>
+
+#include "mcpkit/core/error.h"
+#include "mcpkit/json/value.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_session mcp_session_t;

@@ -1,6 +1,3 @@
-#ifndef MCPKIT_CORE_ERROR_H
-#define MCPKIT_CORE_ERROR_H
-
 /**
  * @file error.h
  * Unified status codes returned by every mcpkit function.
@@ -10,6 +7,10 @@
  * codes are a closed set: unknown values in `mcp_status_string` map
  * to `"MCP_ERR_UNKNOWN"`.
  */
+
+#ifndef MCPKIT_CORE_ERROR_H
+#define MCPKIT_CORE_ERROR_H
+
 
 /**
  * @brief Return codes for every mcpkit API function.

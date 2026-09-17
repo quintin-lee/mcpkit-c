@@ -1,11 +1,3 @@
-#ifndef MCPKIT_JSON_SCHEMA_H
-#define MCPKIT_JSON_SCHEMA_H
-
-#include "mcpkit/core/error.h"
-#include "mcpkit/json/value.h"
-
-typedef struct mcp_context mcp_context_t;
-
 /**
  * @file schema.h
  * JSON Schema builder and validator.
@@ -18,6 +10,15 @@ typedef struct mcp_context mcp_context_t;
  * schema supporting: type (string/number/integer/boolean/object/
  * array), required, properties, items, enum, minimum, maximum.
  */
+
+#ifndef MCPKIT_JSON_SCHEMA_H
+#define MCPKIT_JSON_SCHEMA_H
+
+#include "mcpkit/core/error.h"
+#include "mcpkit/json/value.h"
+
+typedef struct mcp_context mcp_context_t;
+
 
 /**
  * @brief Creates a new JSON Schema for an object type.

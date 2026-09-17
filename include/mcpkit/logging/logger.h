@@ -1,11 +1,3 @@
-#ifndef MCPKIT_LOGGING_LOGGER_H
-#define MCPKIT_LOGGING_LOGGER_H
-
-#include <stddef.h>
-
-#include "mcpkit/core/types.h"
-#include "mcpkit/logging/log.h"
-
 /**
  * @brief Pluggable logger with a level filter and swappable sink.
  *
@@ -15,6 +7,15 @@
  * so sinks can be expensive (e.g. network) without paying for
  * suppressed levels.
  */
+
+#ifndef MCPKIT_LOGGING_LOGGER_H
+#define MCPKIT_LOGGING_LOGGER_H
+
+#include <stddef.h>
+
+#include "mcpkit/core/types.h"
+#include "mcpkit/logging/log.h"
+
 
 /** Opaque logger handle. */
 typedef struct mcp_logger mcp_logger_t;

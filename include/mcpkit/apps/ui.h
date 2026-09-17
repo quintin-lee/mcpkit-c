@@ -1,9 +1,3 @@
-#ifndef MCPKIT_APPS_UI_H
-#define MCPKIT_APPS_UI_H
-
-#include "mcpkit/core/error.h"
-#include "mcpkit/json/value.h"
-
 /**
  * @brief MCP Apps extension: ui:// HTML resources with per-resource CSP
  *        and mount/unmount lifecycle callbacks.
@@ -21,6 +15,13 @@
  *   caller-owned handle; mcp_apps_unmount() invokes on_unmount and frees
  *   the handle.
  */
+
+#ifndef MCPKIT_APPS_UI_H
+#define MCPKIT_APPS_UI_H
+
+#include "mcpkit/core/error.h"
+#include "mcpkit/json/value.h"
+
 
 #define MCP_APPS_UI_MIME "text/html;profile=mcp-app"
 #define MCP_APPS_UI_SCHEME "ui://"

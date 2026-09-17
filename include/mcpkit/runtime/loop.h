@@ -1,14 +1,3 @@
-#ifndef MCPKIT_RUNTIME_LOOP_H
-#define MCPKIT_RUNTIME_LOOP_H
-
-#include "mcpkit/core/error.h"
-
-typedef struct mcp_context mcp_context_t;
-typedef struct mcp_server mcp_server_t;
-typedef struct mcp_transport mcp_transport_t;
-typedef struct mcp_executor mcp_executor_t;
-typedef struct mcp_timer mcp_timer_t;
-
 /**
  * @brief Runs a synchronous serve loop on a single transport.
  *
@@ -29,6 +18,18 @@ typedef struct mcp_timer mcp_timer_t;
  * @param timer_or_null Optional timer list polled before each recv.
  * @return MCP_OK on clean EOF; MCP_ERR_IO on I/O failure.
  */
+
+#ifndef MCPKIT_RUNTIME_LOOP_H
+#define MCPKIT_RUNTIME_LOOP_H
+
+#include "mcpkit/core/error.h"
+
+typedef struct mcp_context mcp_context_t;
+typedef struct mcp_server mcp_server_t;
+typedef struct mcp_transport mcp_transport_t;
+typedef struct mcp_executor mcp_executor_t;
+typedef struct mcp_timer mcp_timer_t;
+
 mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server,
                           mcp_transport_t *t,
                           mcp_executor_t *ex_or_null,

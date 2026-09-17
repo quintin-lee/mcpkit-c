@@ -1,10 +1,3 @@
-#ifndef MCPKIT_SERVER_DISPATCHER_H
-#define MCPKIT_SERVER_DISPATCHER_H
-
-#include <stddef.h>
-
-#include "mcpkit/core/error.h"
-
 /**
  * @brief Per-session message queue and single-step processing.
  *
@@ -19,6 +12,14 @@
  *   on MCP_OK *resp_out is a caller-owned response (NULL if the message
  *   was a notification).
  */
+
+#ifndef MCPKIT_SERVER_DISPATCHER_H
+#define MCPKIT_SERVER_DISPATCHER_H
+
+#include <stddef.h>
+
+#include "mcpkit/core/error.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_server mcp_server_t;

@@ -1,10 +1,3 @@
-#ifndef MCPKIT_TRANSPORT_HTTP_H
-#define MCPKIT_TRANSPORT_HTTP_H
-
-#include <stddef.h>
-
-#include "mcpkit/core/error.h"
-
 /**
  * @brief Buffer-level HTTP/1.1 request parser and response builder.
  *
@@ -25,6 +18,14 @@
  *   (a single owned snapshot stored in the response); valid until
  *   the next set_header/set_body call or destroy.
  */
+
+#ifndef MCPKIT_TRANSPORT_HTTP_H
+#define MCPKIT_TRANSPORT_HTTP_H
+
+#include <stddef.h>
+
+#include "mcpkit/core/error.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_http_request mcp_http_request_t;

@@ -1,10 +1,3 @@
-#ifndef MCPKIT_TRANSPORT_STDIO_H
-#define MCPKIT_TRANSPORT_STDIO_H
-
-#include <stdio.h>
-
-#include "mcpkit/core/error.h"
-
 /**
  * @brief stdio-backed transport: reads lines from a FILE* stream.
  *
@@ -17,6 +10,14 @@
  *   it creates its own session internally, so a multi-session server
  *   should use the dispatch/queue pattern instead.
  */
+
+#ifndef MCPKIT_TRANSPORT_STDIO_H
+#define MCPKIT_TRANSPORT_STDIO_H
+
+#include <stdio.h>
+
+#include "mcpkit/core/error.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_transport mcp_transport_t;

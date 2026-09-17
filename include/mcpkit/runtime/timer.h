@@ -1,12 +1,3 @@
-#ifndef MCPKIT_RUNTIME_TIMER_H
-#define MCPKIT_RUNTIME_TIMER_H
-
-#include <stddef.h>
-#include <stdint.h>
-
-#include "mcpkit/core/error.h"
-#include "mcpkit/runtime/task.h"
-
 /**
  * @brief Sorted singly-linked timer list with CLOCK_MONOTONIC deadlines.
  *
@@ -18,6 +9,16 @@
  * - mcp_timer_cancel(): removes all pending entries matching (fn, arg);
  *   returns the count cancelled.
  */
+
+#ifndef MCPKIT_RUNTIME_TIMER_H
+#define MCPKIT_RUNTIME_TIMER_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "mcpkit/core/error.h"
+#include "mcpkit/runtime/task.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_timer mcp_timer_t;

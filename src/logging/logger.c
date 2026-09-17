@@ -1,7 +1,3 @@
-#include "mcpkit/logging/logger.h"
-
-#include <stdio.h>
-
 /*
  * @file logger.c
  *
@@ -16,6 +12,10 @@
  * libc allocator. The sink is borrowed (not owned) — its lifetime must
  * outlive the logger.
  */
+
+#include "mcpkit/logging/logger.h"
+
+#include <stdio.h>
 
 /* Private logger layout. The allocator snapshot captured at create time is
  * the one used by mcp_logger_destroy, so the logger always frees with the

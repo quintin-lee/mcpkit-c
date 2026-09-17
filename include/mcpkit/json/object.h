@@ -1,12 +1,3 @@
-#ifndef MCPKIT_JSON_OBJECT_H
-#define MCPKIT_JSON_OBJECT_H
-
-#include <stdbool.h>
-#include <stddef.h>
-
-#include "mcpkit/core/error.h"
-#include "mcpkit/json/value.h"
-
 /**
  * @file object.h
  * JSON object accessors.
@@ -18,6 +9,16 @@
  * - Re-setting an existing key replaces the old value (the old value
  *   is freed by the container; the new value is taken).
  */
+
+#ifndef MCPKIT_JSON_OBJECT_H
+#define MCPKIT_JSON_OBJECT_H
+
+#include <stdbool.h>
+#include <stddef.h>
+
+#include "mcpkit/core/error.h"
+#include "mcpkit/json/value.h"
+
 
 /**
  * @brief Inserts or replaces a key in a JSON object.

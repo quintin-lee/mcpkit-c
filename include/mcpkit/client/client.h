@@ -1,11 +1,3 @@
-#ifndef MCPKIT_CLIENT_CLIENT_H
-#define MCPKIT_CLIENT_CLIENT_H
-
-#include <stddef.h>
-
-#include "mcpkit/core/error.h"
-#include "mcpkit/json/value.h"
-
 /**
  * @brief High-level JSON-RPC client over a transport.
  *
@@ -23,6 +15,15 @@
  * - mcp_client_protocol_version(): returns a BORROWED string; valid only
  *   while the client is alive.
  */
+
+#ifndef MCPKIT_CLIENT_CLIENT_H
+#define MCPKIT_CLIENT_CLIENT_H
+
+#include <stddef.h>
+
+#include "mcpkit/core/error.h"
+#include "mcpkit/json/value.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_transport mcp_transport_t;

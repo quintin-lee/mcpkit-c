@@ -1,11 +1,3 @@
-#ifndef MCPKIT_SERVER_SESSION_H
-#define MCPKIT_SERVER_SESSION_H
-
-#include <stdbool.h>
-#include <stdint.h>
-
-#include "mcpkit/core/error.h"
-
 /**
  * @brief Per-session state: initialization flag, MCP Apps host flag, and a
  *        32-bit permission mask.
@@ -16,6 +8,15 @@
  * is only used for internal bookkeeping and is not used for
  * allocation on these particular paths).
  */
+
+#ifndef MCPKIT_SERVER_SESSION_H
+#define MCPKIT_SERVER_SESSION_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "mcpkit/core/error.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_session mcp_session_t;

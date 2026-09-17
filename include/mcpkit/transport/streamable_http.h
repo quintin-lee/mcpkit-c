@@ -1,10 +1,3 @@
-#ifndef MCPKIT_TRANSPORT_STREAMABLE_HTTP_H
-#define MCPKIT_TRANSPORT_STREAMABLE_HTTP_H
-
-#include <stddef.h>
-
-#include "mcpkit/core/error.h"
-
 /**
  * @brief Streamable HTTP transport layer over a pluggable I/O backend.
  *
@@ -17,6 +10,14 @@
  * - mcp_sse_wrap(): returns an owned SSE-framed string; caller frees
  *   with mcp_json_free_string(ctx, s).
  */
+
+#ifndef MCPKIT_TRANSPORT_STREAMABLE_HTTP_H
+#define MCPKIT_TRANSPORT_STREAMABLE_HTTP_H
+
+#include <stddef.h>
+
+#include "mcpkit/core/error.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_server mcp_server_t;

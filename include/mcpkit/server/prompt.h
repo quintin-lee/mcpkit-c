@@ -1,9 +1,3 @@
-#ifndef MCPKIT_SERVER_PROMPT_H
-#define MCPKIT_SERVER_PROMPT_H
-
-#include "mcpkit/core/error.h"
-#include "mcpkit/json/value.h"
-
 /**
  * @brief Prompt descriptor: name, description, and a handler that returns
  *        a JSON array of chat messages.
@@ -11,6 +5,13 @@
  * Ownership: caller owns the prompt from mcp_prompt_new() until
  * mcp_prompt_destroy(). If added to a server, remove it first.
  */
+
+#ifndef MCPKIT_SERVER_PROMPT_H
+#define MCPKIT_SERVER_PROMPT_H
+
+#include "mcpkit/core/error.h"
+#include "mcpkit/json/value.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_session mcp_session_t;

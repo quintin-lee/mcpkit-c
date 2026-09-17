@@ -1,11 +1,3 @@
-#ifndef MCPKIT_SERVER_SERVER_H
-#define MCPKIT_SERVER_SERVER_H
-
-#include <stdbool.h>
-#include <stddef.h>
-
-#include "mcpkit/core/error.h"
-
 /**
  * @brief Server container: named tool/resource/prompt registries, session
  *        lifecycle, per-session message dispatch, and a completion-provider
@@ -26,6 +18,15 @@
  *   no response is built and *resp_out is left unchanged (set to NULL first
  *   for safety).
  */
+
+#ifndef MCPKIT_SERVER_SERVER_H
+#define MCPKIT_SERVER_SERVER_H
+
+#include <stdbool.h>
+#include <stddef.h>
+
+#include "mcpkit/core/error.h"
+
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_message mcp_message_t;

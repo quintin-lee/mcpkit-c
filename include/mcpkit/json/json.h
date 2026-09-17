@@ -1,10 +1,3 @@
-#ifndef MCPKIT_JSON_JSON_H
-#define MCPKIT_JSON_JSON_H
-
-#include "mcpkit/json/value.h"
-#include "mcpkit/json/object.h"
-#include "mcpkit/json/array.h"
-
 /**
  * @file json.h
  * Pluggable JSON backend interface.
@@ -19,6 +12,14 @@
  * with `mcp_json_set_backend`; values created through one backend
  * MUST be destroyed through the same backend.
  */
+
+#ifndef MCPKIT_JSON_JSON_H
+#define MCPKIT_JSON_JSON_H
+
+#include "mcpkit/json/value.h"
+#include "mcpkit/json/object.h"
+#include "mcpkit/json/array.h"
+
 
 /**
  * @brief Maximum nesting depth accepted by the built-in parser.

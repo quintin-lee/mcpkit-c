@@ -1,8 +1,3 @@
-#ifndef MCPKIT_CORE_TYPES_H
-#define MCPKIT_CORE_TYPES_H
-
-#include <stddef.h>
-
 /**
  * @file types.h
  * Opaque forward declarations for all core handle types plus the
@@ -13,6 +8,12 @@
  * can evolve (e.g. switching the thread pool from std::thread to
  * libuv) without breaking downstream binaries.
  */
+
+#ifndef MCPKIT_CORE_TYPES_H
+#define MCPKIT_CORE_TYPES_H
+
+#include <stddef.h>
+
 
 /**
  * @brief Opaque forward declaration: execution context.

@@ -1,13 +1,3 @@
-#ifndef MCPKIT_JSON_VALUE_H
-#define MCPKIT_JSON_VALUE_H
-
-#include <stdbool.h>
-#include <stddef.h>
-
-#include "mcpkit/core/error.h"
-
-typedef struct mcp_context mcp_context_t;
-
 /**
  * @file value.h
  * JSON DOM node types, constructors, and accessors.
@@ -25,6 +15,17 @@ typedef struct mcp_context mcp_context_t;
  * A NULL `ctx` is accepted by every function and routes through the
  * default (libc) allocator plus the built-in JSON backend.
  */
+
+#ifndef MCPKIT_JSON_VALUE_H
+#define MCPKIT_JSON_VALUE_H
+
+#include <stdbool.h>
+#include <stddef.h>
+
+#include "mcpkit/core/error.h"
+
+typedef struct mcp_context mcp_context_t;
+
 
 /**
  * @brief Discriminant for `mcp_json_type`.
