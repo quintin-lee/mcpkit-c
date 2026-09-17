@@ -124,6 +124,20 @@ add_executable(test_json_fuzz fuzz/test_json_fuzz.c)
 target_link_libraries(test_json_fuzz PRIVATE mcpkit_core)
 add_test(NAME test_json_fuzz COMMAND test_json_fuzz)
 
+add_executable(test_schema_fuzz fuzz/test_schema_fuzz.c)
+target_link_libraries(test_schema_fuzz PRIVATE mcpkit_core)
+add_test(NAME test_schema_fuzz COMMAND test_schema_fuzz)
+
+add_executable(test_message_fuzz fuzz/test_message_fuzz.c)
+target_link_libraries(test_message_fuzz PRIVATE mcpkit_core)
+add_test(NAME test_message_fuzz COMMAND test_message_fuzz)
+
+if(MCPKIT_BUILD_HTTP)
+  add_executable(test_http_fuzz fuzz/test_http_fuzz.c)
+  target_link_libraries(test_http_fuzz PRIVATE mcpkit_core)
+  add_test(NAME test_http_fuzz COMMAND test_http_fuzz)
+endif()
+
 if(MCPKIT_BUILD_TOOLS AND MCPKIT_BUILD_EXAMPLES)
   add_test(NAME cli_acceptance
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/cli_accept.sh
@@ -136,6 +150,14 @@ endif()
 if(MCPKIT_BUILD_FUZZ)
   add_executable(fuzz_json_stdin fuzz/fuzz_json_stdin.c)
   target_link_libraries(fuzz_json_stdin PRIVATE mcpkit_core)
+  add_executable(fuzz_schema_stdin fuzz/fuzz_schema_stdin.c)
+  target_link_libraries(fuzz_schema_stdin PRIVATE mcpkit_core)
+  add_executable(fuzz_message_stdin fuzz/fuzz_message_stdin.c)
+  target_link_libraries(fuzz_message_stdin PRIVATE mcpkit_core)
+  if(MCPKIT_BUILD_HTTP)
+    add_executable(fuzz_http_stdin fuzz/fuzz_http_stdin.c)
+    target_link_libraries(fuzz_http_stdin PRIVATE mcpkit_core)
+  endif()
 endif()
 
 if(MCPKIT_BUILD_SOCKET)
