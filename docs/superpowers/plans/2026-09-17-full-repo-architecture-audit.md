@@ -215,8 +215,11 @@ cmake -S . -B build-asan -DMCPKIT_BUILD_FUZZ=ON -DCMAKE_BUILD_TYPE=Debug -DMCPKI
 cmake --build build-asan -j   # all fuzz targets: fuzz_json_stdin, fuzz_schema_stdin, fuzz_message_stdin, fuzz_http_stdin (HTTP-gated)
 ```
 
+
 Note: with `-DMCPKIT_BUILD_HTTP=OFF` (default), only the first three targets build. To also exercise `fuzz_http_stdin`:
 `cmake -S . -B build-asan -DMCPKIT_BUILD_HTTP=ON -DMCPKIT_BUILD_FUZZ=ON -DCMAKE_BUILD_TYPE=Debug -DMCPKIT_ENABLE_ASAN=ON -DMCPKIT_ENABLE_UBSAN=ON && cmake --build build-asan -j`
+
+Re-configuring the same `build-asan` directory keeps the existing ASan/UBSan flags from Step 1 (cache variables persist) — do not use a fresh directory or the sanitizer configuration is lost.
 
 Run the drivers and record any crash report (full ASan text) as evidence for a Critical finding.
 
@@ -229,8 +232,7 @@ Expected: NOTES.tmp now holds the sanitizer evidence section (verbatim command +
 ```bash
 cmake -S . -B build-socket -DCMAKE_BUILD_TYPE=Release -DMCPKIT_BUILD_SOCKET=ON -DMCPKIT_BUILD_HTTP=ON
 cmake --build build-socket -j
-```
-Both options are declared in `cmake/MCPKitOptions.cmake` (`MCPKIT_BUILD_SOCKET` default ON, `MCPKIT_BUILD_HTTP` default OFF) — verify in Task 1 Step 2. An undeclared cache variable used in `if()` simply evaluates falsy and the branch is skipped with no warning; if a gate build ever succeeds WITHOUT socket code, that silent-skip is a Critical build-system finding. Record which case occurred.
+Both options are declared in `cmake/MCPKitOptions.cmake` (`MCPKIT_BUILD_SOCKET` default ON, `MCPKIT_BUILD_HTTP` default OFF) — verify in Task 1 Step 2. Expected outcome with the current repo state: gate build succeeds WITH socket code included. The silent-skip scenario below is hypothetical — if it ever occurs (an undeclared cache variable in `if()` evaluates falsy and the branch is skipped with no warning), record that as a Critical build-system finding.
 
 - [ ] **Step 2: Confirm socket/http tests run under the gate build**
 
