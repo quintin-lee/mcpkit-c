@@ -42,9 +42,9 @@ Purpose: one scratch file for raw findings as they are discovered; the final del
 Read `cmake/MCPKitOptions.cmake`. Confirm these options are declared:
 `MCPKIT_BUILD_TESTS`, `MCPKIT_BUILD_EXAMPLES`, `MCPKIT_BUILD_TOOLS`,
 `MCPKIT_BUILD_HTTP`, `MCPKIT_BUILD_FUZZ`, `MCPKIT_ENABLE_ASAN`,
-`MCPKIT_ENABLE_UBSAN`, `MCPKIT_BUILD_SHARED`, `MCPKIT_BUILD_SOCKET`.
+`MCPKIT_ENABLE_UBSAN`, `MCPKIT_ENABLE_TSAN`, `MCPKIT_BUILD_SHARED`,
+`MCPKIT_BUILD_SOCKET`.
 Record any missing declaration in `docs/audit/NOTES.tmp` (candidate finding: build-doc drift).
-Note: `CMakeLists.txt` references `MCPKIT_BUILD_SOCKET` — if it is not declared in `MCPKitOptions.cmake`, that is a confirmed finding.
 
 Expected: a list of declared vs. used options written to NOTES.tmp.
 
@@ -123,7 +123,6 @@ dispatcher.c is the largest file (27 KB) — read it in 2–3 passes. Checks:
 - Recent fix `4165628` split a chained `object_set` in `mcp_client_complete`; check the analogous pattern in dispatcher (clone-then-pass) is correct after `6b4d8af` (completion provider arg clone): verify the cloned object is freed on every error return.
 
 - [ ] **Step 3: Read client + transport**
-
 Files: `src/client/client.c`, `src/transport/transport.c`, `src/transport/stdio.c`, `src/transport/http.c`, `src/transport/streamable_http.c`, `src/transport/socket.c`, `src/transport/internals.h`.
 
 Checks:
@@ -159,21 +158,23 @@ ls tests/unit tests/acceptance tests/fuzz
 grep -rn "add_test" tests/CMakeLists.txt
 ```
 
-Build the coverage matrix rows for report §4: for each `src/<area>` module, list which test binary exercises it. Mark:
-- `socket` transport, `shared` build, `plugin` registry: expected gaps — confirm and note why (no test target exists).
+- `shared` build, `plugin` registry: expected gaps — confirm and note why (no test target exists).
+- socket transport and Streamable HTTP: dedicated tests `test_socket`, `test_http`/`test_http_serve` exist but are option-gated (default OFF) — confirm they run under the Task 6 gate build; a gate build where they silently don't run is a finding.
 - Any unit area with zero test references → finding (Medium, untested critical path).
 
 - [ ] **Step 2: Cross-check docs vs. reality**
-
-Checks (each mismatch = finding, Medium/Low):
-- README "Examples" table lists 7 examples; `examples/` has 8 subdirectories (`prompt-server` is not in the README table) — confirm and record.
-- README build-options table vs. `cmake/MCPKitOptions.cmake` declared options (`MCPKIT_BUILD_SHARED`, `MCPKIT_BUILD_SOCKET` omitted?).
+- README "Examples" table lists 7 examples; `examples/` has 9 subdirectories —
+  confirm the count and record which are missing from the table (expected:
+  `prompt-server` and `socket-server`).
+- README build-options table vs. `cmake/MCPKitOptions.cmake` declared options —
+  expected omissions: `MCPKIT_BUILD_SHARED`, `MCPKIT_BUILD_SOCKET`,
+  `MCPKIT_ENABLE_TSAN`; verify each.
 - `docs/architecture/overview.md` claims ("dispatcher is single-threaded", "threadpool main thread waits each iteration") vs. `src/server/dispatcher.c` + `src/runtime/threadpool.c` actual behavior.
 - `CHANGELOG.md` "Unreleased" phase list vs. what actually shipped in recent commits.
 - `docs/module-reference.md` function lists vs. actual headers.
 
-- [ ] **Step 3: Read examples & CLI for misuse**
 
+- [ ] **Step 3: Read examples & CLI for misuse**
 Skim each example's main() for ownership misuse of the library API (the examples are the reference usage — misuse there propagates). Check `tools/mcpkit-cli` for pipe/process lifecycle issues (zombie children, unclosed fds on error).
 
 Expected: NOTES.tmp complete — every dimension from the spec has entries (findings or "verified clean").
@@ -206,15 +207,15 @@ If the serve loop never exits on its own, run with a bounded input:
 `echo -n '' | timeout 10 ./build-asan/examples/threadpool-server` (empty stdin EOF should terminate cleanly). Record ASan output at exit. Any leak/UBSan report = Critical/High finding with this exact repro command.
 
 - [ ] **Step 3: Fuzz corpus under ASan (if built)**
-
-Fuzz targets are behind `MCPKIT_BUILD_FUZZ=OFF` by default:
-
+Fuzz drivers read from stdin; no committed corpus files exist in `tests/fuzz`
+(confirm with `ls tests/fuzz`). Feed each driver synthetic input — valid
+envelopes, malformed JSON, oversized lines — e.g.:
 ```bash
 cmake -S . -B build-asan -DMCPKIT_BUILD_FUZZ=ON -DCMAKE_BUILD_TYPE=Debug -DMCPKIT_ENABLE_ASAN=ON -DMCPKIT_ENABLE_UBSAN=ON
-cmake --build build-asan --target fuzz_json_stdin -j   # target name per tests/fuzz/CMakeLists.txt
+cmake --build build-asan -j   # all fuzz targets: fuzz_json_stdin, fuzz_schema_stdin, fuzz_message_stdin, fuzz_http_stdin (HTTP-gated)
 ```
 
-Replay each deterministic corpus file through the driver. Record any crash report. If `fuzz_json_stdin` is not the only target, replay every fuzz driver in `tests/fuzz`.
+Run the drivers and record any crash report (full ASan text) as evidence for a Critical finding.
 
 Expected: NOTES.tmp now holds the sanitizer evidence section (verbatim command + output per gate, or "clean" statements).
 
@@ -226,16 +227,14 @@ Expected: NOTES.tmp now holds the sanitizer evidence section (verbatim command +
 cmake -S . -B build-socket -DCMAKE_BUILD_TYPE=Release -DMCPKIT_BUILD_SOCKET=ON -DMCPKIT_BUILD_HTTP=ON
 cmake --build build-socket -j
 ```
-
-If `MCPKIT_BUILD_SOCKET` is undeclared (see Task 1, Step 2), CMake silently ignores it and builds WITHOUT socket — that silent-ignore behavior is itself a Critical build-system finding; record which case occurred.
+Both options are declared in `cmake/MCPKitOptions.cmake` (`MCPKIT_BUILD_SOCKET` default ON, `MCPKIT_BUILD_HTTP` default OFF) — verify in Task 1 Step 2. An undeclared cache variable used in `if()` simply evaluates falsy and the branch is skipped with no warning; if a gate build ever succeeds WITHOUT socket code, that silent-skip is a Critical build-system finding. Record which case occurred.
 
 - [ ] **Step 2: Confirm socket/http tests run under the gate build**
 
 ```bash
 ctest --test-dir build-socket --output-on-failure
 ```
-
-Record summary. If no test exists that exercises socket.c or http.c (likely), record that as a §4 coverage-gap finding.
+Record summary. Gated tests `test_socket` and `test_http`/`test_http_serve` DO exist (gated on `MCPKIT_BUILD_SOCKET`/`MCPKIT_BUILD_HTTP` in `tests/CMakeLists.txt`) — confirm they run here and pass. If any expected test does not run, that is a §4/§5 finding.
 
 Expected: NOTES.tmp holds the socket/HTTP gate evidence.
 
