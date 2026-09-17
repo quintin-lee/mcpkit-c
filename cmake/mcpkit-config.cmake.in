@@ -1,0 +1,12 @@
+# mcpkit-config.cmake.in — FindMCPKit-style CMake config for downstream consumers.
+# Install: find_package(mcpkit CONFIG REQUIRED)
+
+get_filename_component(_mcpkit_prefix "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+
+if(NOT TARGET mcpkit_core)
+  include("${_mcpkit_prefix}/mcpkit-targets.cmake")
+endif()
+
+set(mcpkit_FOUND TRUE)
+set(mcpkit_VERSION "@MCPKIT_VERSION@")
+set(mcpkit_LIBRARIES mcpkit_core)

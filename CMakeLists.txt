@@ -28,7 +28,7 @@ include(cmake/MCPKitOptions.cmake)
 include(cmake/MCPKitSanitizers.cmake)
 mcpkit_apply_sanitizers()
 
-add_library(mcpkit_core
+set(MCPKIT_CORE_SOURCES
   src/core/version.c
   src/core/error.c
   src/core/allocator.c
@@ -58,18 +58,41 @@ add_library(mcpkit_core
 )
 
 if(MCPKIT_BUILD_HTTP)
-  target_sources(mcpkit_core PRIVATE
+  list(APPEND MCPKIT_CORE_SOURCES
     src/transport/http.c
     src/transport/streamable_http.c
   )
 endif()
 if(MCPKIT_BUILD_SOCKET)
-  target_sources(mcpkit_core PRIVATE
+  list(APPEND MCPKIT_CORE_SOURCES
     src/transport/socket.c
   )
 endif()
-target_include_directories(mcpkit_core PUBLIC include)
+
+add_library(mcpkit_core STATIC ${MCPKIT_CORE_SOURCES})
+target_include_directories(mcpkit_core
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
 target_include_directories(mcpkit_core PRIVATE "${CMAKE_BINARY_DIR}/include")
+
+if(MCPKIT_BUILD_SHARED)
+  add_library(mcpkit_shared SHARED ${MCPKIT_CORE_SOURCES})
+  target_include_directories(mcpkit_shared
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:include>
+  )
+  target_include_directories(mcpkit_shared PRIVATE "${CMAKE_BINARY_DIR}/include")
+  set_target_properties(mcpkit_shared PROPERTIES
+    OUTPUT_NAME mcpkit_core
+    VERSION "${MCPKIT_VERSION}"
+    SOVERSION 0
+  )
+  target_link_libraries(mcpkit_shared PUBLIC m)
+  install(TARGETS mcpkit_shared LIBRARY DESTINATION lib)
+endif()
 
 if(MCPKIT_BUILD_TESTS)
   enable_testing()
@@ -84,10 +107,25 @@ if(MCPKIT_BUILD_TOOLS)
   add_subdirectory(tools)
 endif()
 
-# Packaging
-install(TARGETS mcpkit_core LIBRARY DESTINATION lib ARCHIVE DESTINATION lib RUNTIME DESTINATION bin)
+install(TARGETS mcpkit_core EXPORT mcpkit-targets
+        ARCHIVE DESTINATION lib)
 install(DIRECTORY include/mcpkit DESTINATION include)
+
+# pkg-config
+configure_file(cmake/mcpkit.pc.in "${CMAKE_CURRENT_BINARY_DIR}/mcpkit.pc" @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcpkit.pc" DESTINATION lib/pkgconfig)
+
+# CMake package config
+install(EXPORT mcpkit-targets
+        FILE mcpkit-targets.cmake
+        NAMESPACE mcpkit::
+        DESTINATION lib/cmake/mcpkit)
+configure_file(cmake/mcpkit-config.cmake.in
+               "${CMAKE_CURRENT_BINARY_DIR}/mcpkit-config.cmake" @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcpkit-config.cmake"
+        DESTINATION lib/cmake/mcpkit)
+
 set(CPACK_PACKAGE_NAME "mcpkit")
-set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_VERSION "${MCPKIT_VERSION}")
 set(CPACK_GENERATOR "TGZ")
 include(CPack)
