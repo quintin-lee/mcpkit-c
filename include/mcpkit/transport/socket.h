@@ -7,8 +7,7 @@
 #include "mcpkit/core/error.h"
 
 /**
- * @file socket.h
- * POSIX TCP socket transport.
+ * @brief POSIX TCP socket transport.
  *
  * - Client mode (server_mode == false): connect() to host:port is
  *   performed immediately in mcp_socket_transport_create(); start() is
@@ -26,7 +25,23 @@
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_transport mcp_transport_t;
 
+/**
+ * @brief Creates a TCP socket transport.
+ *
+ * In client mode the socket is connected immediately. In server mode
+ * the socket is bound and listening; call mcp_transport_start() to
+ * accept a single connection.
+ *
+ * @param ctx Context; may be NULL (default allocator).
+ * @param host Hostname or IP to connect to (client mode); ignored in
+ *            server mode (binds to 0.0.0.0). May be NULL.
+ * @param port Port number. 0 in server mode = ephemeral port (use
+ *             getsockname() to retrieve it).
+ * @param server_mode true = server (bind+listen+accept); false = client
+ *                   (connect immediately).
+ * @return Owned mcp_transport_t, or NULL on system-call failure or OOM.
+ */
 mcp_transport_t *mcp_socket_transport_create(mcp_context_t *ctx, const char *host,
-                                              uint16_t port, bool server_mode);
+                                             uint16_t port, bool server_mode);
 
 #endif

@@ -11,9 +11,12 @@
  */
 
 /**
- * Returns the mcpkit version string (e.g. `"0.1.0"`).
- * The pointer is static and valid for the lifetime of the process;
- * the caller must not free it.
+ * @brief Returns the mcpkit version string (e.g. `"0.1.0"`).
+ *
+ * The pointer is static and valid for the lifetime of the process; the
+ * caller must not free it.
+ *
+ * @return Borrowed string, valid for the lifetime of the process.
  */
 const char *mcpkit_version_string(void);
 

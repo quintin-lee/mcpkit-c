@@ -26,7 +26,9 @@ typedef struct mcp_context mcp_context_t;
  * default (libc) allocator plus the built-in JSON backend.
  */
 
-/** Discriminant for `mcp_json_type`. */
+/**
+ * @brief Discriminant for `mcp_json_type`.
+ */
 typedef enum {
     MCP_JSON_NULL = 0, /**< JSON `null`. */
     MCP_JSON_BOOL,     /**< `true` / `false`. */
@@ -36,65 +38,138 @@ typedef enum {
     MCP_JSON_OBJECT,   /**< Key-value map. */
 } mcp_json_type_t;
 
-/** Opaque JSON DOM node. */
+/**
+ * @brief Opaque JSON DOM node.
+ */
 typedef struct mcp_json_value mcp_json_value_t;
 
-/** Returns the node's type; NULL node → `MCP_JSON_NULL`. */
+/**
+ * @brief Returns the node's type.
+ *
+ * @param ctx  Context.
+ * @param v    Node to inspect; NULL returns `MCP_JSON_NULL`.
+ * @return The node's JSON type.
+ */
 mcp_json_type_t mcp_json_type(mcp_context_t *ctx, const mcp_json_value_t *v);
 
 /**
- * Recursively destroys a value tree. NULL-safe.
+ * @brief Recursively destroys a value tree. NULL-safe.
+ *
  * The ctx used here must be the one that created (or is currently
  * bound to) the value, so the correct allocator is used.
+ *
+ * @param ctx  Context that owns the value's allocator.
+ * @param v    Value to destroy; NULL is a no-op.
  */
 void mcp_json_destroy(mcp_context_t *ctx, mcp_json_value_t *v);
 
 /**
- * Extracts a bool. `MCP_ERR_INVALID_ARGUMENT` if the node is not a
- * bool. The out-param is borrowed from the node; valid only while
- * the node is alive.
+ * @brief Extracts a bool value from a node.
+ *
+ * @param ctx  Context.
+ * @param v    Node to read.
+ * @param out  Out-parameter; points into the node (borrowed).
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if `v` is not a bool.
  */
 mcp_status_t mcp_json_bool_value(mcp_context_t *ctx, const mcp_json_value_t *v, bool *out);
 
-/** Extracts a finite double; `MCP_ERR_INVALID_ARGUMENT` on non-number. */
+/**
+ * @brief Extracts a finite double value from a node.
+ *
+ * @param ctx  Context.
+ * @param v    Node to read.
+ * @param out  Out-parameter.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if `v` is not a number.
+ */
 mcp_status_t mcp_json_number_value(mcp_context_t *ctx, const mcp_json_value_t *v, double *out);
 
 /**
- * Returns a borrowed NUL-terminated pointer into the node's string
- * buffer. The caller must NOT free it; it dies with the node.
+ * @brief Returns a BORROWED NUL-terminated pointer into the node's string buffer.
+ *
+ * The caller must NOT free it; it dies with the node.
+ *
+ * @param ctx  Context.
+ * @param v    Node to read.
+ * @param out  Out-parameter; points into the node (borrowed).
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if `v` is not a string.
  */
 mcp_status_t mcp_json_string_value(mcp_context_t *ctx, const mcp_json_value_t *v,
-                                   const char **out);
+                                    const char **out);
 
-/** Creates a JSON `null` node. NULL on NOMEM. */
-mcp_json_value_t *mcp_json_null_new(mcp_context_t *ctx);
-/** Creates a JSON bool node. NULL on NOMEM. */
-mcp_json_value_t *mcp_json_bool_new(mcp_context_t *ctx, bool b);
 /**
- * Creates a JSON number node. Returns NULL if `d` is NaN or ±Inf
- * (non-finite values are not representable in strict JSON).
+ * @brief Creates a JSON `null` node.
+ *
+ * @param ctx  Context; NULL uses the default allocator.
+ * @return Caller-owned value, or NULL on NOMEM.
+ */
+mcp_json_value_t *mcp_json_null_new(mcp_context_t *ctx);
+
+/**
+ * @brief Creates a JSON bool node.
+ *
+ * @param ctx  Context; NULL uses the default allocator.
+ * @param b    The boolean value to store.
+ * @return Caller-owned value, or NULL on NOMEM.
+ */
+mcp_json_value_t *mcp_json_bool_new(mcp_context_t *ctx, bool b);
+
+/**
+ * @brief Creates a JSON number node.
+ *
+ * @param ctx  Context; NULL uses the default allocator.
+ * @param d    Finite double to store. NaN and ±Inf are rejected.
+ * @return Caller-owned value, or NULL if `d` is non-finite or NOMEM.
  */
 mcp_json_value_t *mcp_json_number_new(mcp_context_t *ctx, double d);
+
 /**
- * Creates a JSON string from a NUL-terminated UTF-8 source.
- * Embedded NUL bytes are rejected (returns NULL).
+ * @brief Creates a JSON string from a NUL-terminated UTF-8 source.
+ *
+ * Embedded NUL bytes are rejected.
+ *
+ * @param ctx  Context; NULL uses the default allocator.
+ * @param s    NUL-terminated UTF-8 source string.
+ * @return Caller-owned value, or NULL on NOMEM or embedded NUL.
  */
 mcp_json_value_t *mcp_json_string_new(mcp_context_t *ctx, const char *s);
+
 /**
- * Length-explicit string constructor for buffers that may contain
- * embedded NUL bytes. The buffer must not contain NUL in `[0, n)`.
+ * @brief Creates a JSON string from a length-explicit buffer.
+ *
+ * The buffer must not contain NUL in `[0, n)`.
+ *
+ * @param ctx  Context; NULL uses the default allocator.
+ * @param s    Byte buffer.
+ * @param n    Length in bytes.
+ * @return Caller-owned value, or NULL on NOMEM or embedded NUL.
  */
 mcp_json_value_t *mcp_json_string_new_n(mcp_context_t *ctx, const char *s, size_t n);
-/** Creates an empty JSON array. NULL on NOMEM. */
+
+/**
+ * @brief Creates an empty JSON array.
+ *
+ * @param ctx  Context; NULL uses the default allocator.
+ * @return Caller-owned value, or NULL on NOMEM.
+ */
 mcp_json_value_t *mcp_json_array_new(mcp_context_t *ctx);
-/** Creates an empty JSON object. NULL on NOMEM. */
+
+/**
+ * @brief Creates an empty JSON object.
+ *
+ * @param ctx  Context; NULL uses the default allocator.
+ * @return Caller-owned value, or NULL on NOMEM.
+ */
 mcp_json_value_t *mcp_json_object_new(mcp_context_t *ctx);
 
 /**
- * Deep-copies a value tree through the active backend (the one
- * currently bound to `ctx`). The copy is fully independent of the
- * source; both can be destroyed separately. Returns NULL on NOMEM
- * or if `v` is NULL.
+ * @brief Deep-copies a value tree through the active backend.
+ *
+ * The copy is fully independent of the source; both can be destroyed
+ * separately.
+ *
+ * @param ctx  Context; NULL uses the default allocator and built-in backend.
+ * @param v    Source value; NULL returns NULL.
+ * @return Caller-owned copy, or NULL on NOMEM.
  */
 mcp_json_value_t *mcp_json_clone(mcp_context_t *ctx, const mcp_json_value_t *v);
 

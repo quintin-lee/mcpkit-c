@@ -11,7 +11,9 @@
  * to `"MCP_ERR_UNKNOWN"`.
  */
 
-/** Return codes for every mcpkit API function. */
+/**
+ * @brief Return codes for every mcpkit API function.
+ */
 typedef enum {
     MCP_OK = 0,               /**< Success. */
     MCP_ERR_INVALID_ARGUMENT, /**< A pointer, string, or value is malformed. */
@@ -27,9 +29,13 @@ typedef enum {
 } mcp_status_t;
 
 /**
- * Returns a human-readable, stable string for a status code.
+ * @brief Returns a human-readable, stable string for a status code.
+ *
  * The returned pointer is static and valid for the lifetime of the
  * process; the caller must not free it.
+ *
+ * @param status  Status code; unknown values map to `"MCP_ERR_UNKNOWN"`.
+ * @return Borrowed string, valid for the lifetime of the process.
  */
 const char *mcp_status_string(mcp_status_t status);
 

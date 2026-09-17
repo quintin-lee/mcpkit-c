@@ -6,8 +6,7 @@
 #include "mcpkit/core/error.h"
 
 /**
- * @file streamable_http.h
- * Streamable HTTP transport layer over a pluggable I/O backend.
+ * @brief Streamable HTTP transport layer over a pluggable I/O backend.
  *
  * - mcp_http_io_t is an opaque I/O vtable; the implementation is
  *   responsible for fulfilling read/write callbacks against a real
@@ -33,16 +32,28 @@ struct mcp_http_io {
 #define MCP_HTTP_MAX_SESSIONS 16
 
 /**
- * Runs a synchronous HTTP serve loop until the I/O backend signals EOF.
+ * @brief Runs a synchronous HTTP serve loop until the I/O backend
+ *        signals EOF.
+ *
  * Sessions are destroyed when the loop exits; the caller must not use
  * them afterwards.
+ *
+ * @param ctx Context; may be NULL.
+ * @param server Target server to dispatch to.
+ * @param io I/O backend; must outlive the call.
+ * @return MCP_OK on clean EOF; MCP_ERR_IO on I/O failure.
  */
 mcp_status_t mcp_http_serve(mcp_context_t *ctx, mcp_server_t *server,
-                             mcp_http_io_t *io);
+                            mcp_http_io_t *io);
 
 /**
- * Wraps a JSON string in an SSE `data:` frame.
+ * @brief Wraps a JSON string in an SSE `data:` frame.
+ *
  * Returns an owned heap string; caller frees with mcp_json_free_string().
+ *
+ * @param ctx Context; may be NULL.
+ * @param json_text Null-terminated JSON string; not owned.
+ * @return Owned SSE-framed string, or NULL on OOM.
  */
 char *mcp_sse_wrap(mcp_context_t *ctx, const char *json_text);
 

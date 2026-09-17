@@ -2,15 +2,16 @@
 #define MCPKIT_LOGGING_LOG_H
 
 /**
- * @file log.h
- * Log level definitions.
+ * @brief Log level definitions.
  *
  * Levels are ordered from most verbose to least; a logger configured
  * to `MCP_LOG_WARN` will emit WARN and ERROR messages but suppress
  * DEBUG and INFO.
  */
 
-/** Severity levels, ordered ascending by importance. */
+/**
+ * @brief Severity levels, ordered ascending by importance.
+ */
 typedef enum {
     MCP_LOG_DEBUG = 0, /**< Detailed trace information. */
     MCP_LOG_INFO,      /**< Informational milestones. */
@@ -19,8 +20,11 @@ typedef enum {
 } mcp_log_level_t;
 
 /**
- * Returns a stable, human-readable name for a log level
- * (e.g. `"INFO"`). The pointer is static and must not be freed.
+ * @brief Returns a stable, human-readable name for a log level.
+ *
+ * @param level Any value in the mcp_log_level_t range; out-of-range
+ *              values return "UNKNOWN" so the map is total.
+ * @return Static string pointer (e.g. "INFO"); must NOT be freed.
  */
 const char *mcp_log_level_string(mcp_log_level_t level);
 

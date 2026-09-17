@@ -7,8 +7,7 @@
 #include "mcpkit/json/value.h"
 
 /**
- * @file client.h
- * High-level JSON-RPC client over a transport.
+ * @brief High-level JSON-RPC client over a transport.
  *
  * Ownership:
  * - mcp_client_create(): caller owns the client; destroy with
@@ -30,69 +29,164 @@ typedef struct mcp_transport mcp_transport_t;
 
 typedef struct mcp_client mcp_client_t;
 
+/**
+ * @brief Creates a client bound to the given transport.
+ * @param ctx Context; may be NULL (default allocator).
+ * @param transport Transport to use; must outlive the client.
+ * @return Owned mcp_client_t, or NULL on OOM.
+ */
 mcp_client_t *mcp_client_create(mcp_context_t *ctx, mcp_transport_t *transport);
+
+/**
+ * @brief Destroys a client.
+ * @param ctx Context; may be NULL.
+ * @param client Client to destroy; NULL is a no-op.
+ */
 void mcp_client_destroy(mcp_context_t *ctx, mcp_client_t *client);
 
 /**
- * Sends transport start. Returns the transport's status code.
+ * @brief Starts the underlying transport.
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @return The transport's status code.
  */
 mcp_status_t mcp_client_connect(mcp_context_t *ctx, mcp_client_t *client);
+
+/**
+ * @brief Stops the underlying transport.
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @return The transport's status code.
+ */
 mcp_status_t mcp_client_disconnect(mcp_context_t *ctx, mcp_client_t *client);
 
 /**
- * Full MCP handshake: sends initialize, validates response id, stores
- * the negotiated protocol version, and fires notifications/initialized
- * (fire-and-forget; send status is returned but the notification
- * itself has no response).
+ * @brief Performs the full MCP initialize handshake.
  *
- * client_name and client_version are copied; the caller retains them.
- * server_info_out is optional (NULL to skip).
+ * Sends the initialize request, validates the response id, stores the
+ * negotiated protocol version, and fires notifications/initialized
+ * (fire-and-forget; send status is returned but the notification has
+ * no response).
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param client_name Copied internally; caller may free.
+ * @param client_version Copied internally; caller may free.
+ * @param server_info_out Optional; receives a caller-owned cloned
+ *                         serverInfo JSON value, or NULL if absent.
+ * @return MCP_OK on success; MCP_ERR_PROTOCOL on id mismatch.
  */
 mcp_status_t mcp_client_initialize(mcp_context_t *ctx, mcp_client_t *client,
-                                    const char *client_name, const char *client_version,
-                                    mcp_json_value_t **server_info_out);
+                                   const char *client_name, const char *client_version,
+                                   mcp_json_value_t **server_info_out);
 
 /**
- * Returns the negotiated protocol version string (BORROWED), or NULL if
- * mcp_client_initialize has not yet succeeded.
+ * @brief Returns the negotiated protocol version string.
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @return BORROWED string valid only while the client is alive, or NULL
+ *         if mcp_client_initialize has not yet succeeded.
  */
 const char *mcp_client_protocol_version(mcp_context_t *ctx, const mcp_client_t *client);
 
 /**
- * Generic JSON-RPC request/response round-trip.
+ * @brief Generic JSON-RPC request/response round-trip.
  *
- * params is consumed on both success and failure (the client destroys it
- * after building the request). result_out may be NULL to discard the
- * result. For error responses the mcp_status_t is mapped from the RPC
- * error code via mcp_rpc_code_to_status.
+ * params is consumed on both success and failure (destroyed after
+ * building the request). result_out may be NULL to discard the result.
+ * For error responses the status is mapped from the RPC error code via
+ * mcp_rpc_code_to_status.
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param method JSON-RPC method name (e.g. "tools/list"); not owned.
+ * @param params Optional params object; consumed (destroyed) on all paths.
+ * @param result_out On MCP_OK receives a caller-owned cloned result;
+ *                   may be NULL to discard.
+ * @return MCP_OK on success; mapped MCP_ERR_* on protocol error.
  */
 mcp_status_t mcp_client_request(mcp_context_t *ctx, mcp_client_t *client,
                                 const char *method, mcp_json_value_t *params,
                                 mcp_json_value_t **result_out);
 
 /**
- * Convenience wrappers. Each consumes its args (JSON value) on all paths
- * and sets *result_out to a caller-owned clone on MCP_OK.
+ * @brief Sends ping (no params, no result).
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @return MCP_OK on success.
  */
 mcp_status_t mcp_client_ping(mcp_context_t *ctx, mcp_client_t *client);
-mcp_status_t mcp_client_list_tools(mcp_context_t *ctx, mcp_client_t *client,
-                                    mcp_json_value_t **tools_out);
-mcp_status_t mcp_client_call_tool(mcp_context_t *ctx, mcp_client_t *client,
-                                   const char *name, mcp_json_value_t *args,
-                                   mcp_json_value_t **result_out);
-mcp_status_t mcp_client_read_resource(mcp_context_t *ctx, mcp_client_t *client,
-                                       const char *uri, mcp_json_value_t **result_out);
-mcp_status_t mcp_client_get_prompt(mcp_context_t *ctx, mcp_client_t *client,
-                                    const char *name, mcp_json_value_t *args,
-                                    mcp_json_value_t **result_out);
 
 /**
- * completion/complete. ref is a string such as "prompt/argName".
- * args is the "argument" object (consumed on all paths).
- * *result_out receives a cloned completions array on MCP_OK.
+ * @brief Sends tools/list.
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param tools_out Receives a caller-owned cloned tools array.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_list_tools(mcp_context_t *ctx, mcp_client_t *client,
+                                   mcp_json_value_t **tools_out);
+
+/**
+ * @brief Sends tools/call with the named tool and args.
+ *
+ * args is consumed on all paths.
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param name Tool name; not owned.
+ * @param args Optional params object; consumed on all paths.
+ * @param result_out Receives a caller-owned cloned result on MCP_OK.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_call_tool(mcp_context_t *ctx, mcp_client_t *client,
+                                  const char *name, mcp_json_value_t *args,
+                                  mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends resources/read for the given URI.
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param uri Resource URI; not owned.
+ * @param result_out Receives a caller-owned cloned result on MCP_OK.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_read_resource(mcp_context_t *ctx, mcp_client_t *client,
+                                      const char *uri, mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends prompts/get with the named prompt and args.
+ *
+ * args is consumed on all paths.
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param name Prompt name; not owned.
+ * @param args Optional params object; consumed on all paths.
+ * @param result_out Receives a caller-owned cloned result on MCP_OK.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_get_prompt(mcp_context_t *ctx, mcp_client_t *client,
+                                   const char *name, mcp_json_value_t *args,
+                                   mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends completion/complete.
+ *
+ * ref is a string such as "prompt/argName"; args is the "argument"
+ * object, consumed on all paths. *result_out receives a cloned
+ * completions array on MCP_OK.
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param ref Completion reference string; not owned.
+ * @param args Optional argument object; consumed on all paths.
+ * @param result_out Receives a caller-owned cloned completions array.
+ * @return MCP_OK on success.
  */
 mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
-                                  const char *ref, mcp_json_value_t *args,
-                                  mcp_json_value_t **result_out);
+                                 const char *ref, mcp_json_value_t *args,
+                                 mcp_json_value_t **result_out);
 
 #endif

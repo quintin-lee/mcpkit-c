@@ -20,30 +20,32 @@
  * MUST be destroyed through the same backend.
  */
 
-/** Maximum nesting depth accepted by the built-in parser. */
+/**
+ * @brief Maximum nesting depth accepted by the built-in parser.
+ */
 #define MCP_JSON_MAX_DEPTH 128
 
 typedef struct mcp_json_backend_ops mcp_json_backend_ops_t;
 
 /**
- * Function-pointer table for JSON backend implementations.
+ * @brief Function-pointer table for JSON backend implementations.
  *
  * All functions take the context first so backends can allocate
- * through the context's allocator. Contract summary:
+ * through the context's allocator.
  *
- * - `parse`       - returns a caller-owned value, or NULL on error.
- * - `serialize`   - returns a caller-owned NUL-terminated string
- *                   (free with `free_string`, NOT with `free`).
- * - `free_string` - releases a string returned by `serialize`.
- * - `destroy`     - recursively releases a value tree.
- * - `object_set`  - on MCP_OK the container takes ownership of `val`;
- *                   on error the caller retains it.
- * - `array_append`- same ownership contract as `object_set`.
- * - `object_get` / `array_get` / `object_key_at` - return BORROWED
- *   pointers valid only while the container is alive.
- *
- * `new_number` must reject NaN and ±Inf (non-finite values are not
- * representable in strict JSON).
+ * @note Contract summary:
+ *       - `parse`        - returns a caller-owned value, or NULL on error.
+ *       - `serialize`    - returns a caller-owned NUL-terminated string
+ *                          (free with `free_string`, NOT with `free`).
+ *       - `free_string`  - releases a string returned by `serialize`.
+ *       - `destroy`      - recursively releases a value tree.
+ *       - `object_set`   - on MCP_OK the container takes ownership of `val`;
+ *                          on error the caller retains it.
+ *       - `array_append` - same ownership contract as `object_set`.
+ *       - `object_get` / `array_get` / `object_key_at` - return BORROWED
+ *                          pointers valid only while the container is alive.
+ *       - `new_number`   - must reject NaN and ±Inf (non-finite values are
+ *                          not representable in strict JSON).
  */
 struct mcp_json_backend_ops {
     const char *name;
@@ -76,42 +78,52 @@ struct mcp_json_backend_ops {
 };
 
 /**
- * Returns the built-in backend's ops table. The pointer is static and
- * valid for the lifetime of the process.
+ * @brief Returns the built-in backend's ops table.
+ *
+ * @return Borrowed ops table, valid for the lifetime of the process.
  */
 const mcp_json_backend_ops_t *mcp_json_builtin_backend(void);
 
 /**
- * Re-points a context to a custom JSON backend.
+ * @brief Re-points a context to a custom JSON backend.
  *
- * Pass NULL to restore the built-in backend. Existing values created
- * through the old backend must still be destroyed through that old
- * backend's `destroy` (use the same ctx if it has already been
- * re-pointed — the context stores the ops table, so this works).
+ * Pass NULL to restore the built-in backend.
  *
- * NULL ctx is a no-op.
+ * @note Existing values created through the old backend must still be
+ *       destroyed through that old backend's `destroy` (the context
+ *       stores the ops table, so this works via the same ctx).
+ *
+ * @param ctx  Context; NULL is a no-op.
+ * @param ops  Ops table to bind, or NULL for built-in.
  */
 void mcp_json_set_backend(mcp_context_t *ctx, const mcp_json_backend_ops_t *ops);
 
 /**
- * Parses strict JSON. `ctx` may be NULL (uses the default libc
- * allocator and the built-in backend).
- * Returns a caller-owned value, or NULL on any parse error
- * (malformed input, depth > 128, non-finite number, NOMEM).
+ * @brief Parses strict JSON.
+ *
+ * @param ctx   Context; NULL uses the default libc allocator and built-in backend.
+ * @param text  JSON text.
+ * @param len   Length in bytes.
+ * @return Caller-owned value, or NULL on any parse error
+ *         (malformed input, depth > MCP_JSON_MAX_DEPTH, non-finite number, NOMEM).
  */
 mcp_json_value_t *mcp_json_parse(mcp_context_t *ctx, const char *text, size_t len);
 
 /**
- * Serializes a value to a canonical, minimal JSON string.
- * Returns a caller-owned NUL-terminated buffer (free with
- * `mcp_json_free_string` using the SAME ctx), or NULL on NOMEM.
+ * @brief Serializes a value to a canonical, minimal JSON string.
+ *
+ * @param ctx  Context; NULL uses the default allocator.
+ * @param v    Value to serialize.
+ * @return Caller-owned NUL-terminated buffer (free with
+ *         `mcp_json_free_string` using the SAME ctx), or NULL on NOMEM.
  */
 char *mcp_json_serialize(mcp_context_t *ctx, const mcp_json_value_t *v);
 
 /**
- * Releases a string returned by `mcp_json_serialize`.
- * `ctx` may be NULL (falls back to the default allocator).
- * NULL string is a no-op.
+ * @brief Releases a string returned by `mcp_json_serialize`.
+ *
+ * @param ctx  Context; NULL falls back to the default allocator.
+ * @param s    String to free; NULL is a no-op.
  */
 void mcp_json_free_string(mcp_context_t *ctx, char *s);
 

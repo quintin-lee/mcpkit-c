@@ -6,8 +6,7 @@
 #include "mcpkit/core/error.h"
 
 /**
- * @file stdio.h
- * stdio-backed transport: reads lines from a FILE* stream.
+ * @brief stdio-backed transport: reads lines from a FILE* stream.
  *
  * - in may be NULL (no reads); out may be NULL (no writes); at least
  *   one must be non-NULL or create returns NULL.
@@ -24,16 +23,30 @@ typedef struct mcp_transport mcp_transport_t;
 typedef struct mcp_server mcp_server_t;
 
 /**
- * Creates a stdio transport. in/out are borrowed FILE* handles; the
- * transport does not close them.
+ * @brief Creates a stdio transport over two FILE* handles.
+ *
+ * The FILE* handles are borrowed; the transport does not close them.
+ *
+ * @param ctx Context; may be NULL (default allocator).
+ * @param in FILE* to read from; may be NULL for write-only.
+ * @param out FILE* to write to; may be NULL for read-only.
+ * @return Owned mcp_transport_t, or NULL if both in and out are NULL,
+ *         or on OOM.
  */
 mcp_transport_t *mcp_stdio_transport_create(mcp_context_t *ctx, FILE *in, FILE *out);
 
 /**
- * Serves the server over the transport until EOF or an unrecoverable
- * error. Creates and destroys its own session; the caller must NOT call
+ * @brief Runs a synchronous serve loop until EOF or an unrecoverable
+ *        error.
+ *
+ * Creates and destroys its own session; the caller must NOT call
  * mcp_transport_start/stop (the serve function manages the transport
  * lifecycle internally).
+ *
+ * @param ctx Context; may be NULL.
+ * @param server Target server to dispatch to.
+ * @param t Transport created by mcp_stdio_transport_create.
+ * @return MCP_OK on clean EOF; MCP_ERR_IO on I/O failure.
  */
 mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_transport_t *t);
 

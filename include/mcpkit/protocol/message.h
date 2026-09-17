@@ -1,14 +1,17 @@
-// message.h — JSON-RPC 2.0 envelope over the MCP JSON DOM.
-//
-// An mcp_message_t wraps a JSON value tree with accessors that
-// distinguish request / notification / response kinds. The message
-// owns its JSON tree; callers free it with mcp_message_destroy(ctx, msg).
-//
-// All accessor functions return BORROWED pointers valid until the
-// message is destroyed. The builders mcp_request_new_*, mcp_notification_new,
-// mcp_response_*_new take ownership of `params` / `result` / `data`
-// (non-NULL out-params are set on success; on failure the caller
-// retains ownership).
+/**
+ * @file message.h
+ * JSON-RPC 2.0 envelope over the MCP JSON DOM.
+ *
+ * An mcp_message_t wraps a JSON value tree with accessors that
+ * distinguish request / notification / response kinds. The message
+ * owns its JSON tree; callers free it with mcp_message_destroy(ctx, msg).
+ *
+ * All accessor functions return BORROWED pointers valid until the
+ * message is destroyed. The builders mcp_request_new_*, mcp_notification_new,
+ * mcp_response_*_new take ownership of `params` / `result` / `data`
+ * (non-NULL out-params are set on success; on failure the caller
+ * retains ownership).
+ */
 
 #ifndef MCPKIT_PROTOCOL_MESSAGE_H
 #define MCPKIT_PROTOCOL_MESSAGE_H
@@ -22,9 +25,11 @@
 typedef struct mcp_context mcp_context_t;
 
 /**
- * JSON-RPC 2.0 error codes. The MCP spec uses a subset of the standard
- * JSON-RPC codes; mcp_status_to_rpc_code / mcp_rpc_code_to_status map
- * between MCP status codes and these integer codes.
+ * @brief JSON-RPC 2.0 error codes.
+ *
+ * The MCP spec uses a subset of the standard JSON-RPC codes;
+ * mcp_status_to_rpc_code / mcp_rpc_code_to_status map between
+ * MCP status codes and these integer codes.
  */
 typedef enum {
     MCP_RPC_PARSE_ERROR = -32700,
@@ -35,10 +40,12 @@ typedef enum {
 } mcp_rpc_code_t;
 
 /**
- * Message kind. A JSON-RPC 2.0 envelope is either a request (has "id"
- * and "method"), a notification (has "method" but no "id"), or a
- * response (has "id" and either "result" or "error"). MCP_MSG_INVALID
- * is returned when the kind cannot be determined.
+ * @brief Message kind.
+ *
+ * A JSON-RPC 2.0 envelope is either a request (has "id" and "method"),
+ * a notification (has "method" but no "id"), or a response (has "id"
+ * and either "result" or "error"). MCP_MSG_INVALID is returned when
+ * the kind cannot be determined.
  */
 typedef enum {
     MCP_MSG_INVALID = 0,
@@ -48,8 +55,10 @@ typedef enum {
 } mcp_msg_kind_t;
 
 /**
- * Discriminator for the "id" field: JSON-RPC 2.0 ids are either a
- * string or a number (or absent for notifications).
+ * @brief Discriminator for the "id" field.
+ *
+ * JSON-RPC 2.0 ids are either a string or a number (or absent for
+ * notifications).
  */
 typedef enum {
     MCP_ID_NONE = 0,
@@ -58,107 +67,231 @@ typedef enum {
 } mcp_id_type_t;
 
 /**
- * Maximum serialized message size in bytes. Messages longer than this
- * are rejected by the validation layer (mcp_message_validate) with
- * MCP_RPC_PARSE_ERROR.
+ * @brief Maximum serialized message size in bytes.
+ *
+ * Messages longer than this are rejected by the validation layer
+ * (mcp_message_validate) with MCP_RPC_PARSE_ERROR.
  */
 #define MCP_PROTOCOL_MAX_MESSAGE_BYTES (4u * 1024u * 1024u)
 
 /**
- * Opaque JSON-RPC 2.0 envelope. Owns its internal JSON tree.
+ * @brief Opaque JSON-RPC 2.0 envelope.
+ *
+ * Owns its internal JSON tree.
  * Allocate with mcp_message_parse or one of the builder functions;
  * free with mcp_message_destroy(ctx, msg).
  */
 typedef struct mcp_message mcp_message_t;
 
 /**
- * Parses a single-line JSON-RPC 2.0 envelope from `text` (length `len`).
- * Returns NULL on parse failure or when the root is not a JSON object.
- * The returned message owns its JSON tree; free with mcp_message_destroy.
- * `ctx` may be NULL (default allocator, built-in backend).
+ * @brief Parses a single-line JSON-RPC 2.0 envelope from `text`.
+ *
+ * @param ctx   Context; NULL uses the default allocator and built-in backend.
+ * @param text  JSON text.
+ * @param len   Length in bytes.
+ * @return Caller-owned message, or NULL on parse failure or when the
+ *         root is not a JSON object.
  */
 mcp_message_t *mcp_message_parse(mcp_context_t *ctx, const char *text, size_t len);
 
 /**
- * Destroys `msg` and its owned JSON tree. `ctx` must be the same
- * context (or NULL) used to create `msg`. NULL msg is a no-op.
+ * @brief Destroys `msg` and its owned JSON tree.
+ *
+ * @param ctx  Context that created `msg` (or NULL).
+ * @param msg  Message to destroy; NULL is a no-op.
  */
 void mcp_message_destroy(mcp_context_t *ctx, mcp_message_t *msg);
 
-// --- Accessors (all return BORROWED pointers; msg must outlive use) ---
+/* --- Accessors (all return BORROWED pointers; msg must outlive use) --- */
 
+/**
+ * @brief Returns the message kind.
+ *
+ * @param ctx  Context.
+ * @param msg  Message to inspect.
+ * @return The message kind.
+ */
 mcp_msg_kind_t mcp_message_kind(mcp_context_t *ctx, const mcp_message_t *msg);
+
+/**
+ * @brief Returns the `"jsonrpc"` field.
+ *
+ * @param ctx  Context.
+ * @param msg  Message to inspect.
+ * @return Borrowed string, or NULL if absent.
+ */
 const char *mcp_message_jsonrpc(mcp_context_t *ctx, const mcp_message_t *msg);
+
+/**
+ * @brief Returns the `"method"` field.
+ *
+ * @param ctx  Context.
+ * @param msg  Message to inspect.
+ * @return Borrowed string, or NULL if absent (e.g. response messages).
+ */
 const char *mcp_message_method(mcp_context_t *ctx, const mcp_message_t *msg);
+
+/**
+ * @brief Returns the `"params"` field.
+ *
+ * @param ctx  Context.
+ * @param msg  Message to inspect.
+ * @return Borrowed value, or NULL if absent.
+ */
 const mcp_json_value_t *mcp_message_params(mcp_context_t *ctx, const mcp_message_t *msg);
+
+/**
+ * @brief Returns the type of the `"id"` field.
+ *
+ * @param ctx  Context.
+ * @param msg  Message to inspect.
+ * @return ID type discriminator.
+ */
 mcp_id_type_t mcp_message_id_type(mcp_context_t *ctx, const mcp_message_t *msg);
+
+/**
+ * @brief Returns the `"id"` field as a string.
+ *
+ * @param ctx  Context.
+ * @param msg  Message to inspect.
+ * @return Borrowed string, or NULL if the id is not a string.
+ */
 const char *mcp_message_id_string(mcp_context_t *ctx, const mcp_message_t *msg);
+
+/**
+ * @brief Returns the `"id"` field as a number.
+ *
+ * @param ctx  Context.
+ * @param msg  Message to inspect.
+ * @param out  Out-parameter for the numeric id.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if the id is not a number.
+ */
 mcp_status_t mcp_message_id_number(mcp_context_t *ctx, const mcp_message_t *msg, double *out);
+
+/**
+ * @brief Returns the `"result"` field.
+ *
+ * @param ctx  Context.
+ * @param msg  Message to inspect.
+ * @return Borrowed value, or NULL if absent.
+ */
 const mcp_json_value_t *mcp_message_result(mcp_context_t *ctx, const mcp_message_t *msg);
+
+/**
+ * @brief Returns the `"error.code"` field.
+ *
+ * @param ctx  Context.
+ * @param msg  Message to inspect.
+ * @param out  Out-parameter for the error code.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if there is no error field.
+ */
 mcp_status_t mcp_message_error_code(mcp_context_t *ctx, const mcp_message_t *msg, int *out);
+
+/**
+ * @brief Returns the `"error.message"` field.
+ *
+ * @param ctx  Context.
+ * @param msg  Message to inspect.
+ * @return Borrowed string, or NULL if there is no error field.
+ */
 const char *mcp_message_error_text(mcp_context_t *ctx, const mcp_message_t *msg);
 
-// --- Builders ---
-// params / result / data are owned by the caller; on success ownership
-// transfers to the message. On failure (MCP_ERR_NOMEM / NULL) the
-// caller retains ownership of any non-NULL argument it passed.
+/* --- Builders --- */
+/* params / result / data are owned by the caller; on success ownership
+ * transfers to the message. On failure (MCP_ERR_NOMEM / NULL) the
+ * caller retains ownership of any non-NULL argument it passed. */
 
 /**
- * Creates a JSON-RPC 2.0 request with a string `id`. `method` must
- * be non-NULL. `params` may be NULL (omitted in the serialized form).
+ * @brief Creates a JSON-RPC 2.0 request with a string `id`.
+ *
+ * @param ctx     Context.
+ * @param id      Request id (must be non-NULL).
+ * @param method  Method name (must be non-NULL).
+ * @param params  Params value; ownership transfers on MCP_OK; may be NULL.
+ * @return Caller-owned message, or NULL on allocation failure.
  */
 mcp_message_t *mcp_request_new_string_id(mcp_context_t *ctx, const char *id,
-                                         const char *method, mcp_json_value_t *params);
+                                          const char *method, mcp_json_value_t *params);
 
 /**
- * Creates a JSON-RPC 2.0 request with a numeric `id`. `method` must
- * be non-NULL. `params` may be NULL.
+ * @brief Creates a JSON-RPC 2.0 request with a numeric `id`.
+ *
+ * @param ctx     Context.
+ * @param id      Numeric request id.
+ * @param method  Method name (must be non-NULL).
+ * @param params  Params value; ownership transfers on MCP_OK; may be NULL.
+ * @return Caller-owned message, or NULL on allocation failure.
  */
 mcp_message_t *mcp_request_new_number_id(mcp_context_t *ctx, double id,
-                                         const char *method, mcp_json_value_t *params);
+                                          const char *method, mcp_json_value_t *params);
 
 /**
- * Creates a JSON-RPC 2.0 notification (no "id" field). `method` must
- * be non-NULL. `params` may be NULL.
+ * @brief Creates a JSON-RPC 2.0 notification (no "id" field).
+ *
+ * @param ctx     Context.
+ * @param method  Method name (must be non-NULL).
+ * @param params  Params value; ownership transfers on MCP_OK; may be NULL.
+ * @return Caller-owned message, or NULL on allocation failure.
  */
 mcp_message_t *mcp_notification_new(mcp_context_t *ctx, const char *method,
-                                    mcp_json_value_t *params);
+                                     mcp_json_value_t *params);
 
 /**
- * Creates a JSON-RPC 2.0 success response carrying `result` (owned).
- * `req` supplies the "id"; pass NULL for a standalone error response
- * with no id. The response JSON object owns `result` on success.
+ * @brief Creates a JSON-RPC 2.0 success response.
+ *
+ * @param ctx     Context.
+ * @param req     Request to respond to (supplies the "id"); NULL for
+ *                a standalone response with no id.
+ * @param result  Result value; ownership transfers to the response on success.
+ * @return Caller-owned message, or NULL on allocation failure.
  */
 mcp_message_t *mcp_response_ok_new(mcp_context_t *ctx, const mcp_message_t *req,
-                                   mcp_json_value_t *result);
+                                    mcp_json_value_t *result);
 
 /**
- * Creates a JSON-RPC 2.0 error response. `req_or_null` supplies the
- * "id" (NULL → "id" field omitted). `code` is a JSON-RPC error code
- * (see mcp_rpc_code_t). `message` is a human-readable string;
- * `data` (optional) is attached as "error.data".
+ * @brief Creates a JSON-RPC 2.0 error response.
+ *
+ * @param ctx         Context.
+ * @param req_or_null Request to respond to (supplies the "id"); NULL
+ *                    omits the "id" field.
+ * @param code        JSON-RPC error code (see mcp_rpc_code_t).
+ * @param message     Human-readable error message.
+ * @param data        Optional "error.data" value; ownership transfers on success.
+ * @return Caller-owned message, or NULL on allocation failure.
  */
 mcp_message_t *mcp_response_err_new(mcp_context_t *ctx, const mcp_message_t *req_or_null,
-                                    int code, const char *message, mcp_json_value_t *data);
+                                     int code, const char *message, mcp_json_value_t *data);
 
 /**
- * Serializes `msg` to a heap-allocated JSON string. The caller owns
- * the returned string and must free it with mcp_json_free_string(ctx, s)
- * using the SAME context that created `msg`.
+ * @brief Serializes `msg` to a heap-allocated JSON string.
+ *
+ * @param ctx  Context that created `msg` (or NULL).
+ * @param msg  Message to serialize.
+ * @return Caller-owned NUL-terminated string; free with
+ *         mcp_json_free_string(ctx, s) using the SAME ctx.
  */
 char *mcp_message_serialize(mcp_context_t *ctx, const mcp_message_t *msg);
 
 /**
- * Maps an MCP status code to the nearest JSON-RPC error code.
- * MCP_OK → 0; MCP_ERR_NOMEM/IO/PROTOCOL/etc. → MCP_RPC codes.
- * Unmapped codes collapse to MCP_RPC_INTERNAL_ERROR.
+ * @brief Maps an MCP status code to the nearest JSON-RPC error code.
+ *
+ * MCP_OK maps to 0; MCP_ERR_NOMEM/IO/PROTOCOL/etc. map to the
+ * corresponding MCP_RPC codes. Unmapped codes collapse to
+ * MCP_RPC_INTERNAL_ERROR.
+ *
+ * @param status  MCP status code.
+ * @return The nearest JSON-RPC error code.
  */
 int mcp_status_to_rpc_code(mcp_status_t status);
 
 /**
- * Maps a JSON-RPC error code to the nearest MCP status.
+ * @brief Maps a JSON-RPC error code to the nearest MCP status.
+ *
  * Standard codes (e.g. -32602) map to specific MCP status values;
  * unknown codes map to MCP_ERR_PROTOCOL.
+ *
+ * @param code  JSON-RPC error code.
+ * @return The nearest MCP status.
  */
 mcp_status_t mcp_rpc_code_to_status(int code);
 

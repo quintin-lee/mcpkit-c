@@ -6,8 +6,7 @@
 #include "mcpkit/core/error.h"
 
 /**
- * @file plugin.h
- * Global static plugin registry (no ctx; uses builtin allocation).
+ * @brief Global static plugin registry (no ctx; uses builtin allocation).
  *
  * - At most MCP_PLUGIN_MAX_ENTRIES (32) distinct (kind, name) pairs may
  *   be registered simultaneously; first-fit slot reuse is used on
@@ -30,18 +29,50 @@ typedef enum {
 
 #define MCP_PLUGIN_MAX_ENTRIES 32
 
+/**
+ * @brief Registers a plugin pointer in the global registry.
+ *
+ * The registry uses builtin (libc) allocation and has no ctx; it is
+ * process-global.
+ *
+ * @param kind Plugin category.
+ * @param name Plugin name; strdup'd internally; caller may free.
+ * @param ptr Opaque pointer stored by value; not owned by the registry.
+ * @return MCP_OK on success; MCP_ERR_ALREADY_EXISTS if (kind, name) is
+ *         already registered; MCP_ERR_NOMEM if all 32 slots are full
+ *         of distinct pairs.
+ */
 mcp_status_t mcp_plugin_register(mcp_plugin_kind_t kind,
-                                  const char *name, const void *ptr);
+                                 const char *name, const void *ptr);
+
+/**
+ * @brief Unregisters a plugin by (kind, name).
+ *
+ * Frees the slot; first-fit slot reuse keeps the table usable for
+ * future registrations of different names.
+ *
+ * @param kind Plugin category.
+ * @param name Exact name used at registration.
+ * @return MCP_OK on success; MCP_ERR_NOT_FOUND if (kind, name) is not
+ *         registered.
+ */
 mcp_status_t mcp_plugin_unregister(mcp_plugin_kind_t kind, const char *name);
 
 /**
- * Returns the stored pointer for (kind, name), or NULL if absent.
- * The returned pointer is borrowed; the caller must not free it.
+ * @brief Looks up the stored pointer for (kind, name).
+ *
+ * @param kind Plugin category.
+ * @param name Plugin name.
+ * @return BORROWED const void* (the stored pointer), or NULL if absent.
+ *         Caller must not free the returned pointer.
  */
 const void *mcp_plugin_find(mcp_plugin_kind_t kind, const char *name);
 
 /**
- * Returns the number of currently-registered plugins of the given kind.
+ * @brief Returns the number of currently-registered plugins of the
+ *        given kind.
+ * @param kind Plugin category.
+ * @return Count of registered entries for that kind.
  */
 size_t mcp_plugin_count(mcp_plugin_kind_t kind);
 

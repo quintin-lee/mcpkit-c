@@ -4,9 +4,10 @@
 #include <stdbool.h>
 
 /**
- * Bitmask of protocol capability groups a server advertises in its
- * initialize result. Pass to the server builder to gate which
- * methods the dispatcher will accept.
+ * @brief Bitmask of protocol capability groups a server advertises.
+ *
+ * Pass to the server builder to gate which methods the dispatcher will
+ * accept.
  */
 typedef struct {
     bool tools;      /**< Accept tools/list and tools/call. */
@@ -14,7 +15,9 @@ typedef struct {
     bool prompts;    /**< Accept prompts/list and prompts/get. */
 } mcp_capabilities_t;
 
-/** Designated-initialiser value with all capabilities off. */
+/**
+ * @brief Designated-initialiser value with all capabilities off.
+ */
 #define MCP_CAPABILITIES_INIT {false, false, false}
 
 #endif

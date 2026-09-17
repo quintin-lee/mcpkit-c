@@ -14,21 +14,39 @@
  * libuv) without breaking downstream binaries.
  */
 
-/** Execution context. Owns allocator, logger, and JSON backend selection. */
+/**
+ * @brief Opaque forward declaration: execution context.
+ *
+ * Owns allocator, logger, and JSON backend selection.
+ */
 typedef struct mcp_context mcp_context_t;
-/** Server registry: tools, resources, prompts, sessions. */
+/**
+ * @brief Opaque forward declaration: server registry.
+ *
+ * Holds tools, resources, prompts, and active sessions.
+ */
 typedef struct mcp_server mcp_server_t;
-/** A single MCP session (one client connection). */
+/**
+ * @brief Opaque forward declaration: a single MCP session.
+ *
+ * Represents one client connection and its state.
+ */
 typedef struct mcp_session mcp_session_t;
-/** A registered tool and its handler. */
+/**
+ * @brief Opaque forward declaration: registered tool.
+ */
 typedef struct mcp_tool mcp_tool_t;
-/** A registered resource and its reader handler. */
+/**
+ * @brief Opaque forward declaration: registered resource.
+ */
 typedef struct mcp_resource mcp_resource_t;
-/** A registered prompt and its generator handler. */
+/**
+ * @brief Opaque forward declaration: registered prompt.
+ */
 typedef struct mcp_prompt mcp_prompt_t;
 
 /**
- * Pluggable allocator.
+ * @brief Pluggable allocator.
  *
  * Each function pointer is optional: a NULL entry is resolved to the
  * corresponding libc function at `mcp_context_create` time. The
@@ -37,7 +55,7 @@ typedef struct mcp_prompt mcp_prompt_t;
  * different backends.
  *
  * @note A context created with a given allocator must use that
- * allocator for every free; do not mix allocators across calls.
+ *       allocator for every free; do not mix allocators across calls.
  */
 typedef struct mcp_allocator {
     void *(*malloc_fn)(size_t size, void *userdata);
@@ -48,9 +66,12 @@ typedef struct mcp_allocator {
 } mcp_allocator_t;
 
 /**
- * Returns a pointer to the process-wide default (libc-backed) allocator.
+ * @brief Returns a pointer to the process-wide default (libc-backed) allocator.
+ *
  * The pointer is valid for the lifetime of the process and needs no
  * release.
+ *
+ * @return Borrowed default allocator, valid for the lifetime of the process.
  */
 const mcp_allocator_t *mcp_default_allocator(void);
 

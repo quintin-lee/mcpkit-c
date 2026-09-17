@@ -5,9 +5,8 @@
 #include "mcpkit/json/value.h"
 
 /**
- * @file ui.h
- * MCP Apps extension: ui:// HTML resources with per-resource CSP and
- * mount/unmount lifecycle callbacks.
+ * @brief MCP Apps extension: ui:// HTML resources with per-resource CSP
+ *        and mount/unmount lifecycle callbacks.
  *
  * Ownership:
  * - mcp_apps_ui_resource_new(): returns a caller-owned mcp_resource_t.
@@ -42,43 +41,77 @@ typedef struct mcp_resource mcp_resource_t;
 typedef struct mcp_session mcp_session_t;
 
 /**
- * Creates a ui:// resource backed by an HTML document with a CSP policy.
- * The reader handler returns contents[{uri, mimeType, text}] where text
- * is the HTML document.
+ * @brief Creates a ui:// resource backed by an HTML document with a CSP
+ *        policy.
+ *
+ * The reader handler returns contents[{uri, mimeType, text}] where
+ * text is the HTML document.
+ *
+ * @param ctx Context; may be NULL (default allocator).
+ * @param uri Resource URI (must use the ui:// scheme).
+ * @param name Optional display name; may be NULL.
+ * @param html HTML document string; copied, not owned.
+ * @param csp_or_null Optional CSP policy; NULL uses default-deny.
+ * @return Owned mcp_resource_t, or NULL on OOM or invalid uri.
  */
 mcp_resource_t *mcp_apps_ui_resource_new(mcp_context_t *ctx, const char *uri,
-                                         const char *name,
-                                         const char *html,
-                                         const mcp_csp_t *csp_or_null);
+                                          const char *name,
+                                          const char *html,
+                                          const mcp_csp_t *csp_or_null);
 
 /**
- * Adds _meta.ui.resourceUri to the result object. If _meta.ui is already
- * present the existing resourceUri is overwritten (documented behavior).
+ * @brief Adds _meta.ui.resourceUri to the result object.
+ *
+ * If _meta.ui is already present the existing resourceUri is overwritten
+ * (documented behavior).
+ *
+ * @param ctx Context; may be NULL.
+ * @param result Target JSON object; not cloned, caller retains ownership.
+ * @param resource_uri URI string to store; not owned.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if result is NULL.
  */
 mcp_status_t mcp_apps_result_with_ui(mcp_context_t *ctx, mcp_json_value_t *result,
                                      const char *resource_uri);
 
 /**
- * Lifecycle callback. Invoked on mount (if non-NULL) and on unmount (if
- * non-NULL).
+ * @brief Lifecycle callback signature for mount/unmount.
+ *
+ * @param ctx Context for allocation.
+ * @param session Current session (borrowed; not owned).
+ * @param user_data Opaque pointer passed at registration time.
  */
 typedef void (*mcp_apps_lifecycle_fn)(mcp_context_t *ctx, mcp_session_t *session,
                                        void *user_data);
 
 /**
- * Registers a mount on the session. on_mount, if non-NULL, is called
- * synchronously before this function returns. *handle_out receives a
- * caller-owned mount handle.
+ * @brief Registers a mount on the session.
+ *
+ * on_mount, if non-NULL, is called synchronously before this function
+ * returns.
+ *
+ * @param ctx Context; may be NULL.
+ * @param session Target session.
+ * @param on_mount_or_null Callback invoked on mount; NULL to skip.
+ * @param on_unmount_or_null Callback invoked on unmount; NULL to skip.
+ * @param user_data Opaque pointer forwarded to callbacks.
+ * @param handle_out Receives a caller-owned mount handle.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if session is NULL.
  */
 mcp_status_t mcp_apps_mount(mcp_context_t *ctx, mcp_session_t *session,
-                            mcp_apps_lifecycle_fn on_mount_or_null,
-                            mcp_apps_lifecycle_fn on_unmount_or_null,
-                            void *user_data,
-                            mcp_apps_mount_t **handle_out);
+                             mcp_apps_lifecycle_fn on_mount_or_null,
+                             mcp_apps_lifecycle_fn on_unmount_or_null,
+                             void *user_data,
+                             mcp_apps_mount_t **handle_out);
 
 /**
- * Unmounts and frees the handle. Invokes on_unmount if registered.
- * MCP_ERR_INVALID_ARGUMENT if handle is NULL.
+ * @brief Unmounts and frees the handle.
+ *
+ * Invokes on_unmount if registered.
+ *
+ * @param ctx Context; may be NULL.
+ * @param handle Mount handle returned by mcp_apps_mount; NULL yields
+ *               MCP_ERR_INVALID_ARGUMENT.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if handle is NULL.
  */
 mcp_status_t mcp_apps_unmount(mcp_context_t *ctx, mcp_apps_mount_t *handle);
 
