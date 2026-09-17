@@ -423,9 +423,26 @@ static mcp_message_t *route_completion_complete(mcp_context_t *ctx, mcp_server_t
     for (size_t i = 0; i < srv->n_completions; i++) {
         size_t plen = strlen(srv->completions[i].ref_prefix);
         if (strncmp(ref_str, srv->completions[i].ref_prefix, plen) == 0) {
-            const mcp_json_value_t *args = mcp_json_object_get(ctx, params, "argument");
+            const mcp_json_value_t *args_ref = mcp_json_object_get(ctx, params, "argument");
+            // Clone so the provider never sees a dangling pointer into the request
+            // DOM (which the caller destroys after mcp_server_dispatch returns).
+            mcp_json_value_t *args;
+            if (args_ref != NULL) {
+                args = mcp_json_clone(ctx, args_ref);
+                if (args == NULL) {
+                    return err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR,
+                                    "completion/complete: arg clone failed");
+                }
+            } else {
+                args = mcp_json_null_new(ctx);
+                if (args == NULL) {
+                    return err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR,
+                                    "completion/complete: arg clone failed");
+                }
+            }
             mcp_json_value_t *comps = srv->completions[i].fn(ctx, s, args,
-                                                              srv->completions[i].user_data);
+                                                               srv->completions[i].user_data);
+            mcp_json_destroy(ctx, args);
             if (comps == NULL) {
                 return err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR,
                                 "completion/complete: provider returned NULL");

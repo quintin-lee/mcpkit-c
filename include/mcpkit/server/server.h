@@ -129,10 +129,15 @@ mcp_status_t mcp_server_remove_prompt(mcp_context_t *ctx, mcp_server_t *server,
  * The provider must return an owned JSON array created via ctx.
  * The dispatcher destroys the array after building the response.
  *
- * @param ctx Context for allocation.
- * @param session Current session (borrowed; not owned).
- * @param ref The completion reference object from the request (borrowed).
- * @param user_data Opaque pointer passed at registration time.
+  * @param ctx Context for allocation.
+  * @param session Current session (borrowed; not owned).
+  * @param ref The completion argument object from the request, cloned by
+  *         the dispatcher before this callback is invoked. The provider may
+  *         hold a reference to it (store it in user_data or a heap copy)
+  *         beyond the callback; the dispatcher destroys its own clone
+  *         immediately after the callback returns. If the request carried
+  *         no "argument" member, ref is a JSON null value.
+  * @param user_data Opaque pointer passed at registration time.
  * @return Owned JSON array of completion strings, or NULL on internal
  *         error (the dispatcher surfaces this as MCP_RPC_INTERNAL_ERROR).
  */
