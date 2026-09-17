@@ -152,13 +152,25 @@ mcp_status_t mcp_apps_result_with_ui(mcp_context_t *ctx, mcp_json_value_t *resul
     mcp_json_value_t *meta = mcp_json_object_new(ctx);
     mcp_json_value_t *mui = mcp_json_object_new(ctx);
     mcp_json_value_t *muri = mcp_json_string_new(ctx, resource_uri);
-    if (meta == NULL || mui == NULL || muri == NULL ||
-        mcp_json_object_set(ctx, mui, "resourceUri", muri) != MCP_OK ||
-        mcp_json_object_set(ctx, meta, "ui", mui) != MCP_OK ||
-        mcp_json_object_set(ctx, result, "_meta", meta) != MCP_OK) {
+    if (meta == NULL || mui == NULL || muri == NULL) {
         mcp_json_destroy(ctx, muri);
         mcp_json_destroy(ctx, mui);
         mcp_json_destroy(ctx, meta);
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set(ctx, mui, "resourceUri", muri) != MCP_OK) {
+        mcp_json_destroy(ctx, muri); /* not attached */
+        mcp_json_destroy(ctx, mui);
+        mcp_json_destroy(ctx, meta);
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set(ctx, meta, "ui", mui) != MCP_OK) {
+        mcp_json_destroy(ctx, mui); /* recursively frees attached muri */
+        mcp_json_destroy(ctx, meta);
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set(ctx, result, "_meta", meta) != MCP_OK) {
+        mcp_json_destroy(ctx, meta); /* recursively frees mui/muri */
         return MCP_ERR_NOMEM;
     }
     return MCP_OK;
