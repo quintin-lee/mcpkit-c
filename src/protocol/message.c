@@ -1,3 +1,12 @@
+// message.c — JSON-RPC 2.0 envelope implementation.
+//
+// Each mcp_message_t is a thin wrapper around a JSON DOM tree
+// (structurally validated: root must be a JSON object). The message
+// owns the DOM; mcp_message_destroy frees both.
+//
+// Allocation goes through the context allocator (ctx_malloc/ctx_free)
+// so counting allocators observe protocol-layer allocations too.
+
 #include "mcpkit/protocol/message.h"
 
 #include <string.h>
@@ -6,6 +15,12 @@
 #include "mcpkit/json/json.h"
 #include "mcpkit/json/object.h"
 
+/**
+ * JSON-RPC 2.0 envelope. Wraps an owned JSON DOM tree.
+ * The DOM must be a JSON object with at least one of "method",
+ * "result", or "error" keys; otherwise mcp_message_kind returns
+ * MCP_MSG_INVALID.
+ */
 struct mcp_message {
     mcp_json_value_t *dom;
 };

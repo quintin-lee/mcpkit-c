@@ -1,3 +1,10 @@
+// initialize.c — initialize handshake builders and protocol negotiation.
+//
+// mcp_protocol_negotiate returns a pointer to a static string in
+// k_supported (no allocation, no ownership transfer). Returns NULL
+// when client_version is NULL or does not match any supported version;
+// callers should fall back to MCP_PROTOCOL_VERSION_LATEST in that case.
+
 #include "mcpkit/protocol/initialize.h"
 
 #include <string.h>
@@ -6,6 +13,7 @@
 #include "mcpkit/json/object.h"
 #include "mcpkit/protocol/message.h"
 
+// Supported protocol versions, most-recent first.
 static const char *const k_supported[] = {
     MCP_PROTOCOL_VERSION_LATEST,
     "2024-11-05",
