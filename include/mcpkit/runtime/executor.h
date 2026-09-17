@@ -1,3 +1,11 @@
+/**
+ * @file executor.h
+ * Executor shell + backend ops table (sync and threadpool both fit).
+ *
+ * The shell stores an opaque backend pointer plus the ops table. NULL ops
+ * or any NULL op yields an UNSUPPORTED dispatcher return; NULL args to
+ * submit are INVALID_ARGUMENT.
+ */
 #ifndef MCPKIT_RUNTIME_EXECUTOR_H
 #define MCPKIT_RUNTIME_EXECUTOR_H
 

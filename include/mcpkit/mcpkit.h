@@ -1,3 +1,12 @@
+/**
+ * @file mcpkit.h
+ * Umbrella header: pulls in every public API by layer.
+ *
+ * core -> logging -> json -> protocol -> server -> transport -> client ->
+ * runtime -> apps -> plugin. Including this one header is enough for
+ * applications that use several layers; library authors that need only a
+ * slice can include the individual headers directly.
+ */
 #ifndef MCPKIT_H
 #define MCPKIT_H
 
