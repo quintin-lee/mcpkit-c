@@ -12,3 +12,6 @@ CMakeFiles/
 cmake_install.cmake
 Testing/
 compile_commands.json
+
+# generated doxygen output
+/docs/api/
