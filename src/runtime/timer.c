@@ -1,3 +1,11 @@
+/**
+ * @file timer.c
+ *
+ * Sorted singly-linked timer list keyed by CLOCK_MONOTONIC deadline.
+ * Equal deadlines fire in FIFO (insertion) order. poll() unlinks the
+ * entry BEFORE running its callback so a handler that reschedules
+ * during its own callback cannot observe a half-removed list node.
+ */
 #define _POSIX_C_SOURCE 200809L
 
 #include "mcpkit/runtime/timer.h"

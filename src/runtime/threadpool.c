@@ -1,3 +1,12 @@
+/**
+ * @file threadpool.c
+ *
+ * C11 <threads.h> fixed-size pool. Each submitted task node captures
+ * the submit-time context so the task and its later free both route
+ * through that context's allocator (a pool outliving its creating
+ * context stays self-consistent). destroy() discards pending tasks
+ * without running them; call mcp_executor_wait first to drain.
+ */
 #include "mcpkit/runtime/threadpool.h"
 
 #include <stdbool.h>

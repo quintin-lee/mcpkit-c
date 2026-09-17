@@ -1,3 +1,15 @@
+/**
+ * @file dispatcher.c
+ *
+ * Request dispatch pipeline: validate (L1/L2/L3) -> session gate ->
+ * per-session duplicate-id check -> route. Returns MCP_OK with a
+ * response set for every protocol outcome (including validation and
+ * route errors); INVALID_ARGUMENT only for malformed caller arguments
+ * or a non-request message, NOMEM when the response cannot be built.
+ *
+ * process_one consumes (destroys) the incoming message on both the
+ * notification and dispatch paths.
+ */
 #include "mcpkit/server/dispatcher.h"
 
 #include <string.h>

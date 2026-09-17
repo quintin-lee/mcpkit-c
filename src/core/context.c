@@ -1,3 +1,12 @@
+/**
+ * @file context.c
+ *
+ * Context create/destroy and allocator resolution. A context owns
+ * exactly one logger: if the config supplies one the context does
+ * NOT own it; otherwise a stderr logger is created and owned.
+ * The allocator snapshot captured at create time is the one used by
+ * destroy, so counting allocators observe the full lifetime.
+ */
 #include "mcpkit/core/context.h"
 
 #include <stdbool.h>

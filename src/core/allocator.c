@@ -1,6 +1,10 @@
-// Libc-backed default allocator. Each wrapper ignores `userdata`
-// because the standard functions take no such parameter; the slot
-// is kept so the struct shape matches user-supplied allocators.
+/**
+ * @file allocator.c
+ *
+ * Libc-backed default allocator. Each wrapper ignores `userdata` because
+ * the standard functions take no such parameter; the slot is kept so the
+ * struct shape matches user-supplied allocators.
+ */
 #include "mcpkit/core/types.h"
 
 #include <stdlib.h>

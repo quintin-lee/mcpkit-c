@@ -1,3 +1,10 @@
+/**
+ * @file csp.c
+ *
+ * Content-Security-Policy directive table (4 fixed slots). Allocation
+ * is routed through the context allocator so counting allocators
+ * observe CSP object lifetimes.
+ */
 #include "mcpkit/apps/csp.h"
 
 #include <string.h>

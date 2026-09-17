@@ -1,3 +1,16 @@
+/**
+ * @file http.c
+ *
+ * Buffer-level HTTP/1.1 request/response parsing. Limits: 64 headers,
+ * 8KB per line, 4MB body.
+ *
+ * Ownership asymmetry: the parsed request OWNS its header strings
+ * (strdup'd, freed on destroy) but BORROWS the body pointer from the
+ * caller's input buffer — the caller must keep that buffer alive for
+ * the request's lifetime. Response set_body COPIES the body, so the
+ * caller may free its source immediately. Response serialize()
+ * returns a single owned snapshot valid until the next mutation.
+ */
 #include "mcpkit/transport/http.h"
 
 #include <ctype.h>

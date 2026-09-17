@@ -1,3 +1,12 @@
+/**
+ * @file streamable_http.c
+ *
+ * Streamable-HTTP serve loop over an opaque I/O vtable. Sessions are
+ * loop-local: a fixed 16-slot table keyed by Mcp-Session-Id, all
+ * destroyed when the loop returns. The carry buffer accumulates
+ * partial bodies across reads and is capped at CARRY_MAX; SSE
+ * strings are released with mcp_json_free_string.
+ */
 #include "mcpkit/transport/streamable_http.h"
 
 #include <stdbool.h>

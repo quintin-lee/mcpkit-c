@@ -1,3 +1,13 @@
+/**
+ * @file client.c
+ *
+ * High-level MCP client. All roundtrip results are deep-cloned
+ * (mcp_json_clone) so the caller owns the result independently of
+ * the transport buffer. The request id counter starts at 1.0.
+ *
+ * On both success and failure the client TAKES ownership of `args`;
+ * the caller must not free `args` after calling.
+ */
 #include <string.h>
 
 #include "mcpkit/core/context.h"

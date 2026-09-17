@@ -1,3 +1,10 @@
+/**
+ * @file ui.c
+ *
+ * ui:// resource registration and Apps-mount lifecycle. The CSP
+ * snapshot is taken at resource creation time, not at mount time,
+ * so later CSP mutations do not affect an already-mounted UI.
+ */
 #include "mcpkit/apps/ui.h"
 
 #include <string.h>

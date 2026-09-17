@@ -1,11 +1,12 @@
-// api.c — public JSON API dispatch layer.
-//
-// Every public JSON function resolves the active backend for `ctx`
-// (falling back to the built-in when ctx is NULL or has no custom
-// backend) and delegates. This file contains no JSON logic itself;
-// all parsing/serialization lives in builtin.c (or in user-supplied
-// backend implementations).
-
+/**
+ * @file api.c
+ *
+ * Public JSON API dispatch layer. Every public JSON function resolves
+ * the active backend for `ctx` (falling back to the built-in when ctx
+ * is NULL or has no custom backend) and delegates. This file contains
+ * no JSON logic itself; all parsing/serialization lives in builtin.c
+ * (or in user-supplied backend implementations).
+ */
 #include "mcpkit/json/json.h"
 
 #include "mcpkit/core/context.h"

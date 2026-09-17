@@ -1,18 +1,20 @@
-// validate.c — L1/L2/L3 JSON-RPC envelope validation and id-set
-// tracking.
-//
-// L1 (mcp_validate_envelope): structural — jsonrpc=="2.0", kind
-// must be REQUEST/NOTIFICATION/RESPONSE, serialized size within
-// MCP_PROTOCOL_MAX_MESSAGE_BYTES, UTF-8 well-formed.
-// L2 (mcp_validate_method): request/notification method is in the
-// known-methods table; responses always pass.
-// L3 (mcp_validate_params): per-method params shape checks.
-//
-// mcp_message_validate runs L1→L2→L3 and stops at the first failure.
-//
-// The id set distinguishes string ids from numeric ids by type
-// discriminator (not by value), so "1" and 1.0 are separate entries.
-
+/**
+ * @file validate.c
+ *
+ * L1/L2/L3 JSON-RPC envelope validation and id-set tracking.
+ *
+ * L1 (mcp_validate_envelope): structural — jsonrpc=="2.0", kind
+ * must be REQUEST/NOTIFICATION/RESPONSE, serialized size within
+ * MCP_PROTOCOL_MAX_MESSAGE_BYTES, UTF-8 well-formed.
+ * L2 (mcp_validate_method): request/notification method is in the
+ * known-methods table; responses always pass.
+ * L3 (mcp_validate_params): per-method params shape checks.
+ *
+ * mcp_message_validate runs L1→L2→L3 and stops at the first failure.
+ *
+ * The id set distinguishes string ids from numeric ids by type
+ * discriminator (not by value), so "1" and 1.0 are separate entries.
+ */
 #include "mcpkit/protocol/validate.h"
 
 #include <string.h>

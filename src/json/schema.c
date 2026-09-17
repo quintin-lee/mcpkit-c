@@ -1,16 +1,19 @@
-// schema.c — JSON-Schema builder and validator.
-//
-// Builders (mcp_schema_*_new, mcp_schema_add_*, mcp_schema_set_*)
-// produce standard JSON-Schema document trees on the JSON DOM.
-// Validators (mcp_schema_validate, mcp_schema_validate_verbose)
-// perform recursive top-down type-checking; verbose mode fills a
-// caller-owned buffer with a dotted-path failure description.
-//
-// "integer" type check: a JSON number is an integer only when it is
-// finite and exactly representable as int64 (|d| <= 2^53-1 and d ==
-// (double)(int64_t)d). This is a libm-free approximation of the
-// JSON-Schema spec's "value is an integer" rule.
-
+/**
+ * @file schema.c
+ *
+ * JSON-Schema builder and validator.
+ *
+ * Builders (mcp_schema_*_new, mcp_schema_add_*, mcp_schema_set_*)
+ * produce standard JSON-Schema document trees on the JSON DOM.
+ * Validators (mcp_schema_validate, mcp_schema_validate_verbose)
+ * perform recursive top-down type-checking; verbose mode fills a
+ * caller-owned buffer with a dotted-path failure description.
+ *
+ * "integer" type check: a JSON number is an integer only when it is
+ * finite and exactly representable as int64 (|d| <= 2^53-1 and d ==
+ * (double)(int64_t)d). This is a libm-free approximation of the
+ * JSON-Schema spec's "value is an integer" rule.
+ */
 #include "mcpkit/json/schema.h"
 
 #include <math.h>

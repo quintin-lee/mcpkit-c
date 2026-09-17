@@ -1,3 +1,12 @@
+/**
+ * @file transport.c
+ *
+ * Generic transport wrapper over a user-supplied ops table.
+ * mcp_transport_destroy is a shell-only teardown: it frees the wrapper
+ * struct only; the ops table's stop/free slots (if provided) are
+ * responsible for tearing down the backend. NULL-ctx-safe via
+ * alloc_of.
+ */
 #include "mcpkit/transport/transport.h"
 
 #include "internals.h"

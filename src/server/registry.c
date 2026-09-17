@@ -1,3 +1,12 @@
+/**
+ * @file registry.c
+ *
+ * Tool/resource/prompt constructors and destructors. On a successful
+ * *_new the returned handle is caller-owned and carries ownership of
+ * its schema/user-data; on allocation failure nothing is leaked and
+ * NULL is returned. *_destroy frees the handle and any owned schema
+ * (but not the user_data pointer, which the caller owns).
+ */
 #include "mcpkit/server/tool.h"
 
 #include <string.h>

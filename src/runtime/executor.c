@@ -1,3 +1,15 @@
+/**
+ * @file executor.c
+ *
+ * Generic executor wrapper over a user-supplied ops table.
+ * mcp_executor_destroy only frees the executor struct itself; if the
+ * ops table provides a non-NULL destroy_backend slot it is invoked
+ * with the executor so backends can tear down their own state.
+ *
+ * Dispatch error convention: a NULL fn argument is INVALID_ARGUMENT
+ * (bad caller input), whereas a missing ops slot is UNSUPPORTED
+ * (the backend chose not to implement that operation).
+ */
 #include "mcpkit/runtime/executor.h"
 
 #include "internals.h"

@@ -1,3 +1,10 @@
+/**
+ * @file session.c
+ *
+ * Session allocation and per-session duplicate-id tracking. session_new
+ * zero-clears the struct then sets granted = 0xFFFFFFFFu (ALL granted)
+ * as the default permission mask; memset alone would leave it NONE.
+ */
 #include "mcpkit/server/session.h"
 
 #include <string.h>

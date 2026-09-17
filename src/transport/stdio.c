@@ -1,3 +1,13 @@
+/**
+ * @file stdio.c
+ *
+ * FILE*-backed line transport. recv() reads one line (CRLF stripped)
+ * per call and returns an owned heap string; an oversized line (>4MB)
+ * is discarded to the newline and yields MCP_ERR_PROTOCOL, and an EOF
+ * with no data yields MCP_ERR_IO. The FILE* handles are borrowed —
+ * this transport never fclose()s them. mcp_stdio_serve manages the
+ * transport's start/stop/destroy internally; the caller must not.
+ */
 #include "mcpkit/transport/stdio.h"
 
 #include <string.h>

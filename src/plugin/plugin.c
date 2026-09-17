@@ -1,3 +1,13 @@
+/**
+ * @file plugin.c
+ *
+ * Global static plugin registry (no context; mirrors the built-in
+ * JSON backend precedent). Fixed 32-slot table with first-fit reuse:
+ * a slot released by mcp_plugin_unregister becomes available to a new
+ * (kind,name) pair, so register/unregister cycles do not permanently
+ * exhaust the table. Stored pointers are borrowed — the caller must
+ * keep the pointee alive for the registration lifetime.
+ */
 #include "mcpkit/plugin/plugin.h"
 
 #include <stdbool.h>

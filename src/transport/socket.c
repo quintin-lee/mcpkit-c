@@ -1,3 +1,14 @@
+/**
+ * @file socket.c
+ *
+ * POSIX TCP line transport. In server mode create() binds and
+ * listens but does NOT accept; start() performs the accept() and
+ * replaces the listening fd with the connection. send() appends a
+ * newline and retries on EINTR. recv() reads SOCK_LINE_CAP (4KB)
+ * chunks and grows the line buffer on demand, rejecting a line once
+ * it reaches MCP_PROTOCOL_MAX_MESSAGE_BYTES (4MB) with MCP_ERR_PROTOCOL
+ * and returning MCP_ERR_IO on a clean EOF.
+ */
 #define _DEFAULT_SOURCE
 #include "mcpkit/transport/socket.h"
 

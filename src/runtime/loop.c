@@ -1,3 +1,14 @@
+/**
+ * @file loop.c
+ *
+ * Single-transport serve loop. Creates one session for the lifetime
+ * of the loop. When an executor is supplied, each request is submitted
+ * and waited on synchronously (session-safe, not truly concurrent);
+ * when NULL, dispatch happens inline on the calling thread. The timer
+ * (if any) is polled before every recv. The caller owns and manages
+ * the transport's start/stop/destroy lifecycle — mcp_loop_run does
+ * not call them.
+ */
 #include <string.h>
 
 #include "mcpkit/core/error.h"

@@ -1,3 +1,16 @@
+/**
+ * @file server.c
+ *
+ * Server registry: add/remove for tools, resources, prompts, and
+ * sessions. add_* takes ownership of the item on success and returns
+ * ALREADY_EXISTS on a duplicate name; remove_* swap-removes and
+ * destroys the item. mcp_server_destroy frees sessions, then
+ * tools/resources/prompts, then name/version, then the struct itself.
+ *
+ * srv_malloc/srv_realloc/srv_free/srv_strdup are the shared
+ * allocator helpers: a NULL ctx routes to the default (libc)
+ * allocator so all server APIs are NULL-ctx-safe.
+ */
 #include "mcpkit/server/server.h"
 
 #include <string.h>

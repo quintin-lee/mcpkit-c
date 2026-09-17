@@ -1,15 +1,18 @@
-// builtin.c — built-in JSON backend: strict-JSON DOM, parser,
-// serializer, and UTF-8 validation (Hoehrmann DFA).
-//
-// This translation unit implements mcp_json_backend_ops_t and
-// registers it as the process-wide built-in. It is the reference
-// backend; user code can swap it per-context via
-// mcp_json_set_backend.
-//
-// Concurrency: this module is allocation-only and holds no global
-// mutable state beyond the static ops table, so it is safe to use
-// from multiple threads simultaneously.
-
+/**
+ * @file builtin.c
+ *
+ * Built-in JSON backend: strict-JSON DOM, parser, serializer, and
+ * UTF-8 validation (Hoehrmann DFA).
+ *
+ * This translation unit implements mcp_json_backend_ops_t and
+ * registers it as the process-wide built-in. It is the reference
+ * backend; user code can swap it per-context via
+ * mcp_json_set_backend.
+ *
+ * Concurrency: this module is allocation-only and holds no global
+ * mutable state beyond the static ops table, so it is safe to use
+ * from multiple threads simultaneously.
+ */
 #include "mcpkit/json/json.h"
 
 #include <math.h>
