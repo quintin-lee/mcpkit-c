@@ -1,4 +1,5 @@
 /**
+ * @file context.h
  * @brief Configuration for `mcp_context_create`.
  *
  * All fields are optional; any NULL field is resolved to a built-in

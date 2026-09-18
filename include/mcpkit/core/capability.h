@@ -1,4 +1,5 @@
 /**
+ * @file capability.h
  * @brief Bitmask of protocol capability groups a server advertises.
  *
  * Pass to the server builder to gate which methods the dispatcher will

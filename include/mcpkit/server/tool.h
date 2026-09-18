@@ -1,4 +1,5 @@
 /**
+ * @file tool.h
  * @brief Tool descriptor: name, description, input schema, and a handler
  *        callback.
  *

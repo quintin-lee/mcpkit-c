@@ -1,4 +1,5 @@
 /**
+ * @file prompt.h
  * @brief Prompt descriptor: name, description, and a handler that returns
  *        a JSON array of chat messages.
  *

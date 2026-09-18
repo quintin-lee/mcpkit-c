@@ -1,4 +1,5 @@
 /**
+ * @file client.h
  * @brief High-level JSON-RPC client over a transport.
  *
  * Ownership:

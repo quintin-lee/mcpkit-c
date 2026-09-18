@@ -1,4 +1,5 @@
 /**
+ * @file transport.h
  * @brief Abstract line-transport with pluggable backend.
  *
  * Ownership:

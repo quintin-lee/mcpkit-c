@@ -1,4 +1,5 @@
 /**
+ * @file result.h
  * @brief Lightweight (status, message) pair for functions that cannot
  * return an out-parameter.
  *
@@ -12,8 +13,8 @@
 #include "mcpkit/core/error.h"
 
 typedef struct {
-  mcp_status_t status;
-  const char *message; /**< Borrowed, may be NULL; caller never owns. */
+  mcp_status_t status; /**< Operation status code. */
+  const char *message; /**< Borrowed diagnostic message; may be NULL. */
 } mcp_result_t;
 
 /**

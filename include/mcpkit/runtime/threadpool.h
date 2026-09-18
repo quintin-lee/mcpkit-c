@@ -1,4 +1,5 @@
 /**
+ * @file threadpool.h
  * @brief C11 fixed-size thread pool executor.
  *
  * - thread_count == 0 returns NULL (explicit rejection, not clamping).

@@ -1,4 +1,5 @@
 /**
+ * @file resource.h
  * @brief Resource descriptor: URI, name, MIME type, a read handler, and an
  *        optional cleanup callback.
  *

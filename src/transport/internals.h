@@ -1,3 +1,10 @@
+/**
+ * @file internals.h
+ *
+ * Transport backend accessor. The transport stores the backend pointer
+ * at create time; it is owned by the backend itself, and the transport
+ * merely passes it through to the ops callbacks. NOT a public header.
+ */
 #ifndef MCPKIT_TRANSPORT_INTERNALS_H
 #define MCPKIT_TRANSPORT_INTERNALS_H
 

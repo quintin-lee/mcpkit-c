@@ -1,4 +1,5 @@
 /**
+ * @file socket.h
  * @brief POSIX TCP socket transport.
  *
  * - Client mode (server_mode == false): connect() to host:port is

@@ -1,3 +1,9 @@
+/**
+ * @file error.c
+ *
+ * Table-driven mapping from mcp_status_t to a stable, human-readable
+ * name. Unrecognised values return "MCP_ERR_UNKNOWN".
+ */
 #include "mcpkit/core/error.h"
 
 const char *mcp_status_string(mcp_status_t status) {

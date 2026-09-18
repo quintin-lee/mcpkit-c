@@ -1,4 +1,5 @@
 /**
+ * @file server.h
  * @brief Server container: named tool/resource/prompt registries, session
  *        lifecycle, per-session message dispatch, and a completion-provider
  *        table.

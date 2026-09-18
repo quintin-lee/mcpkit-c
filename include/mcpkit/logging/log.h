@@ -1,4 +1,5 @@
 /**
+ * @file log.h
  * @brief Log level definitions.
  *
  * Levels are ordered from most verbose to least; a logger configured

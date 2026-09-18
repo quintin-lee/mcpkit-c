@@ -1,4 +1,5 @@
 /**
+ * @file plugin.h
  * @brief Global static plugin registry (no ctx; uses builtin allocation).
  *
  * Thread safety: all four entry points (register/unregister/find/count)

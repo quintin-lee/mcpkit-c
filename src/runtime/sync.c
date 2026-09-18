@@ -1,3 +1,11 @@
+/**
+ * @file sync.c
+ *
+ * Synchronous (inline) executor backend. submit() runs the task on the
+ * caller thread and wait() is a no-op. Wraps the ops table with
+ * mcp_executor_create so the public handle routes through the standard
+ * executor lifecycle.
+ */
 #include "mcpkit/runtime/sync.h"
 
 #include "internals.h"

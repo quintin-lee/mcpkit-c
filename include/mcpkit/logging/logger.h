@@ -1,4 +1,5 @@
 /**
+ * @file logger.h
  * @brief Pluggable logger with a level filter and swappable sink.
  *
  * The logger routes every log call through a user-supplied sink

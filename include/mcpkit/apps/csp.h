@@ -1,4 +1,5 @@
 /**
+ * @file csp.h
  * @brief Content Security Policy (CSP) builder for MCP Apps resources.
  *
  * - mcp_csp_default_deny_new(): returns a caller-owned CSP object with

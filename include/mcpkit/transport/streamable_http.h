@@ -1,4 +1,5 @@
 /**
+ * @file streamable_http.h
  * @brief Streamable HTTP transport layer over a pluggable I/O backend.
  *
  * - mcp_http_io_t is an opaque I/O vtable; the implementation is

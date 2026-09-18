@@ -1,3 +1,14 @@
+/**
+ * @file internals.h
+ *
+ * Internal struct layouts and shared helpers for the server layer.
+ * NOT a public header: exposed here only so the dispatcher, session,
+ * and registry translation units can share the opaque definitions.
+ *
+ * - Struct definitions for mcp_tool/resource/prompt/session/server/queue.
+ * - srv_malloc/srv_realloc/srv_free/srv_strdup: ctx-routed allocation
+ *   helpers that fall back to the default allocator on NULL ctx.
+ */
 #ifndef MCPKIT_SERVER_INTERNALS_H
 #define MCPKIT_SERVER_INTERNALS_H
 

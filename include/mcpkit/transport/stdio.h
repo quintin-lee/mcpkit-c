@@ -1,4 +1,5 @@
 /**
+ * @file stdio.h
  * @brief stdio-backed transport: reads lines from a FILE* stream.
  *
  * - in may be NULL (no reads); out may be NULL (no writes); at least

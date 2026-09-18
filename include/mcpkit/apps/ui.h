@@ -1,4 +1,5 @@
 /**
+ * @file ui.h
  * @brief MCP Apps extension: ui:// HTML resources with per-resource CSP
  *        and mount/unmount lifecycle callbacks.
  *
