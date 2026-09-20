@@ -1,6 +1,7 @@
 /**
  * @file sync.h
  * @brief Synchronous (inline) executor factory.
+ * @ingroup mcpkit-runtime
  *
  * Tasks are executed immediately on the calling thread when submitted.
  * wait() is a no-op.

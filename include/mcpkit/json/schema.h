@@ -9,6 +9,9 @@
  * `mcp_schema_validate` recursively checks an instance against a
  * schema supporting: type (string/number/integer/boolean/object/
  * array), required, properties, items, enum, minimum, maximum.
+ *
+ * @ingroup mcpkit-json
+ * @see mcpkit-server (tool input schemas are validated here)
  */
 
 #ifndef MCPKIT_JSON_SCHEMA_H

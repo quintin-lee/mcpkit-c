@@ -1,6 +1,15 @@
 /**
+ * @defgroup mcpkit-client MCP client
+ *
+ * High-level request/response client. Results are deep-cloned to the
+ * caller; mcp_client_list_tools auto-paginates tools/list responses.
+ *
+ * @{
+ */
+/**
  * @file client.h
  * @brief High-level JSON-RPC client over a transport.
+ * @ingroup mcpkit-client
  *
  * Ownership:
  * - mcp_client_create(): caller owns the client; destroy with
@@ -190,5 +199,7 @@ mcp_status_t mcp_client_get_prompt(mcp_context_t *ctx, mcp_client_t *client,
 mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
                                  const char *ref, mcp_json_value_t *args,
                                  mcp_json_value_t **result_out);
+
+/** @} */
 
 #endif

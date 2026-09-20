@@ -11,6 +11,12 @@
  * mcp_response_*_new take ownership of `params` / `result` / `data`
  * (non-NULL out-params are set on success; on failure the caller
  * retains ownership).
+ *
+ * @defgroup mcpkit-protocol Protocol
+ * @brief JSON-RPC 2.0 message envelope, initialization negotiation, and
+ * three-level validation (L1 syntax, L2 known-methods, L3 per-method params).
+ * @ingroup mcpkit-protocol
+ * @see mcpkit-server (dispatch routes these messages), mcpkit-client
  */
 
 #ifndef MCPKIT_PROTOCOL_MESSAGE_H

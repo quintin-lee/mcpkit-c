@@ -1,6 +1,7 @@
 /**
  * @file timer.h
  * @brief Sorted singly-linked timer list with CLOCK_MONOTONIC deadlines.
+ * @ingroup mcpkit-runtime
  *
  * - mcp_timer_schedule(): delay_ms == 0 fires on the next poll.
  *   FIFO ordering is preserved for equal deadlines.

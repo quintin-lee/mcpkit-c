@@ -11,6 +11,8 @@
  * - All getters return BORROWED pointers valid while `obj` is alive.
  * - Re-setting an existing key replaces the old value (the old value
  *   is freed by the container; the new value is taken).
+ *
+ * @ingroup mcpkit-json
  */
 
 #ifndef MCPKIT_JSON_OBJECT_H

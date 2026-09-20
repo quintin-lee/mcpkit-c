@@ -5,9 +5,11 @@
  * All fields are optional; any NULL field is resolved to a built-in
  * default (libc allocator, stderr logger, built-in JSON backend).
  *
+ * @ingroup mcpkit-core
  * @note `logger` - if set, the context does NOT own it; the caller
  *       must keep it alive at least as long as the context.
  * @note `json_backend` - NULL means use the built-in DOM.
+ * @see mcpkit-logging, mcpkit-json
  */
 
 #ifndef MCPKIT_CORE_CONTEXT_H

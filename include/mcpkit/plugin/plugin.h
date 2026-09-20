@@ -1,6 +1,16 @@
 /**
+ * @defgroup mcpkit-plugin Static plugin registry
+ *
+ * Process-wide mutex-guarded static first-fit registry (up to 32
+ * distinct (kind, name) pairs concurrently; register/unregister cycles
+ * reuse freed slots).
+ *
+ * @{
+ */
+/**
  * @file plugin.h
  * @brief Global static plugin registry (no ctx; uses builtin allocation).
+ * @ingroup mcpkit-plugin
  *
  * Thread safety: all four entry points (register/unregister/find/count)
  * take a process-wide mutex before touching the table; it is safe to
@@ -81,5 +91,7 @@ const void *mcp_plugin_find(mcp_plugin_kind_t kind, const char *name);
  * @return Count of registered entries for that kind.
  */
 size_t mcp_plugin_count(mcp_plugin_kind_t kind);
+
+/** @} */
 
 #endif

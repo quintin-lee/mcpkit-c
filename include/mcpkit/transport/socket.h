@@ -1,6 +1,7 @@
 /**
  * @file socket.h
  * @brief POSIX TCP socket transport.
+ * @ingroup mcpkit-transport
  *
  * - Client mode (server_mode == false): connect() to host:port is
  *   performed immediately in mcp_socket_transport_create(); start() is

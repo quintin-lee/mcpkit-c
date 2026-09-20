@@ -11,6 +11,11 @@
  * A context may be re-pointed to a different backend at any time
  * with `mcp_json_set_backend`; values created through one backend
  * MUST be destroyed through the same backend.
+ *
+ * @defgroup mcpkit-json JSON DOM
+ * @brief Pluggable JSON value tree: parse, serialize, clone, schema check.
+ * @ingroup mcpkit-json
+ * @see mcpkit-protocol, mcpkit-server
  */
 
 #ifndef MCPKIT_JSON_JSON_H

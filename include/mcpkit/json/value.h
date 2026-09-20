@@ -14,6 +14,8 @@
  *
  * A NULL `ctx` is accepted by every function and routes through the
  * default (libc) allocator plus the built-in JSON backend.
+ *
+ * @ingroup mcpkit-json
  */
 
 #ifndef MCPKIT_JSON_VALUE_H

@@ -6,6 +6,8 @@
  * `val` to the array on MCP_OK; on error the caller retains it.
  * `mcp_json_array_get` returns a BORROWED pointer valid while the
  * array is alive.
+ *
+ * @ingroup mcpkit-json
  */
 
 #ifndef MCPKIT_JSON_ARRAY_H

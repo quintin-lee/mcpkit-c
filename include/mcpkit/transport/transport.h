@@ -1,6 +1,17 @@
 /**
+ * @defgroup mcpkit-transport Transport layer
+ *
+ * Line-framed transports with pluggable backends: stdio, POSIX TCP
+ * socket, and HTTP/Streamable-HTTP serve loops.
+ *
+ * @ingroup mcpkit-server
+ * @ingroup mcpkit-client
+ * @{
+ */
+/**
  * @file transport.h
  * @brief Abstract line-transport with pluggable backend.
+ * @ingroup mcpkit-transport
  *
  * Ownership:
  * - mcp_transport_create(): caller owns the transport; destroy with
@@ -141,5 +152,7 @@ mcp_status_t mcp_transport_set_timeout(mcp_context_t *ctx, mcp_transport_t *t,
  */
 mcp_status_t mcp_transport_get_timeout(mcp_context_t *ctx, const mcp_transport_t *t,
                                        uint64_t *read_ms_out, uint64_t *write_ms_out);
+
+/** @} */
 
 #endif

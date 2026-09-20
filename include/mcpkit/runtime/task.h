@@ -1,6 +1,7 @@
 /**
  * @file task.h
  * @brief Task callback types shared by executor backends.
+ * @ingroup mcpkit-runtime
  */
 
 #ifndef MCPKIT_RUNTIME_TASK_H

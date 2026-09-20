@@ -1,6 +1,15 @@
 /**
+ * @defgroup mcpkit-apps MCP Apps extension
+ *
+ * UI resource (ui:// + text/html;profile=mcp-app), Content-Security-Policy
+ * builder, permission bits, tool visibility, and lifecycle hooks.
+ *
+ * @{
+ */
+/**
  * @file csp.h
  * @brief Content Security Policy (CSP) builder for MCP Apps resources.
+ * @ingroup mcpkit-apps
  *
  * - mcp_csp_default_deny_new(): returns a caller-owned CSP object with
  *   all four directives set to "none".
@@ -61,5 +70,7 @@ mcp_status_t mcp_csp_set(mcp_context_t *ctx, mcp_csp_t *csp, const char *directi
  *         NULL; MCP_ERR_NOMEM on allocation failure.
  */
 mcp_status_t mcp_csp_serialize(mcp_context_t *ctx, const mcp_csp_t *csp, char **out);
+
+/** @} */
 
 #endif

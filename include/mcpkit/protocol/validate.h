@@ -13,6 +13,9 @@
  *
  * mcp_idset_t tracks in-flight request ids per session to detect
  * duplicates before routing (JSON-RPC 2.0 §6).
+ *
+ * @ingroup mcpkit-protocol
+ * @see mcpkit-server (`mcp_server_dispatch` runs this pipeline per request)
  */
 
 #ifndef MCPKIT_PROTOCOL_VALIDATE_H

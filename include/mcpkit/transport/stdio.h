@@ -1,6 +1,7 @@
 /**
  * @file stdio.h
  * @brief stdio-backed transport: reads lines from a FILE* stream.
+ * @ingroup mcpkit-transport
  *
  * - in may be NULL (no reads); out may be NULL (no writes); at least
  *   one must be non-NULL or create returns NULL.

@@ -2,6 +2,7 @@
  * @file prompt.h
  * @brief Prompt descriptor: name, description, and a handler that returns
  *        a JSON array of chat messages.
+ * @ingroup mcpkit-server
  *
  * Ownership: caller owns the prompt from mcp_prompt_new() until
  * mcp_prompt_destroy(). If added to a server, remove it first.

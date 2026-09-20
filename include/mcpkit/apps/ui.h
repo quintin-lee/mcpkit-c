@@ -2,6 +2,7 @@
  * @file ui.h
  * @brief MCP Apps extension: ui:// HTML resources with per-resource CSP
  *        and mount/unmount lifecycle callbacks.
+ * @ingroup mcpkit-apps
  *
  * Ownership:
  * - mcp_apps_ui_resource_new(): returns a caller-owned mcp_resource_t.

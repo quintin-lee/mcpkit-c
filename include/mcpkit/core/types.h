@@ -7,6 +7,11 @@
  * concrete struct definitions live in internal headers so the ABI
  * can evolve (e.g. switching the thread pool from std::thread to
  * libuv) without breaking downstream binaries.
+ *
+ * @defgroup mcpkit-core Core
+ * @brief Opaque handle types, allocator, context, error codes, version.
+ * @ingroup mcpkit-core
+ * @see mcpkit-json, mcpkit-logging
  */
 
 #ifndef MCPKIT_CORE_TYPES_H
@@ -17,6 +22,7 @@
 
 /**
  * @brief Opaque forward declaration: execution context.
+ * @ingroup mcpkit-core
  *
  * Owns allocator, logger, and JSON backend selection.
  */

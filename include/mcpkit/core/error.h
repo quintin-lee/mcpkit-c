@@ -6,6 +6,9 @@
  * success, any other value indicates the specific failure mode. The
  * codes are a closed set: unknown values in `mcp_status_string` map
  * to `"MCP_ERR_UNKNOWN"`.
+ *
+ * @ingroup mcpkit-core
+ * @see mcpkit-protocol (RPC code mapping via `mcp_status_to_rpc_code`)
  */
 
 #ifndef MCPKIT_CORE_ERROR_H

@@ -1,6 +1,7 @@
 /**
  * @file threadpool.h
  * @brief C11 fixed-size thread pool executor.
+ * @ingroup mcpkit-runtime
  *
  * - thread_count == 0 returns NULL (explicit rejection, not clamping).
  * - Tasks run with the submit-time ctx; the ctx, fn, and arg pointers

@@ -5,6 +5,8 @@
  *
  * `message` is always borrowed (typically a static string) and must
  * never be freed by the caller.
+ *
+ * @ingroup mcpkit-core
  */
 
 #ifndef MCPKIT_CORE_RESULT_H

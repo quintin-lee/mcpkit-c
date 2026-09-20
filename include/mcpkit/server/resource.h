@@ -2,6 +2,7 @@
  * @file resource.h
  * @brief Resource descriptor: URI, name, MIME type, a read handler, and an
  *        optional cleanup callback.
+ * @ingroup mcpkit-server
  *
  * Ownership:
  * - mcp_resource_new(): caller owns the returned resource.

@@ -3,6 +3,8 @@
  * @brief Server container: named tool/resource/prompt registries, session
  *        lifecycle, per-session message dispatch, and a completion-provider
  *        table.
+ * @ingroup mcpkit-server
+ *
  *
  * Ownership:
  * - mcp_server_create() returns an owned handle; caller destroys with
@@ -18,6 +20,16 @@
  * - mcp_server_dispatch(): on MCP_OK the response is caller-owned; on error
  *   no response is built and *resp_out is left unchanged (set to NULL first
  *   for safety).
+ */
+
+/**
+ * @defgroup mcpkit-server Server
+ *
+ * Named tool/resource/prompt registries, per-session dispatch, counters,
+ * tracer hooks, and the server->client push outbox.
+ *
+ * @see mcpkit-protocol for JSON-RPC message types,
+ *     mcpkit-json for the value API handlers return.
  */
 
 #ifndef MCPKIT_SERVER_SERVER_H

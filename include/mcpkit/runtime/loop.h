@@ -1,6 +1,7 @@
 /**
  * @file loop.h
  * @brief Runs a synchronous serve loop on a single transport.
+ * @ingroup mcpkit-runtime
  *
  * Creates one session for the transport's lifetime. For each line:
  * recv -> parse -> notify-or-dispatch -> send. When an executor is

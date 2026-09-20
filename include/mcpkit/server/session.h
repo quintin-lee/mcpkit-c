@@ -2,6 +2,7 @@
  * @file session.h
  * @brief Per-session state: initialization flag, MCP Apps host flag, and a
  *        32-bit permission mask.
+ * @ingroup mcpkit-server
  *
  * Sessions are created by mcp_server_create_session() and destroyed by
  * mcp_server_destroy_session(). All functions take ctx first (NULL

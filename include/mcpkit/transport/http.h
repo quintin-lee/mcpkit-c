@@ -1,6 +1,7 @@
 /**
  * @file http.h
  * @brief Buffer-level HTTP/1.1 request parser and response builder.
+ * @ingroup mcpkit-transport
  *
  * Limits (compile-time):
  *   - at most MCP_HTTP_MAX_HEADERS (64) headers per request

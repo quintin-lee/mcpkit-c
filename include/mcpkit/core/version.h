@@ -5,6 +5,8 @@
  * The value is read from the `VERSION` file at CMake configure time
  * and baked into `mcpkit_version_generated.h` in the build tree, so
  * all translation units agree without hardcoding.
+ *
+ * @ingroup mcpkit-core
  */
 
 #ifndef MCPKIT_CORE_VERSION_H

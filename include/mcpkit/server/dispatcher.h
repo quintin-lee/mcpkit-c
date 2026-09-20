@@ -1,6 +1,7 @@
 /**
  * @file dispatcher.h
  * @brief Per-session message queue and single-step processing.
+ * @ingroup mcpkit-server
  *
  * Ownership:
  * - mcp_queue_create(): caller owns the queue; destroy with mcp_queue_destroy.

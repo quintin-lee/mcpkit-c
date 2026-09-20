@@ -2,6 +2,7 @@
  * @file tool.h
  * @brief Tool descriptor: name, description, input schema, and a handler
  *        callback.
+ * @ingroup mcpkit-server
  *
  * Ownership:
  * - mcp_tool_new(): caller owns the returned tool.

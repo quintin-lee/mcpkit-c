@@ -6,6 +6,9 @@
  * exchange before any other method is accepted. This module provides
  * builders for the "initialize" request params and result, a validator
  * for client-supplied params, and a version-negotiation table.
+ *
+ * @ingroup mcpkit-protocol
+ * @see mcpkit-server (`mcp_server_dispatch` gates on the initialized flag)
  */
 
 #ifndef MCPKIT_PROTOCOL_INITIALIZE_H

@@ -1,6 +1,15 @@
 /**
+ * @defgroup mcpkit-runtime Runtime layer
+ *
+ * Pluggable executor backends (sync, C11 thread pool), a sorted
+ * timer list, and a single-transport synchronous serve loop.
+ *
+ * @{
+ */
+/**
  * @file executor.h
  * @brief Executor backend operation table.
+ * @ingroup mcpkit-runtime
  *
  * All three slots are required; a NULL ops pointer or any NULL op
  * callback is rejected by the dispatcher.
@@ -92,5 +101,7 @@ mcp_status_t mcp_executor_submit(mcp_context_t *ctx, mcp_executor_t *ex, mcp_tas
  *         wait op is NULL.
  */
 mcp_status_t mcp_executor_wait(mcp_context_t *ctx, mcp_executor_t *ex);
+
+/** @} */
 
 #endif
