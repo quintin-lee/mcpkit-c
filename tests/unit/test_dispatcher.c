@@ -1,7 +1,19 @@
-#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "mcpkit/mcpkit.h"
+
+// NDEBUG-independent check: the expression is ALWAYS evaluated (so calls
+// with side effects still run under the default Release/-DNDEBUG ctest
+// configuration) and a false result aborts with a diagnostic.
+#define CHECK(x)                                                                    \
+    do {                                                                            \
+        if (!(x)) {                                                                 \
+            fprintf(stderr, "CHECK failed: %s (%s:%d)\n", #x, __FILE__, __LINE__);  \
+            abort();                                                                \
+        }                                                                           \
+    } while (0)
 
 static mcp_status_t echo_handler(mcp_context_t *c, mcp_session_t *s, const mcp_json_value_t *a,
                                  void *u, mcp_json_value_t **o) {
@@ -164,7 +176,7 @@ static mcp_json_value_t *params1(mcp_context_t *ctx, const char *text) {
 
 static int error_code(mcp_context_t *ctx, const mcp_message_t *resp) {
     int code = 0;
-    assert(mcp_message_error_code(ctx, resp, &code) == MCP_OK);
+    CHECK(mcp_message_error_code(ctx, resp, &code) == MCP_OK);
     return code;
 }
 
@@ -189,35 +201,35 @@ static mcp_json_value_t *call_params(mcp_context_t *ctx, const char *name,
 static mcp_message_t *dispatch_new(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s,
                                    const char *id, const char *method, mcp_json_value_t *params) {
     mcp_message_t *req = mcp_request_new_string_id(ctx, id, method, params);
-    assert(req);
+    CHECK(req);
     mcp_message_t *resp = NULL;
-    assert(mcp_server_dispatch(ctx, srv, s, req, &resp) == MCP_OK);
+    CHECK(mcp_server_dispatch(ctx, srv, s, req, &resp) == MCP_OK);
     mcp_message_destroy(ctx, req);
-    assert(resp);
+    CHECK(resp);
     return resp;
 }
 
 static void setup(mcp_context_t **ctx, mcp_server_t **srv, mcp_session_t **s) {
     *ctx = mcp_context_create(NULL);
-    assert(*ctx);
+    CHECK(*ctx);
     *srv = mcp_server_create(*ctx, "srv", "1");
-    assert(*srv);
-    assert(mcp_server_add_tool(*ctx, *srv,
+    CHECK(*srv);
+    CHECK(mcp_server_add_tool(*ctx, *srv,
                                mcp_tool_new(*ctx, "echo", "echo", text_schema(*ctx),
                                             echo_handler, NULL)) == MCP_OK);
-    assert(mcp_server_add_tool(*ctx, *srv, mcp_tool_new(*ctx, "fail", NULL, NULL, fail_handler,
+    CHECK(mcp_server_add_tool(*ctx, *srv, mcp_tool_new(*ctx, "fail", NULL, NULL, fail_handler,
                                                        NULL)) == MCP_OK);
-    assert(mcp_server_add_tool(*ctx, *srv, mcp_tool_new(*ctx, "slow", NULL, NULL, slow_handler,
+    CHECK(mcp_server_add_tool(*ctx, *srv, mcp_tool_new(*ctx, "slow", NULL, NULL, slow_handler,
                                                        NULL)) == MCP_OK);
-    assert(mcp_server_add_resource(*ctx, *srv, mcp_resource_new(*ctx, "file:///a", "a",
+    CHECK(mcp_server_add_resource(*ctx, *srv, mcp_resource_new(*ctx, "file:///a", "a",
                                                                "text/plain", static_read,
                                                                NULL)) == MCP_OK);
-    assert(mcp_server_add_prompt(*ctx, *srv, mcp_prompt_new(*ctx, "greet", "say hi", static_prompt,
+    CHECK(mcp_server_add_prompt(*ctx, *srv, mcp_prompt_new(*ctx, "greet", "say hi", static_prompt,
                                                             NULL)) == MCP_OK);
-    assert(mcp_server_register_completion_provider(*ctx, *srv, "prompt/", compl_provider,
+    CHECK(mcp_server_register_completion_provider(*ctx, *srv, "prompt/", compl_provider,
                                                     NULL) == MCP_OK);
     *s = mcp_server_create_session(*ctx, *srv);
-    assert(*s);
+    CHECK(*s);
 }
 
 static void teardown(mcp_context_t *ctx, mcp_server_t *srv) {
@@ -227,16 +239,16 @@ static void teardown(mcp_context_t *ctx, mcp_server_t *srv) {
 
 static void init_session(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s) {
     mcp_json_value_t *params = mcp_initialize_params_new(ctx, "cli", "1");
-    assert(params);
+    CHECK(params);
     mcp_message_t *resp = dispatch_new(ctx, srv, s, "init", "initialize", params);
-    assert(mcp_message_result(ctx, resp) != NULL);
+    CHECK(mcp_message_result(ctx, resp) != NULL);
     mcp_message_destroy(ctx, resp);
-    assert(!mcp_session_is_initialized(ctx, s));
+    CHECK(!mcp_session_is_initialized(ctx, s));
     mcp_message_t *notif = mcp_initialized_notification_new(ctx);
-    assert(notif);
-    assert(mcp_server_notify(ctx, srv, s, notif) == MCP_OK);
+    CHECK(notif);
+    CHECK(mcp_server_notify(ctx, srv, s, notif) == MCP_OK);
     mcp_message_destroy(ctx, notif);
-    assert(mcp_session_is_initialized(ctx, s));
+    CHECK(mcp_session_is_initialized(ctx, s));
 }
 
 int main(void) {
@@ -247,7 +259,7 @@ int main(void) {
 
     // pre-init gate
     mcp_message_t *r = dispatch_new(ctx, srv, s, "g0", "tools/list", NULL);
-    assert(error_code(ctx, r) == (int)MCP_RPC_INVALID_REQUEST);
+    CHECK(error_code(ctx, r) == (int)MCP_RPC_INVALID_REQUEST);
     mcp_message_destroy(ctx, r);
 
     init_session(ctx, srv, s);
@@ -255,104 +267,104 @@ int main(void) {
     // tools/list contains echo with schema
     r = dispatch_new(ctx, srv, s, "g1", "tools/list", NULL);
     const mcp_json_value_t *res = mcp_message_result(ctx, r);
-    assert(res);
+    CHECK(res);
     const mcp_json_value_t *tools = mcp_json_object_get(ctx, res, "tools");
-    assert(tools && mcp_json_array_size(ctx, tools) == 3);
+    CHECK(tools && mcp_json_array_size(ctx, tools) == 3);
     bool found_schema = false;
     for (size_t i = 0; i < 3; i++) {
         const mcp_json_value_t *t = mcp_json_array_get(ctx, tools, i);
         const mcp_json_value_t *n = mcp_json_object_get(ctx, t, "name");
         const char *ns = NULL;
-        assert(mcp_json_string_value(ctx, n, &ns) == MCP_OK);
+        CHECK(mcp_json_string_value(ctx, n, &ns) == MCP_OK);
         if (strcmp(ns, "echo") == 0) {
             found_schema = mcp_json_object_has(ctx, t, "inputSchema");
         }
     }
-    assert(found_schema);
+    CHECK(found_schema);
     mcp_message_destroy(ctx, r);
 
     // tools/call echo roundtrip
     r = dispatch_new(ctx, srv, s, "c1", "tools/call", call_params(ctx, "echo", params1(ctx, "hey")));
     res = mcp_message_result(ctx, r);
-    assert(res);
+    CHECK(res);
     const mcp_json_value_t *back = mcp_json_object_get(ctx, res, "text");
     const char *bs = NULL;
-    assert(mcp_json_string_value(ctx, back, &bs) == MCP_OK && strcmp(bs, "hey") == 0);
+    CHECK(mcp_json_string_value(ctx, back, &bs) == MCP_OK && strcmp(bs, "hey") == 0);
     mcp_message_destroy(ctx, r);
 
     // schema violation (no arguments against required-text schema) -> -32602
     r = dispatch_new(ctx, srv, s, "c2", "tools/call", call_params(ctx, "echo", NULL));
-    assert(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
+    CHECK(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
     mcp_message_destroy(ctx, r);
 
     // unknown tool -> -32602
     mcp_json_value_t *p = mcp_json_object_new(ctx);
-    assert(mcp_json_object_set(ctx, p, "name", mcp_json_string_new(ctx, "nope")) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "name", mcp_json_string_new(ctx, "nope")) == MCP_OK);
     r = dispatch_new(ctx, srv, s, "c3", "tools/call", p);
-    assert(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
+    CHECK(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
     mcp_message_destroy(ctx, r);
 
     // handler failure -> isError result, not RPC error
     p = mcp_json_object_new(ctx);
-    assert(mcp_json_object_set(ctx, p, "name", mcp_json_string_new(ctx, "fail")) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "name", mcp_json_string_new(ctx, "fail")) == MCP_OK);
     r = dispatch_new(ctx, srv, s, "c4", "tools/call", p);
     res = mcp_message_result(ctx, r);
-    assert(res);
+    CHECK(res);
     const mcp_json_value_t *iserr = mcp_json_object_get(ctx, res, "isError");
     bool b = false;
-    assert(mcp_json_bool_value(ctx, iserr, &b) == MCP_OK && b);
+    CHECK(mcp_json_bool_value(ctx, iserr, &b) == MCP_OK && b);
     mcp_message_destroy(ctx, r);
 
     // duplicate id -> -32600
     r = dispatch_new(ctx, srv, s, "c1", "ping", NULL);
-    assert(error_code(ctx, r) == (int)MCP_RPC_INVALID_REQUEST);
+    CHECK(error_code(ctx, r) == (int)MCP_RPC_INVALID_REQUEST);
     mcp_message_destroy(ctx, r);
 
     // ping
     r = dispatch_new(ctx, srv, s, "p1", "ping", NULL);
-    assert(mcp_message_result(ctx, r) != NULL);
+    CHECK(mcp_message_result(ctx, r) != NULL);
     mcp_message_destroy(ctx, r);
 
     // resources
     r = dispatch_new(ctx, srv, s, "r1", "resources/list", NULL);
     res = mcp_message_result(ctx, r);
-    assert(res && mcp_json_array_size(ctx, mcp_json_object_get(ctx, res, "resources")) == 1);
+    CHECK(res && mcp_json_array_size(ctx, mcp_json_object_get(ctx, res, "resources")) == 1);
     mcp_message_destroy(ctx, r);
     p = mcp_json_object_new(ctx);
-    assert(mcp_json_object_set(ctx, p, "uri", mcp_json_string_new(ctx, "file:///a")) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "uri", mcp_json_string_new(ctx, "file:///a")) == MCP_OK);
     r = dispatch_new(ctx, srv, s, "r2", "resources/read", p);
     res = mcp_message_result(ctx, r);
-    assert(res && mcp_json_array_size(ctx, mcp_json_object_get(ctx, res, "contents")) == 1);
+    CHECK(res && mcp_json_array_size(ctx, mcp_json_object_get(ctx, res, "contents")) == 1);
     mcp_message_destroy(ctx, r);
     p = mcp_json_object_new(ctx);
-    assert(mcp_json_object_set(ctx, p, "uri", mcp_json_string_new(ctx, "file:///missing")) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "uri", mcp_json_string_new(ctx, "file:///missing")) == MCP_OK);
     r = dispatch_new(ctx, srv, s, "r3", "resources/read", p);
-    assert(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
+    CHECK(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
     mcp_message_destroy(ctx, r);
 
     // prompts
     r = dispatch_new(ctx, srv, s, "m1", "prompts/list", NULL);
     res = mcp_message_result(ctx, r);
-    assert(res && mcp_json_array_size(ctx, mcp_json_object_get(ctx, res, "prompts")) == 1);
+    CHECK(res && mcp_json_array_size(ctx, mcp_json_object_get(ctx, res, "prompts")) == 1);
     mcp_message_destroy(ctx, r);
     p = mcp_json_object_new(ctx);
-    assert(mcp_json_object_set(ctx, p, "name", mcp_json_string_new(ctx, "greet")) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "name", mcp_json_string_new(ctx, "greet")) == MCP_OK);
     r = dispatch_new(ctx, srv, s, "m2", "prompts/get", p);
     res = mcp_message_result(ctx, r);
-    assert(res && mcp_json_array_size(ctx, mcp_json_object_get(ctx, res, "messages")) == 1);
+    CHECK(res && mcp_json_array_size(ctx, mcp_json_object_get(ctx, res, "messages")) == 1);
     mcp_message_destroy(ctx, r);
     p = mcp_json_object_new(ctx);
-    assert(mcp_json_object_set(ctx, p, "name", mcp_json_string_new(ctx, "nope")) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "name", mcp_json_string_new(ctx, "nope")) == MCP_OK);
     r = dispatch_new(ctx, srv, s, "m3", "prompts/get", p);
-    assert(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
+    CHECK(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
     mcp_message_destroy(ctx, r);
 
     // completion/list returns empty array
     r = dispatch_new(ctx, srv, s, "cl1", "completion/list", NULL);
     res = mcp_message_result(ctx, r);
-    assert(res);
+    CHECK(res);
     const mcp_json_value_t *comps = mcp_json_object_get(ctx, res, "completions");
-    assert(comps && mcp_json_array_size(ctx, comps) == 0);
+    CHECK(comps && mcp_json_array_size(ctx, comps) == 0);
     mcp_message_destroy(ctx, r);
 
     // completion/complete: build params with ref object + argument
@@ -360,21 +372,21 @@ int main(void) {
     mcp_json_value_t *ref_obj = mcp_json_object_new(ctx);
     mcp_json_value_t *type_v = mcp_json_string_new(ctx, "ref");
     mcp_json_value_t *val_v = mcp_json_string_new(ctx, "prompt/greet");
-    assert(ref_obj && type_v && val_v);
-    assert(mcp_json_object_set(ctx, ref_obj, "type", type_v) == MCP_OK);
-    assert(mcp_json_object_set(ctx, ref_obj, "value", val_v) == MCP_OK);
-    assert(mcp_json_object_set(ctx, p, "ref", ref_obj) == MCP_OK);
+    CHECK(ref_obj && type_v && val_v);
+    CHECK(mcp_json_object_set(ctx, ref_obj, "type", type_v) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, ref_obj, "value", val_v) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "ref", ref_obj) == MCP_OK);
     mcp_json_value_t *arg_obj = mcp_json_object_new(ctx);
-    assert(arg_obj && mcp_json_object_set(ctx, arg_obj, "name", mcp_json_string_new(ctx, "greet")) == MCP_OK);
-    assert(mcp_json_object_set(ctx, p, "argument", arg_obj) == MCP_OK);
+    CHECK(arg_obj && mcp_json_object_set(ctx, arg_obj, "name", mcp_json_string_new(ctx, "greet")) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "argument", arg_obj) == MCP_OK);
     r = dispatch_new(ctx, srv, s, "cc1", "completion/complete", p);
     res = mcp_message_result(ctx, r);
-    assert(res);
+    CHECK(res);
     comps = mcp_json_object_get(ctx, res, "completions");
-    assert(comps && mcp_json_array_size(ctx, comps) == 2);
+    CHECK(comps && mcp_json_array_size(ctx, comps) == 2);
     const mcp_json_value_t *c0 = mcp_json_array_get(ctx, comps, 0);
     const char *c0s = NULL;
-    assert(mcp_json_string_value(ctx, c0, &c0s) == MCP_OK && strcmp(c0s, "hint") == 0);
+    CHECK(mcp_json_string_value(ctx, c0, &c0s) == MCP_OK && strcmp(c0s, "hint") == 0);
     mcp_message_destroy(ctx, r);
 
     // completion/complete: unknown reference -> empty completions (no provider match)
@@ -383,49 +395,49 @@ int main(void) {
     type_v = mcp_json_string_new(ctx, "ref");
     val_v = mcp_json_string_new(ctx, "tool/echo");
     arg_obj = mcp_json_object_new(ctx);
-    assert(ref_obj && type_v && val_v && arg_obj);
-    assert(mcp_json_object_set(ctx, ref_obj, "type", type_v) == MCP_OK);
-    assert(mcp_json_object_set(ctx, ref_obj, "value", val_v) == MCP_OK);
-    assert(mcp_json_object_set(ctx, p, "ref", ref_obj) == MCP_OK);
-    assert(mcp_json_object_set(ctx, p, "argument", arg_obj) == MCP_OK);
+    CHECK(ref_obj && type_v && val_v && arg_obj);
+    CHECK(mcp_json_object_set(ctx, ref_obj, "type", type_v) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, ref_obj, "value", val_v) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "ref", ref_obj) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "argument", arg_obj) == MCP_OK);
     r = dispatch_new(ctx, srv, s, "cc2", "completion/complete", p);
     res = mcp_message_result(ctx, r);
-    assert(res);
+    CHECK(res);
     comps = mcp_json_object_get(ctx, res, "completions");
-    assert(comps && mcp_json_array_size(ctx, comps) == 0);
+    CHECK(comps && mcp_json_array_size(ctx, comps) == 0);
     mcp_message_destroy(ctx, r);
 
     // completion/complete: missing ref param -> -32602
     r = dispatch_new(ctx, srv, s, "cc3", "completion/complete", NULL);
-    assert(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
+    CHECK(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
     mcp_message_destroy(ctx, r);
 
     // queue: order + notification + empty
     mcp_queue_t *q = mcp_queue_create(ctx);
-    assert(q && mcp_queue_size(ctx, q) == 0);
-    assert(mcp_queue_push(ctx, q, s, mcp_request_new_string_id(ctx, "q1", "ping", NULL)) == MCP_OK);
-    assert(mcp_queue_push(ctx, q, s, mcp_initialized_notification_new(ctx)) == MCP_OK);
-    assert(mcp_queue_size(ctx, q) == 2);
+    CHECK(q && mcp_queue_size(ctx, q) == 0);
+    CHECK(mcp_queue_push(ctx, q, s, mcp_request_new_string_id(ctx, "q1", "ping", NULL)) == MCP_OK);
+    CHECK(mcp_queue_push(ctx, q, s, mcp_initialized_notification_new(ctx)) == MCP_OK);
+    CHECK(mcp_queue_size(ctx, q) == 2);
     mcp_message_t *qr = NULL;
-    assert(mcp_server_process_one(ctx, srv, q, &qr) == MCP_OK && qr != NULL);
-    assert(mcp_message_result(ctx, qr) != NULL);
+    CHECK(mcp_server_process_one(ctx, srv, q, &qr) == MCP_OK && qr != NULL);
+    CHECK(mcp_message_result(ctx, qr) != NULL);
     mcp_message_destroy(ctx, qr);
     qr = (void *)0x1;
-    assert(mcp_server_process_one(ctx, srv, q, &qr) == MCP_OK && qr == NULL);
-    assert(mcp_server_process_one(ctx, srv, q, &qr) == MCP_ERR_NOT_FOUND && qr == NULL);
+    CHECK(mcp_server_process_one(ctx, srv, q, &qr) == MCP_OK && qr == NULL);
+    CHECK(mcp_server_process_one(ctx, srv, q, &qr) == MCP_ERR_NOT_FOUND && qr == NULL);
     mcp_queue_destroy(ctx, q);
 
     // slow-tool isolation: session A slow, session B fast, both correct
     mcp_session_t *sb = mcp_server_create_session(ctx, srv);
-    assert(sb);
+    CHECK(sb);
     init_session(ctx, srv, sb);
     p = mcp_json_object_new(ctx);
-    assert(mcp_json_object_set(ctx, p, "name", mcp_json_string_new(ctx, "slow")) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "name", mcp_json_string_new(ctx, "slow")) == MCP_OK);
     r = dispatch_new(ctx, srv, s, "slow1", "tools/call", p);
-    assert(mcp_message_result(ctx, r) != NULL);
+    CHECK(mcp_message_result(ctx, r) != NULL);
     mcp_message_destroy(ctx, r);
     r = dispatch_new(ctx, srv, sb, "fast1", "ping", NULL);
-    assert(mcp_message_result(ctx, r) != NULL);
+    CHECK(mcp_message_result(ctx, r) != NULL);
     mcp_message_destroy(ctx, r);
 
     teardown(ctx, srv);
