@@ -16,6 +16,7 @@
 #include "mcpkit/core/version.h"
 #include "mcpkit/core/capability.h"
 #include "mcpkit/core/context.h"
+#include "mcpkit/core/shutdown.h"
 #include "mcpkit/logging/log.h"
 #include "mcpkit/logging/logger.h"
 #include "mcpkit/json/json.h"

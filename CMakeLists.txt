@@ -33,6 +33,7 @@ set(MCPKIT_CORE_SOURCES
   src/core/error.c
   src/core/allocator.c
   src/core/context.c
+  src/core/shutdown.c
   src/logging/logger.c
   src/json/builtin.c
   src/json/api.c
