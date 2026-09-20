@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -20,6 +21,8 @@ static void print_result(mcp_context_t *ctx, const mcp_json_value_t *v) {
 }
 
 int main(int argc, char **argv) {
+    /* A closed peer must surface as EPIPE/MCP_ERR_IO, not a SIGPIPE kill. */
+    signal(SIGPIPE, SIG_IGN);
     if (argc < 2 || (strcmp(argv[1], "list") != 0 && strcmp(argv[1], "call") != 0 &&
                      strcmp(argv[1], "ping") != 0)) {
         fprintf(stderr, "usage: client <list|call|ping> [name] [text]\n");

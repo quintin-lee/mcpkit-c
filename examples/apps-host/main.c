@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <stdio.h>
 
 #include "mcpkit/mcpkit.h"
@@ -104,6 +105,8 @@ static mcp_json_value_t *read_params(mcp_context_t *ctx) {
 }
 
 int main(void) {
+    /* A closed peer must surface as EPIPE/MCP_ERR_IO, not a SIGPIPE kill. */
+    signal(SIGPIPE, SIG_IGN);
     int rc = 1;
     mcp_context_t *ctx = mcp_context_create(NULL);
     if (ctx == NULL) {

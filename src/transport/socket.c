@@ -90,7 +90,10 @@ static mcp_status_t sock_start(mcp_context_t *ctx, mcp_transport_t *t) {
     if (b->server_mode) {
         struct sockaddr_in client_addr;
         socklen_t slen = sizeof(client_addr);
-        int cfd = accept(b->fd, (struct sockaddr *)&client_addr, &slen);
+        int cfd;
+        do {
+            cfd = accept(b->fd, (struct sockaddr *)&client_addr, &slen);
+        } while (cfd < 0 && errno == EINTR);
         if (cfd < 0) {
             return MCP_ERR_IO;
         }

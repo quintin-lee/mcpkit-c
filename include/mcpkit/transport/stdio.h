@@ -10,6 +10,11 @@
  * - mcp_stdio_serve() runs a synchronous serve loop on stdin/stdout;
  *   it creates its own session internally, so a multi-session server
  *   should use the dispatch/queue pattern instead.
+ * - Signal safety: EINTR on reads is retried internally, but SIGPIPE
+ *   disposition is host policy — the library never installs handlers.
+ *   A host that writes to a pipe/socket-backed FILE* must ignore
+ *   SIGPIPE itself (signal(SIGPIPE, SIG_IGN)) so a closed peer
+ *   surfaces as EPIPE/MCP_ERR_IO instead of killing the process.
  */
 
 #ifndef MCPKIT_TRANSPORT_STDIO_H

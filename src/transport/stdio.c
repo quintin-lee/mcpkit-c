@@ -10,6 +10,7 @@
  */
 #include "mcpkit/transport/stdio.h"
 
+#include <errno.h>
 #include <string.h>
 
 #include "internals.h"
@@ -70,6 +71,12 @@ static mcp_status_t stdio_recv(mcp_context_t *ctx, mcp_transport_t *t, char **li
     for (;;) {
         int c = fgetc(b->in);
         if (c == EOF) {
+            // A signal may interrupt the read: retry instead of
+            // mistaking EINTR for a clean EOF or a partial line.
+            if (errno == EINTR) {
+                clearerr(b->in);
+                continue;
+            }
             if (len == 0) {
                 a->free_fn(buf, a->userdata);
                 *line_out = NULL;
@@ -82,10 +89,17 @@ static mcp_status_t stdio_recv(mcp_context_t *ctx, mcp_transport_t *t, char **li
         }
         if (len + 1 >= cap) {
             if (cap >= MCP_PROTOCOL_MAX_MESSAGE_BYTES) {
-                int d;
-                do {
-                    d = fgetc(b->in);
-                } while (d != EOF && d != '\n');
+                // Discard to end-of-line; EINTR restarts the read so a
+                // signal cannot leave a partial oversized tail behind.
+                for (;;) {
+                    int d = fgetc(b->in);
+                    if (d == '\n' || (d == EOF && errno != EINTR)) {
+                        break;
+                    }
+                    if (d == EOF) {
+                        clearerr(b->in);
+                    }
+                }
                 a->free_fn(buf, a->userdata);
                 *line_out = NULL;
                 return MCP_ERR_PROTOCOL;

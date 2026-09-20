@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -35,6 +36,8 @@ static mcp_status_t echo_handler(mcp_context_t *ctx, mcp_session_t *session,
 }
 
 int main(int argc, char **argv) {
+    /* A closed peer must surface as EPIPE/MCP_ERR_IO, not a SIGPIPE kill. */
+    signal(SIGPIPE, SIG_IGN);
     if (argc < 2) {
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
         return 1;

@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -64,6 +65,8 @@ static mcp_status_t file_write(mcp_context_t *ctx, void *user, const char *data,
 }
 
 int main(void) {
+    /* A closed peer must surface as EPIPE/MCP_ERR_IO, not a SIGPIPE kill. */
+    signal(SIGPIPE, SIG_IGN);
     int rc = 1;
     mcp_context_t *ctx = mcp_context_create(NULL);
     if (ctx == NULL) {

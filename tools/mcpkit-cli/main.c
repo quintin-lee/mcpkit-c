@@ -246,6 +246,8 @@ static int cmd_test(const char *server_bin) {
 }
 
 int main(int argc, char **argv) {
+    /* A closed peer must surface as EPIPE/MCP_ERR_IO, not a SIGPIPE kill. */
+    signal(SIGPIPE, SIG_IGN);
     if (argc < 2) {
         fprintf(stderr,
                 "usage: mcpkit-cli inspect <server-bin>\n"

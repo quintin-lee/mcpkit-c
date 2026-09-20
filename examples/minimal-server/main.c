@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -64,6 +65,8 @@ static const char *kCallText =
     "\"params\":{\"name\":\"echo\",\"arguments\":{\"text\":\"hello mcpkit\"}}}";
 
 int main(void) {
+    /* A closed peer must surface as EPIPE/MCP_ERR_IO, not a SIGPIPE kill. */
+    signal(SIGPIPE, SIG_IGN);
     int rc = 1;
     mcp_message_t *init_req = NULL;
     mcp_message_t *init_resp = NULL;
