@@ -29,6 +29,15 @@ typedef struct mcp_message mcp_message_t;
 typedef struct mcp_queue mcp_queue_t;
 
 /**
+ * @brief Maximum number of messages a queue holds.
+ *
+ * mcp_queue_push() returns MCP_ERR_NOMEM (message NOT consumed) once the
+ * queue reaches this length, so a flooding peer cannot grow memory
+ * without bound.
+ */
+#define MCP_QUEUE_MAX_LEN 1024u
+
+/**
  * @brief Creates an empty per-session message queue.
  * @param ctx Context; may be NULL (default allocator).
  * @return Owned mcp_queue_t, or NULL on OOM.
@@ -56,7 +65,8 @@ void mcp_queue_destroy(mcp_context_t *ctx, mcp_queue_t *q);
  * @param q Target queue.
  * @param session Session that owns this message.
  * @param msg Message to enqueue; ownership transferred to queue on MCP_OK.
- * @return MCP_OK on success; MCP_ERR_NOMEM on allocation failure.
+ * @return MCP_OK on success; MCP_ERR_NOMEM on allocation failure or when
+ *         the queue already holds MCP_QUEUE_MAX_LEN messages.
  */
 mcp_status_t mcp_queue_push(mcp_context_t *ctx, mcp_queue_t *q, mcp_session_t *session,
                            mcp_message_t *msg);

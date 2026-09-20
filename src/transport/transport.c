@@ -16,6 +16,8 @@
 struct mcp_transport {
     mcp_transport_ops_t ops;
     void *backend;
+    uint64_t read_ms;
+    uint64_t write_ms;
 };
 
 static const mcp_allocator_t *alloc_of(mcp_context_t *ctx) {
@@ -34,7 +36,31 @@ mcp_transport_t *mcp_transport_create(mcp_context_t *ctx, const mcp_transport_op
     }
     t->ops = *ops;
     t->backend = backend;
+    t->read_ms = 0;
+    t->write_ms = 0;
     return t;
+}
+
+mcp_status_t mcp_transport_set_timeout(mcp_context_t *ctx, mcp_transport_t *t,
+                                       uint64_t read_ms, uint64_t write_ms) {
+    (void)ctx;
+    if (t == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    t->read_ms = read_ms;
+    t->write_ms = write_ms;
+    return MCP_OK;
+}
+
+mcp_status_t mcp_transport_get_timeout(mcp_context_t *ctx, const mcp_transport_t *t,
+                                       uint64_t *read_ms_out, uint64_t *write_ms_out) {
+    (void)ctx;
+    if (t == NULL || read_ms_out == NULL || write_ms_out == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    *read_ms_out = t->read_ms;
+    *write_ms_out = t->write_ms;
+    return MCP_OK;
 }
 
 void mcp_transport_destroy(mcp_context_t *ctx, mcp_transport_t *t) {

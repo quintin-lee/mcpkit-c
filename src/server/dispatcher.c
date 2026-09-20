@@ -12,6 +12,7 @@
  */
 #include "mcpkit/server/dispatcher.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "internals.h"
@@ -26,6 +27,42 @@
 static mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req, int code,
                                const char *text) {
     return mcp_response_err_new(ctx, req, code, text, NULL);
+}
+
+#define MCP_LIST_PAGE_SIZE 100u
+
+static size_t page_offset(mcp_context_t *ctx, const mcp_message_t *req) {
+    const mcp_json_value_t *params = mcp_message_params(ctx, req);
+    const mcp_json_value_t *cur = params != NULL ? mcp_json_object_get(ctx, params, "cursor") : NULL;
+    if (cur == NULL) {
+        return 0;
+    }
+    const char *s = NULL;
+    if (mcp_json_type(ctx, cur) != MCP_JSON_STRING ||
+        mcp_json_string_value(ctx, cur, &s) != MCP_OK || s == NULL || *s == '\0') {
+        return (size_t)-1;
+    }
+    size_t off = 0;
+    for (const char *p = s; *p != '\0'; p++) {
+        if (*p < '0' || *p > '9') {
+            return (size_t)-1;
+        }
+        off = off * 10u + (size_t)(*p - '0');
+    }
+    return off;
+}
+
+static mcp_status_t set_next_cursor(mcp_context_t *ctx, mcp_json_value_t *result, size_t end) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%zu", end);
+    mcp_json_value_t *v = mcp_json_string_new(ctx, buf);
+    if (v == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set_take(ctx, result, "nextCursor", v) != MCP_OK) {
+        return MCP_ERR_NOMEM;
+    }
+    return MCP_OK;
 }
 
 static mcp_status_t set_string(mcp_context_t *ctx, mcp_json_value_t *obj, const char *key,
@@ -121,6 +158,10 @@ static mcp_message_t *route_initialize(mcp_context_t *ctx, mcp_server_t *srv, mc
 
 static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
                                        mcp_session_t *s, const mcp_message_t *req) {
+    size_t offset = page_offset(ctx, req);
+    if (offset == (size_t)-1) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "tools/list: bad cursor");
+    }
     mcp_json_value_t *result = mcp_json_object_new(ctx);
     mcp_json_value_t *arr = mcp_json_array_new(ctx);
     if (result == NULL || arr == NULL) {
@@ -128,9 +169,14 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
         mcp_json_destroy(ctx, arr);
         return NULL;
     }
+    size_t visible = 0;
     for (size_t i = 0; i < srv->n_tools; i++) {
         const mcp_tool_t *t = srv->tools[i];
         if (t->vis != MCP_TOOL_VIS_BOTH && (t->vis == MCP_TOOL_VIS_APP) != s->apps_host) {
+            continue;
+        }
+        size_t idx = visible++;
+        if (idx < offset || idx >= offset + MCP_LIST_PAGE_SIZE) {
             continue;
         }
         mcp_json_value_t *entry = mcp_json_object_new(ctx);
@@ -159,6 +205,11 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
         }
     }
     if (mcp_json_object_set_take(ctx, result, "tools", arr) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    if (offset + MCP_LIST_PAGE_SIZE < visible &&
+        set_next_cursor(ctx, result, offset + MCP_LIST_PAGE_SIZE) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -250,6 +301,10 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
 
 static mcp_message_t *route_resources_list(mcp_context_t *ctx, mcp_server_t *srv,
                                            const mcp_message_t *req) {
+    size_t offset = page_offset(ctx, req);
+    if (offset == (size_t)-1) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "resources/list: bad cursor");
+    }
     mcp_json_value_t *result = mcp_json_object_new(ctx);
     mcp_json_value_t *arr = mcp_json_array_new(ctx);
     if (result == NULL || arr == NULL) {
@@ -257,7 +312,9 @@ static mcp_message_t *route_resources_list(mcp_context_t *ctx, mcp_server_t *srv
         mcp_json_destroy(ctx, arr);
         return NULL;
     }
-    for (size_t i = 0; i < srv->n_resources; i++) {
+    size_t end = offset + MCP_LIST_PAGE_SIZE < srv->n_resources ? offset + MCP_LIST_PAGE_SIZE
+                                                                : srv->n_resources;
+    for (size_t i = offset; i < end; i++) {
         const mcp_resource_t *r = srv->resources[i];
         mcp_json_value_t *entry = mcp_json_object_new(ctx);
         if (entry == NULL || set_string(ctx, entry, "uri", r->uri) != MCP_OK ||
@@ -271,6 +328,10 @@ static mcp_message_t *route_resources_list(mcp_context_t *ctx, mcp_server_t *srv
         }
     }
     if (mcp_json_object_set_take(ctx, result, "resources", arr) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    if (end < srv->n_resources && set_next_cursor(ctx, result, end) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -322,6 +383,10 @@ static mcp_message_t *route_resources_read(mcp_context_t *ctx, mcp_server_t *srv
 
 static mcp_message_t *route_prompts_list(mcp_context_t *ctx, mcp_server_t *srv,
                                          const mcp_message_t *req) {
+    size_t offset = page_offset(ctx, req);
+    if (offset == (size_t)-1) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "prompts/list: bad cursor");
+    }
     mcp_json_value_t *result = mcp_json_object_new(ctx);
     mcp_json_value_t *arr = mcp_json_array_new(ctx);
     if (result == NULL || arr == NULL) {
@@ -329,7 +394,9 @@ static mcp_message_t *route_prompts_list(mcp_context_t *ctx, mcp_server_t *srv,
         mcp_json_destroy(ctx, arr);
         return NULL;
     }
-    for (size_t i = 0; i < srv->n_prompts; i++) {
+    size_t end = offset + MCP_LIST_PAGE_SIZE < srv->n_prompts ? offset + MCP_LIST_PAGE_SIZE
+                                                              : srv->n_prompts;
+    for (size_t i = offset; i < end; i++) {
         const mcp_prompt_t *p = srv->prompts[i];
         mcp_json_value_t *entry = mcp_json_object_new(ctx);
         if (entry == NULL || set_string(ctx, entry, "name", p->name) != MCP_OK ||
@@ -343,6 +410,10 @@ static mcp_message_t *route_prompts_list(mcp_context_t *ctx, mcp_server_t *srv,
         }
     }
     if (mcp_json_object_set_take(ctx, result, "prompts", arr) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    if (end < srv->n_prompts && set_next_cursor(ctx, result, end) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -400,6 +471,11 @@ static mcp_message_t *route_prompts_get(mcp_context_t *ctx, mcp_server_t *srv, m
 static mcp_message_t *route_completion_list(mcp_context_t *ctx, mcp_server_t *srv,
                                             const mcp_message_t *req) {
     // Return an empty array – completion/list has no meaningful payload.
+    // The cursor is still validated so a bad cursor fails consistently
+    // across all list methods.
+    if (page_offset(ctx, req) == (size_t)-1) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "completion/list: bad cursor");
+    }
     mcp_json_value_t *result = mcp_json_object_new(ctx);
     mcp_json_value_t *comps = mcp_json_array_new(ctx);
     if (result == NULL || comps == NULL) {
@@ -662,6 +738,9 @@ mcp_status_t mcp_queue_push(mcp_context_t *ctx, mcp_queue_t *q, mcp_session_t *s
                             mcp_message_t *msg) {
     if (q == NULL || session == NULL || msg == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (q->len >= MCP_QUEUE_MAX_LEN) {
+        return MCP_ERR_NOMEM;
     }
     if (queue_grow(ctx, q) != MCP_OK) {
         return MCP_ERR_NOMEM;

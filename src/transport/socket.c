@@ -7,7 +7,9 @@
  * newline and retries on EINTR. recv() reads SOCK_LINE_CAP (4KB)
  * chunks and grows the line buffer on demand, rejecting a line once
  * it reaches MCP_PROTOCOL_MAX_MESSAGE_BYTES (4MB) with MCP_ERR_PROTOCOL
- * and returning MCP_ERR_IO on a clean EOF.
+ * and returning MCP_ERR_IO on a clean EOF. When timeouts are set via
+ * mcp_transport_set_timeout, send/recv wait on poll() against a single
+ * monotonic deadline per call and return MCP_ERR_TIMEOUT on expiry.
  */
 #define _DEFAULT_SOURCE
 #include "mcpkit/transport/socket.h"
@@ -17,8 +19,10 @@
 #include <limits.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "internals.h"
@@ -37,6 +41,47 @@ typedef struct {
 
 static const mcp_allocator_t *alloc_of(mcp_context_t *ctx) {
     return ctx != NULL ? mcp_context_allocator(ctx) : mcp_default_allocator();
+}
+
+static uint64_t now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+}
+
+/* Wait until fd is ready for events or the absolute monotonic deadline
+ * passes (deadline==0 waits forever). EINTR restarts with the same
+ * deadline so a signal cannot extend or shorten the window. */
+static mcp_status_t wait_until(int fd, short events, uint64_t deadline) {
+    for (;;) {
+        int to = -1;
+        if (deadline != 0) {
+            uint64_t now = now_ms();
+            if (now >= deadline) {
+                return MCP_ERR_TIMEOUT;
+            }
+            uint64_t left = deadline - now;
+            to = left > (uint64_t)INT_MAX ? INT_MAX : (int)left;
+        }
+        struct pollfd pfd;
+        pfd.fd = fd;
+        pfd.events = events;
+        pfd.revents = 0;
+        int n = poll(&pfd, 1, to);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return MCP_ERR_IO;
+        }
+        if (n == 0) {
+            return MCP_ERR_TIMEOUT;
+        }
+        if ((pfd.revents & (POLLERR | POLLNVAL)) != 0) {
+            return MCP_ERR_IO;
+        }
+        return MCP_OK;
+    }
 }
 
 static int open_socket(const char *host, uint16_t port, bool server_mode) {
@@ -115,8 +160,18 @@ static mcp_status_t sock_send(mcp_context_t *ctx, mcp_transport_t *t, const char
     if (b == NULL || b->fd < 0) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
+    uint64_t read_ms = 0, write_ms = 0;
+    mcp_transport_get_timeout(ctx, t, &read_ms, &write_ms);
+    (void)read_ms;
+    uint64_t deadline = write_ms == 0 ? 0 : now_ms() + write_ms;
     size_t off = 0;
     while (off < len) {
+        if (deadline != 0) {
+            mcp_status_t ws = wait_until(b->fd, POLLOUT, deadline);
+            if (ws != MCP_OK) {
+                return ws;
+            }
+        }
         ssize_t n = send(b->fd, data + off, len - off, MSG_NOSIGNAL);
         if (n < 0) {
             if (errno == EINTR) {
@@ -131,6 +186,12 @@ static mcp_status_t sock_send(mcp_context_t *ctx, mcp_transport_t *t, const char
     }
     // MSG_NOSIGNAL: a peer that closed the socket yields EPIPE ->
     // MCP_ERR_IO instead of the default SIGPIPE process kill.
+    if (deadline != 0) {
+        mcp_status_t ws = wait_until(b->fd, POLLOUT, deadline);
+        if (ws != MCP_OK) {
+            return ws;
+        }
+    }
     if (send(b->fd, "\n", 1, MSG_NOSIGNAL) < 0) {
         return MCP_ERR_IO;
     }
@@ -152,7 +213,19 @@ static mcp_status_t sock_recv(mcp_context_t *ctx, mcp_transport_t *t, char **lin
     if (buf == NULL) {
         return MCP_ERR_NOMEM;
     }
+    uint64_t read_ms = 0, write_ms = 0;
+    mcp_transport_get_timeout(ctx, t, &read_ms, &write_ms);
+    (void)write_ms;
+    uint64_t deadline = read_ms == 0 ? 0 : now_ms() + read_ms;
     for (;;) {
+        if (deadline != 0) {
+            mcp_status_t ws = wait_until(b->fd, POLLIN, deadline);
+            if (ws != MCP_OK) {
+                a->free_fn(buf, a->userdata);
+                *line_out = NULL;
+                return ws;
+            }
+        }
         char chunk[SOCK_LINE_CAP];
         ssize_t n = read(b->fd, chunk, sizeof(chunk));
         if (n < 0) {

@@ -19,6 +19,7 @@
 #define MCPKIT_TRANSPORT_TRANSPORT_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "mcpkit/core/error.h"
 
@@ -38,6 +39,8 @@ typedef struct mcp_transport_ops {
     mcp_status_t (*recv)(mcp_context_t *ctx, mcp_transport_t *t, char **line_out);
     mcp_status_t (*stop)(mcp_context_t *ctx, mcp_transport_t *t);
 } mcp_transport_ops_t;
+
+
 
 /**
  * @brief Creates a transport wrapper around an ops table and a backend
@@ -110,5 +113,33 @@ mcp_status_t mcp_transport_recv(mcp_context_t *ctx, mcp_transport_t *t, char **l
  * @return Backend's status.
  */
 mcp_status_t mcp_transport_stop(mcp_context_t *ctx, mcp_transport_t *t);
+
+/**
+ * @brief Sets per-call I/O timeouts in milliseconds (0 = block forever).
+ *
+ * The values are stored on the wrapper; backends that honor timeouts
+ * query them on every send/recv and return MCP_ERR_TIMEOUT on expiry.
+ * Backends that cannot time out (in-memory fakes) ignore them. The
+ * default is 0/0, i.e. the historical block-forever behavior.
+ *
+ * @param ctx Context; may be NULL.
+ * @param t Target transport.
+ * @param read_ms Max wait for inbound data per recv call.
+ * @param write_ms Max wait for the peer to accept outbound data.
+ * @return MCP_OK, or MCP_ERR_INVALID_ARGUMENT on NULL t.
+ */
+mcp_status_t mcp_transport_set_timeout(mcp_context_t *ctx, mcp_transport_t *t,
+                                       uint64_t read_ms, uint64_t write_ms);
+
+/**
+ * @brief Reads back the timeouts stored by mcp_transport_set_timeout.
+ * @param ctx Context; may be NULL.
+ * @param t Target transport.
+ * @param read_ms_out Receives read timeout; must be non-NULL.
+ * @param write_ms_out Receives write timeout; must be non-NULL.
+ * @return MCP_OK, or MCP_ERR_INVALID_ARGUMENT on NULL t or NULL outs.
+ */
+mcp_status_t mcp_transport_get_timeout(mcp_context_t *ctx, const mcp_transport_t *t,
+                                       uint64_t *read_ms_out, uint64_t *write_ms_out);
 
 #endif

@@ -11,8 +11,10 @@
 #include <string.h>
 
 #include "mcpkit/core/context.h"
+#include "mcpkit/json/array.h"
 #include "mcpkit/json/json.h"
 #include "mcpkit/json/object.h"
+#include "mcpkit/json/value.h"
 #include "mcpkit/protocol/initialize.h"
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/transport/transport.h"
@@ -227,7 +229,60 @@ mcp_status_t mcp_client_list_tools(mcp_context_t *ctx, mcp_client_t *client,
     if (client == NULL || tools_out == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
-    return mcp_client_request(ctx, client, "tools/list", NULL, tools_out);
+    *tools_out = NULL;
+    mcp_json_value_t *acc = mcp_json_array_new(ctx);
+    if (acc == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_value_t *params = NULL;
+    for (;;) {
+        mcp_json_value_t *page = NULL;
+        mcp_status_t st = mcp_client_request(ctx, client, "tools/list", params, &page);
+        params = NULL;
+        if (st != MCP_OK) {
+            mcp_json_destroy(ctx, acc);
+            return st;
+        }
+        const mcp_json_value_t *arr = mcp_json_object_get(ctx, page, "tools");
+        if (arr != NULL && mcp_json_type(ctx, arr) == MCP_JSON_ARRAY) {
+            size_t n = mcp_json_array_size(ctx, arr);
+            for (size_t i = 0; i < n; i++) {
+                mcp_json_value_t *copy = mcp_json_clone(ctx, mcp_json_array_get(ctx, arr, i));
+                if (copy == NULL || mcp_json_array_append(ctx, acc, copy) != MCP_OK) {
+                    mcp_json_destroy(ctx, copy);
+                    mcp_json_destroy(ctx, page);
+                    mcp_json_destroy(ctx, acc);
+                    return MCP_ERR_NOMEM;
+                }
+            }
+        }
+        const mcp_json_value_t *nc = mcp_json_object_get(ctx, page, "nextCursor");
+        const char *cursor = NULL;
+        if (nc == NULL || mcp_json_type(ctx, nc) != MCP_JSON_STRING ||
+            mcp_json_string_value(ctx, nc, &cursor) != MCP_OK || cursor == NULL) {
+            mcp_json_destroy(ctx, page);
+            break;
+        }
+        mcp_json_value_t *next = mcp_json_object_new(ctx);
+        mcp_json_value_t *cv = next != NULL ? mcp_json_string_new(ctx, cursor) : NULL;
+        if (next == NULL || cv == NULL ||
+            mcp_json_object_set_take(ctx, next, "cursor", cv) != MCP_OK) {
+            mcp_json_destroy(ctx, next);
+            mcp_json_destroy(ctx, page);
+            mcp_json_destroy(ctx, acc);
+            return MCP_ERR_NOMEM;
+        }
+        mcp_json_destroy(ctx, page);
+        params = next;
+    }
+    mcp_json_value_t *result = mcp_json_object_new(ctx);
+    if (result == NULL || mcp_json_object_set_take(ctx, result, "tools", acc) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        mcp_json_destroy(ctx, acc);
+        return MCP_ERR_NOMEM;
+    }
+    *tools_out = result;
+    return MCP_OK;
 }
 
 mcp_status_t mcp_client_call_tool(mcp_context_t *ctx, mcp_client_t *client,
