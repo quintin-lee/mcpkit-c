@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_check.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -46,65 +46,65 @@ static const char *kCall =
 
 static void check_init_result(mcp_context_t *ctx, const char *line) {
     mcp_message_t *msg = mcp_message_parse(ctx, line, strlen(line));
-    assert(msg != NULL && mcp_message_kind(ctx, msg) == MCP_MSG_RESPONSE);
+    CHECK(msg != NULL && mcp_message_kind(ctx, msg) == MCP_MSG_RESPONSE);
     const mcp_json_value_t *res = mcp_message_result(ctx, msg);
     const mcp_json_value_t *pv = mcp_json_object_get(ctx, res, "protocolVersion");
     const char *s = NULL;
-    assert(pv != NULL && mcp_json_string_value(ctx, pv, &s) == MCP_OK);
-    assert(strcmp(s, "2025-06-18") == 0);
+    CHECK(pv != NULL && mcp_json_string_value(ctx, pv, &s) == MCP_OK);
+    CHECK(strcmp(s, "2025-06-18") == 0);
     mcp_message_destroy(ctx, msg);
 }
 
 static void check_call_result(mcp_context_t *ctx, const char *line) {
     mcp_message_t *msg = mcp_message_parse(ctx, line, strlen(line));
-    assert(msg != NULL && mcp_message_kind(ctx, msg) == MCP_MSG_RESPONSE);
+    CHECK(msg != NULL && mcp_message_kind(ctx, msg) == MCP_MSG_RESPONSE);
     const mcp_json_value_t *res = mcp_message_result(ctx, msg);
     const mcp_json_value_t *content = mcp_json_object_get(ctx, res, "content");
-    assert(content != NULL && mcp_json_array_size(ctx, content) == 1);
+    CHECK(content != NULL && mcp_json_array_size(ctx, content) == 1);
     const mcp_json_value_t *item = mcp_json_array_get(ctx, content, 0);
     const mcp_json_value_t *text = mcp_json_object_get(ctx, item, "text");
     const char *s = NULL;
-    assert(text != NULL && mcp_json_string_value(ctx, text, &s) == MCP_OK);
-    assert(strcmp(s, "hello stdio") == 0);
+    CHECK(text != NULL && mcp_json_string_value(ctx, text, &s) == MCP_OK);
+    CHECK(strcmp(s, "hello stdio") == 0);
     mcp_message_destroy(ctx, msg);
 }
 
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
-    assert(ctx != NULL);
+    CHECK(ctx != NULL);
     mcp_server_t *srv = mcp_server_create(ctx, "loopback", "0.1.0");
-    assert(srv != NULL);
+    CHECK(srv != NULL);
 
     mcp_json_value_t *schema = mcp_schema_object_new(ctx);
-    assert(schema != NULL);
-    assert(mcp_schema_add_property(ctx, schema, "text", mcp_schema_string_new(ctx)) ==
+    CHECK(schema != NULL);
+    CHECK(mcp_schema_add_property(ctx, schema, "text", mcp_schema_string_new(ctx)) ==
            MCP_OK);
-    assert(mcp_schema_add_required(ctx, schema, "text") == MCP_OK);
-    assert(mcp_server_add_tool(ctx, srv,
+    CHECK(mcp_schema_add_required(ctx, schema, "text") == MCP_OK);
+    CHECK(mcp_server_add_tool(ctx, srv,
                                mcp_tool_new(ctx, "echo", "Echo", schema, echo_handler,
                                             NULL)) == MCP_OK);
 
     FILE *in = tmpfile();
-    assert(in != NULL);
-    assert(fputs(kInit, in) != EOF && fputs(kNotif, in) != EOF && fputs(kCall, in) != EOF);
+    CHECK(in != NULL);
+    CHECK(fputs(kInit, in) != EOF && fputs(kNotif, in) != EOF && fputs(kCall, in) != EOF);
     rewind(in);
     FILE *out = tmpfile();
-    assert(out != NULL);
+    CHECK(out != NULL);
 
     mcp_transport_t *t = mcp_stdio_transport_create(ctx, in, out);
-    assert(t != NULL);
-    assert(mcp_transport_start(ctx, t) == MCP_OK);
-    assert(mcp_stdio_serve(ctx, srv, t) == MCP_OK);
-    assert(mcp_transport_stop(ctx, t) == MCP_OK);
+    CHECK(t != NULL);
+    CHECK(mcp_transport_start(ctx, t) == MCP_OK);
+    CHECK(mcp_stdio_serve(ctx, srv, t) == MCP_OK);
+    CHECK(mcp_transport_stop(ctx, t) == MCP_OK);
     mcp_transport_destroy(ctx, t);
 
     rewind(out);
     char line[8192];
-    assert(fgets(line, (int)sizeof(line), out) != NULL);
+    CHECK(fgets(line, (int)sizeof(line), out) != NULL);
     check_init_result(ctx, line);
-    assert(fgets(line, (int)sizeof(line), out) != NULL);
+    CHECK(fgets(line, (int)sizeof(line), out) != NULL);
     check_call_result(ctx, line);
-    assert(fgets(line, (int)sizeof(line), out) == NULL);
+    CHECK(fgets(line, (int)sizeof(line), out) == NULL);
 
     fclose(in);
     fclose(out);

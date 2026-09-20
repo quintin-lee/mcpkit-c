@@ -1,7 +1,7 @@
 // Deterministic corpus for the HTTP parser: edge cases that must not crash.
 // Each case is fed through mcp_http_parse_request; a non-NULL result is destroyed,
 // a NULL result is an accepted rejection.  No case may cause a crash or hang.
-#include <assert.h>
+#include "test_check.h"
 #include <string.h>
 
 #include "mcpkit/mcpkit.h"
@@ -9,16 +9,16 @@
 static void check(mcp_context_t *ctx, const char *input, size_t len, int expect_null) {
     mcp_http_request_t *req = mcp_http_parse_request(ctx, input, len);
     if (expect_null) {
-        assert(req == NULL);
+        CHECK(req == NULL);
     } else {
-        assert(req != NULL);
+        CHECK(req != NULL);
         mcp_http_request_destroy(ctx, req);
     }
 }
 
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
-    assert(ctx != NULL);
+    CHECK(ctx != NULL);
 
     // Minimal valid GET request
     const char *cases_ok[] = {

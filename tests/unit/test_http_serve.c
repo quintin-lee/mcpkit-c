@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_check.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,7 +57,7 @@ static mcp_status_t mem_write(mcp_context_t *ctx, void *user, const char *data, 
     (void)ctx;
     mem_io_t *m = user;
     char *nbuf = realloc(m->out, m->olen + len + 1);
-    assert(nbuf != NULL);
+    CHECK(nbuf != NULL);
     m->out = nbuf;
     memcpy(m->out + m->olen, data, len);
     m->olen += len;
@@ -67,12 +67,12 @@ static mcp_status_t mem_write(mcp_context_t *ctx, void *user, const char *data, 
 
 static mcp_server_t *make_server(mcp_context_t *ctx) {
     mcp_server_t *srv = mcp_server_create(ctx, "httpsrv", "0.1.0");
-    assert(srv != NULL);
+    CHECK(srv != NULL);
     mcp_json_value_t *schema = mcp_schema_object_new(ctx);
-    assert(schema != NULL);
-    assert(mcp_schema_add_property(ctx, schema, "text", mcp_schema_string_new(ctx)) == MCP_OK);
-    assert(mcp_schema_add_required(ctx, schema, "text") == MCP_OK);
-    assert(mcp_server_add_tool(ctx, srv,
+    CHECK(schema != NULL);
+    CHECK(mcp_schema_add_property(ctx, schema, "text", mcp_schema_string_new(ctx)) == MCP_OK);
+    CHECK(mcp_schema_add_required(ctx, schema, "text") == MCP_OK);
+    CHECK(mcp_server_add_tool(ctx, srv,
                                mcp_tool_new(ctx, "echo", "Echo", schema, echo_handler,
                                             NULL)) == MCP_OK);
     return srv;
@@ -114,17 +114,17 @@ static char *make_post(const char *body, const char *sid, char *buf, size_t cap)
                      "Content-Type: application/json\r\n\r\n%s",
                      strlen(body), body);
     }
-    assert(n > 0 && (size_t)n < cap);
+    CHECK(n > 0 && (size_t)n < cap);
     return buf;
 }
 
 static void check_status_line(const char *resp, const char *expect) {
-    assert(strncmp(resp, expect, strlen(expect)) == 0);
+    CHECK(strncmp(resp, expect, strlen(expect)) == 0);
 }
 
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
-    assert(ctx != NULL);
+    CHECK(ctx != NULL);
     mcp_server_t *srv = make_server(ctx);
 
     char b1[4096], b2[4096], b3[4096];
@@ -133,13 +133,13 @@ int main(void) {
     /* (a) init without session -> 200 + Mcp-Session-Id + 2025-06-18 */
     const char *s1[] = { make_post(kInitBody, NULL, b1, sizeof(b1)) };
     char *    out = run_script(ctx, srv, s1, 1, &st);
-    assert(st == MCP_OK && out != NULL);
+    CHECK(st == MCP_OK && out != NULL);
     check_status_line(out, "HTTP/1.1 200 OK");
     const char *sid_at = strstr(out, "Mcp-Session-Id: ");
-    assert(sid_at != NULL);
+    CHECK(sid_at != NULL);
     char sid[64];
-    assert(sscanf(sid_at + 16, "%63s", sid) == 1);
-    assert(strstr(out, "2025-06-18") != NULL);
+    CHECK(sscanf(sid_at + 16, "%63s", sid) == 1);
+    CHECK(strstr(out, "2025-06-18") != NULL);
     free(out);
 
     /* (b)+(c) init + notify + call in ONE loop (sessions die with the loop) */
@@ -149,41 +149,41 @@ int main(void) {
         make_post(kCallBody, "sess-1", b3, sizeof(b3)),
     };
     out = run_script(ctx, srv, s2, 3, &st);
-    assert(st == MCP_OK && out != NULL);
+    CHECK(st == MCP_OK && out != NULL);
     check_status_line(out, "HTTP/1.1 200 OK");
-    assert(strstr(out, "Mcp-Session-Id: sess-1") != NULL);
+    CHECK(strstr(out, "Mcp-Session-Id: sess-1") != NULL);
     const char *acc = strstr(out, "HTTP/1.1 202 Accepted");
-    assert(acc != NULL);
-    assert(strstr(acc, "\"hi http\"") != NULL);
+    CHECK(acc != NULL);
+    CHECK(strstr(acc, "\"hi http\"") != NULL);
     free(out);
 
     /* (d) call without session id -> 400 */
     const char *s3[] = { make_post(kCallBody, NULL, b1, sizeof(b1)) };
     out = run_script(ctx, srv, s3, 1, &st);
-    assert(st == MCP_OK && out != NULL);
+    CHECK(st == MCP_OK && out != NULL);
     check_status_line(out, "HTTP/1.1 400 Bad Request");
     free(out);
 
     /* (e) unknown session id -> 404 */
     const char *s4[] = { make_post(kCallBody, "sess-999", b1, sizeof(b1)) };
     out = run_script(ctx, srv, s4, 1, &st);
-    assert(st == MCP_OK && out != NULL);
+    CHECK(st == MCP_OK && out != NULL);
     check_status_line(out, "HTTP/1.1 404 Not Found");
     free(out);
 
     /* (f) GET with SSE accept -> 200 event-stream with data: */
     const char *s5[] = { "GET /mcp HTTP/1.1\r\nAccept: text/event-stream\r\n\r\n" };
     out = run_script(ctx, srv, s5, 1, &st);
-    assert(st == MCP_OK && out != NULL);
+    CHECK(st == MCP_OK && out != NULL);
     check_status_line(out, "HTTP/1.1 200 OK");
-    assert(strstr(out, "text/event-stream") != NULL);
-    assert(strstr(out, "data: ") != NULL);
+    CHECK(strstr(out, "text/event-stream") != NULL);
+    CHECK(strstr(out, "data: ") != NULL);
     free(out);
 
     /* (g) GET without SSE accept -> 405 */
     const char *s6[] = { "GET /mcp HTTP/1.1\r\n\r\n" };
     out = run_script(ctx, srv, s6, 1, &st);
-    assert(st == MCP_OK && out != NULL);
+    CHECK(st == MCP_OK && out != NULL);
     check_status_line(out, "HTTP/1.1 405 Method Not Allowed");
     free(out);
 
@@ -197,22 +197,22 @@ int main(void) {
         make_post(kCallBody, "sess-1", b2, sizeof(b2)),
     };
     out = run_script(ctx, srv, s7, 3, &st);
-    assert(st == MCP_OK && out != NULL);
+    CHECK(st == MCP_OK && out != NULL);
     check_status_line(out, "HTTP/1.1 200 OK");
-    assert(strstr(out, "Mcp-Session-Id: sess-1") != NULL);
-    assert(strstr(out, "HTTP/1.1 404 Not Found") != NULL);
+    CHECK(strstr(out, "Mcp-Session-Id: sess-1") != NULL);
+    CHECK(strstr(out, "HTTP/1.1 404 Not Found") != NULL);
     free(out);
 
     /* (i) sse_wrap exact bytes + NULL guards */
     char *ev = mcp_sse_wrap(ctx, "{\"a\":1}");
-    assert(ev != NULL && strcmp(ev, "data: {\"a\":1}\n\n") == 0);
+    CHECK(ev != NULL && strcmp(ev, "data: {\"a\":1}\n\n") == 0);
     mcp_json_free_string(ctx, ev);
-    assert(mcp_sse_wrap(ctx, NULL) == NULL);
+    CHECK(mcp_sse_wrap(ctx, NULL) == NULL);
     ev = mcp_sse_wrap(NULL, "{\"a\":1}");
     mcp_json_free_string(NULL, ev);
 
     /* NULL guards */
-    assert(mcp_http_serve(ctx, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_http_serve(ctx, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
 
     mcp_server_destroy(ctx, srv);
     mcp_context_destroy(ctx);

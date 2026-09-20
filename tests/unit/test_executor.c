@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_check.h"
 #include <stddef.h>
 #include <string.h>
 #include <threads.h>
@@ -60,10 +60,10 @@ static void dispatch_job(mcp_context_t *ctx, void *arg) {
 
 static void run_dispatch_jobs(mcp_executor_t *ex, int *ok_count) {
     mcp_context_t *ctx = mcp_context_create(NULL);
-    assert(ctx);
+    CHECK(ctx);
     mcp_server_t *srv = mcp_server_create(ctx, "srv", "1");
-    assert(srv);
-    assert(mcp_server_add_tool(ctx, srv, mcp_tool_new(ctx, "echo", "echo", NULL, echo_handler,
+    CHECK(srv);
+    CHECK(mcp_server_add_tool(ctx, srv, mcp_tool_new(ctx, "echo", "echo", NULL, echo_handler,
                                                      NULL)) == MCP_OK);
     job_t jobs[NJOBS];
     memset(jobs, 0, sizeof(jobs));
@@ -71,41 +71,41 @@ static void run_dispatch_jobs(mcp_executor_t *ex, int *ok_count) {
         jobs[i].ctx = ctx;
         jobs[i].srv = srv;
         jobs[i].session = mcp_server_create_session(ctx, srv);
-        assert(jobs[i].session);
+        CHECK(jobs[i].session);
         mcp_json_value_t *init = mcp_initialize_params_new(ctx, "cli", "1");
-        assert(init);
+        CHECK(init);
         mcp_message_t *ireq = mcp_request_new_number_id(ctx, 1000.0 + i, "initialize", init);
-        assert(ireq);
+        CHECK(ireq);
         mcp_message_t *iresp = NULL;
-        assert(mcp_server_dispatch(ctx, srv, jobs[i].session, ireq, &iresp) == MCP_OK);
-        assert(mcp_message_result(ctx, iresp) != NULL);
+        CHECK(mcp_server_dispatch(ctx, srv, jobs[i].session, ireq, &iresp) == MCP_OK);
+        CHECK(mcp_message_result(ctx, iresp) != NULL);
         mcp_message_destroy(ctx, ireq);
         mcp_message_destroy(ctx, iresp);
         mcp_message_t *notif = mcp_initialized_notification_new(ctx);
-        assert(notif);
-        assert(mcp_server_notify(ctx, srv, jobs[i].session, notif) == MCP_OK);
+        CHECK(notif);
+        CHECK(mcp_server_notify(ctx, srv, jobs[i].session, notif) == MCP_OK);
         mcp_message_destroy(ctx, notif);
 
         mcp_json_value_t *args = mcp_json_object_new(ctx);
         mcp_json_value_t *tv = mcp_json_string_new(ctx, "hey");
-        assert(args && tv && mcp_json_object_set(ctx, args, "text", tv) == MCP_OK);
+        CHECK(args && tv && mcp_json_object_set(ctx, args, "text", tv) == MCP_OK);
         mcp_json_value_t *params = mcp_json_object_new(ctx);
         mcp_json_value_t *nm = mcp_json_string_new(ctx, "echo");
-        assert(params && nm && mcp_json_object_set(ctx, params, "name", nm) == MCP_OK &&
+        CHECK(params && nm && mcp_json_object_set(ctx, params, "name", nm) == MCP_OK &&
                mcp_json_object_set(ctx, params, "arguments", args) == MCP_OK);
         jobs[i].req = mcp_request_new_number_id(ctx, 1.0 + i, "tools/call", params);
-        assert(jobs[i].req);
-        assert(mcp_executor_submit(ctx, ex, dispatch_job, &jobs[i]) == MCP_OK);
+        CHECK(jobs[i].req);
+        CHECK(mcp_executor_submit(ctx, ex, dispatch_job, &jobs[i]) == MCP_OK);
     }
-    assert(mcp_executor_wait(ctx, ex) == MCP_OK);
+    CHECK(mcp_executor_wait(ctx, ex) == MCP_OK);
     int ok = 0;
     for (int i = 0; i < NJOBS; i++) {
-        assert(jobs[i].status == MCP_OK);
-        assert(jobs[i].resp != NULL);
+        CHECK(jobs[i].status == MCP_OK);
+        CHECK(jobs[i].resp != NULL);
         const mcp_json_value_t *res = mcp_message_result(ctx, jobs[i].resp);
-        assert(res);
+        CHECK(res);
         const char *bs = NULL;
-        assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, res, "text"), &bs) ==
+        CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, res, "text"), &bs) ==
                    MCP_OK &&
                strcmp(bs, "hey") == 0);
         ok++;
@@ -119,60 +119,60 @@ static void run_dispatch_jobs(mcp_executor_t *ex, int *ok_count) {
 
 int main(void) {
     mcp_executor_t *ex = mcp_sync_executor_create(NULL);
-    assert(ex != NULL);
+    CHECK(ex != NULL);
 
     int n = 0;
-    assert(mcp_executor_submit(NULL, ex, bump, &n) == MCP_OK);
-    assert(n == 1);
-    assert(mcp_executor_submit(NULL, ex, bump, &n) == MCP_OK);
-    assert(mcp_executor_submit(NULL, ex, bump, &n) == MCP_OK);
-    assert(mcp_executor_wait(NULL, ex) == MCP_OK);
-    assert(n == 3);
+    CHECK(mcp_executor_submit(NULL, ex, bump, &n) == MCP_OK);
+    CHECK(n == 1);
+    CHECK(mcp_executor_submit(NULL, ex, bump, &n) == MCP_OK);
+    CHECK(mcp_executor_submit(NULL, ex, bump, &n) == MCP_OK);
+    CHECK(mcp_executor_wait(NULL, ex) == MCP_OK);
+    CHECK(n == 3);
 
-    assert(mcp_executor_wait(NULL, ex) == MCP_OK);
+    CHECK(mcp_executor_wait(NULL, ex) == MCP_OK);
 
-    assert(mcp_executor_submit(NULL, ex, NULL, &n) == MCP_ERR_INVALID_ARGUMENT);
-    assert(mcp_executor_submit(NULL, NULL, bump, &n) == MCP_ERR_INVALID_ARGUMENT);
-    assert(mcp_executor_wait(NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
-    assert(mcp_executor_backend(NULL, NULL) == NULL);
-    assert(mcp_executor_backend(NULL, ex) == NULL);
+    CHECK(mcp_executor_submit(NULL, ex, NULL, &n) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_executor_submit(NULL, NULL, bump, &n) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_executor_wait(NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_executor_backend(NULL, NULL) == NULL);
+    CHECK(mcp_executor_backend(NULL, ex) == NULL);
 
     int sync_ok = 0;
     run_dispatch_jobs(ex, &sync_ok);
-    assert(sync_ok == NJOBS);
+    CHECK(sync_ok == NJOBS);
     mcp_executor_destroy(NULL, ex);
 
-    assert(mcp_threadpool_create(NULL, 0) == NULL);
+    CHECK(mcp_threadpool_create(NULL, 0) == NULL);
     mcp_executor_t *tp = mcp_threadpool_create(NULL, 4);
-    assert(tp != NULL);
+    CHECK(tp != NULL);
 
     int m = 0;
     for (int i = 0; i < 32; i++) {
-        assert(mcp_executor_submit(NULL, tp, bump, &m) == MCP_OK);
+        CHECK(mcp_executor_submit(NULL, tp, bump, &m) == MCP_OK);
     }
-    assert(mcp_executor_wait(NULL, tp) == MCP_OK);
-    assert(m == 32);
-    assert(mcp_executor_wait(NULL, tp) == MCP_OK);
+    CHECK(mcp_executor_wait(NULL, tp) == MCP_OK);
+    CHECK(m == 32);
+    CHECK(mcp_executor_wait(NULL, tp) == MCP_OK);
 
     int fast = 0;
     int slow = 0;
-    assert(mcp_executor_submit(NULL, tp, slow_bump, &slow) == MCP_OK);
+    CHECK(mcp_executor_submit(NULL, tp, slow_bump, &slow) == MCP_OK);
     for (int i = 0; i < 4; i++) {
-        assert(mcp_executor_submit(NULL, tp, bump, &fast) == MCP_OK);
+        CHECK(mcp_executor_submit(NULL, tp, bump, &fast) == MCP_OK);
     }
-    assert(mcp_executor_wait(NULL, tp) == MCP_OK);
-    assert(fast == 4 && slow == 1);
+    CHECK(mcp_executor_wait(NULL, tp) == MCP_OK);
+    CHECK(fast == 4 && slow == 1);
 
     int pool_ok = 0;
     run_dispatch_jobs(tp, &pool_ok);
-    assert(pool_ok == NJOBS);
+    CHECK(pool_ok == NJOBS);
     mcp_executor_destroy(NULL, tp);
 
     mcp_executor_t *tp2 = mcp_threadpool_create(NULL, 2);
-    assert(tp2 != NULL);
+    CHECK(tp2 != NULL);
     int q = 0;
-    assert(mcp_executor_submit(NULL, tp2, bump, &q) == MCP_OK);
-    assert(mcp_executor_submit(NULL, tp2, bump, &q) == MCP_OK);
+    CHECK(mcp_executor_submit(NULL, tp2, bump, &q) == MCP_OK);
+    CHECK(mcp_executor_submit(NULL, tp2, bump, &q) == MCP_OK);
     mcp_executor_destroy(NULL, tp2);
 
     mcp_executor_destroy(NULL, NULL);

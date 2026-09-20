@@ -1,13 +1,13 @@
 // Deterministic corpus for schema validation: edge cases that must not crash.
 // Each case is parsed and validated against a string-typed schema.
-#include <assert.h>
+#include "test_check.h"
 #include <string.h>
 
 #include "mcpkit/mcpkit.h"
 
 static void check(mcp_context_t *ctx, const char *input, size_t len) {
     mcp_json_value_t *schema = mcp_schema_string_new(ctx);
-    assert(schema != NULL);
+    CHECK(schema != NULL);
     mcp_json_value_t *v = mcp_json_parse(ctx, input, len);
     mcp_status_t st = mcp_schema_validate(ctx, schema, v);
     (void)st; // any status is a valid outcome; must not crash
@@ -17,7 +17,7 @@ static void check(mcp_context_t *ctx, const char *input, size_t len) {
 
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
-    assert(ctx != NULL);
+    CHECK(ctx != NULL);
 
     const char *cases[] = {
         "\"hello\"",

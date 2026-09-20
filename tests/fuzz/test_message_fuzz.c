@@ -1,5 +1,5 @@
 // Deterministic corpus for message parsing + validation: edge cases that must not crash.
-#include <assert.h>
+#include "test_check.h"
 #include <string.h>
 
 #include "mcpkit/mcpkit.h"
@@ -15,7 +15,7 @@ static void check(mcp_context_t *ctx, const char *input, size_t len) {
 
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
-    assert(ctx != NULL);
+    CHECK(ctx != NULL);
 
     // Valid requests
     const char *valid[] = {

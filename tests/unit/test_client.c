@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_check.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -25,7 +25,7 @@ static mcp_status_t fake_send(mcp_context_t *ctx, mcp_transport_t *t, const char
                               size_t len) {
     (void)ctx;
     fake_t *f = (fake_t *)mcp_transport_backend(ctx, t);
-    assert(len < sizeof(f->sent));
+    CHECK(len < sizeof(f->sent));
     memcpy(f->sent, data, len);
     f->sent[len] = '\0';
     f->sent_len = len;
@@ -35,11 +35,11 @@ static mcp_status_t fake_send(mcp_context_t *ctx, mcp_transport_t *t, const char
 
 static mcp_status_t fake_recv(mcp_context_t *ctx, mcp_transport_t *t, char **line_out) {
     fake_t *f = (fake_t *)mcp_transport_backend(ctx, t);
-    assert(f->cursor < f->nscript);
+    CHECK(f->cursor < f->nscript);
     const char *line = f->script[f->cursor++];
     size_t n = strlen(line) + 1;
     char *buf = mcp_context_allocator(ctx)->malloc_fn(n, mcp_context_allocator(ctx)->userdata);
-    assert(buf != NULL);
+    CHECK(buf != NULL);
     memcpy(buf, line, n);
     *line_out = buf;
     return MCP_OK;
@@ -55,45 +55,45 @@ static const mcp_transport_ops_t kFake = { fake_start, fake_send, fake_recv, fak
 
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
-    assert(ctx != NULL);
+    CHECK(ctx != NULL);
 
-    assert(mcp_client_create(ctx, NULL) == NULL);
-    assert(mcp_client_request(ctx, NULL, "ping", NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_create(ctx, NULL) == NULL);
+    CHECK(mcp_client_request(ctx, NULL, "ping", NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
 
     fake_t fake;
     memset(&fake, 0, sizeof(fake));
     mcp_transport_t *t = mcp_transport_create(ctx, &kFake, &fake);
-    assert(t != NULL);
+    CHECK(t != NULL);
     mcp_client_t *c = mcp_client_create(ctx, t);
-    assert(c != NULL);
-    assert(mcp_client_protocol_version(ctx, c) == NULL);
-    assert(mcp_client_request(ctx, c, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
-    assert(mcp_client_connect(ctx, c) == MCP_OK && fake.started == 1);
+    CHECK(c != NULL);
+    CHECK(mcp_client_protocol_version(ctx, c) == NULL);
+    CHECK(mcp_client_request(ctx, c, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_connect(ctx, c) == MCP_OK && fake.started == 1);
 
     static const char *kOk[] = { "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}" };
     fake.script = kOk;
     fake.nscript = 1;
     mcp_json_value_t *res = NULL;
-    assert(mcp_client_request(ctx, c, "ping", NULL, &res) == MCP_OK);
-    assert(res != NULL);
+    CHECK(mcp_client_request(ctx, c, "ping", NULL, &res) == MCP_OK);
+    CHECK(res != NULL);
     bool ok = false;
-    assert(mcp_json_bool_value(ctx, mcp_json_object_get(ctx, res, "ok"), &ok) == MCP_OK && ok);
+    CHECK(mcp_json_bool_value(ctx, mcp_json_object_get(ctx, res, "ok"), &ok) == MCP_OK && ok);
     mcp_json_destroy(ctx, res);
-    assert(strstr(fake.sent, "\"method\":\"ping\"") != NULL);
-    assert(strstr(fake.sent, "\"id\":1") != NULL);
+    CHECK(strstr(fake.sent, "\"method\":\"ping\"") != NULL);
+    CHECK(strstr(fake.sent, "\"id\":1") != NULL);
 
     static const char *kMismatch[] = { "{\"jsonrpc\":\"2.0\",\"id\":99,\"result\":{}}" };
     fake.script = kMismatch;
     fake.nscript = 1;
     fake.cursor = 0;
     res = (mcp_json_value_t *)0x1;
-    assert(mcp_client_request(ctx, c, "ping", NULL, &res) == MCP_ERR_PROTOCOL);
-    assert(res == NULL);
+    CHECK(mcp_client_request(ctx, c, "ping", NULL, &res) == MCP_ERR_PROTOCOL);
+    CHECK(res == NULL);
 
-    assert(mcp_client_disconnect(ctx, c) == MCP_OK && fake.stopped == 1);
+    CHECK(mcp_client_disconnect(ctx, c) == MCP_OK && fake.stopped == 1);
     mcp_client_destroy(ctx, c);
 
-    assert(mcp_client_initialize(ctx, NULL, "n", "v", NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_initialize(ctx, NULL, "n", "v", NULL) == MCP_ERR_INVALID_ARGUMENT);
 
     fake_t fake2;
     memset(&fake2, 0, sizeof(fake2));
@@ -112,44 +112,44 @@ int main(void) {
     fake2.script = kShake;
     fake2.nscript = 9;
     mcp_transport_t *t2 = mcp_transport_create(ctx, &kFake, &fake2);
-    assert(t2 != NULL);
+    CHECK(t2 != NULL);
     mcp_client_t *c2 = mcp_client_create(ctx, t2);
-    assert(c2 != NULL);
-    assert(mcp_client_protocol_version(ctx, c2) == NULL);
+    CHECK(c2 != NULL);
+    CHECK(mcp_client_protocol_version(ctx, c2) == NULL);
     mcp_json_value_t *info = NULL;
-    assert(mcp_client_initialize(ctx, c2, "n", "v", &info) == MCP_OK);
-    assert(fake2.nsent == 2);
-    assert(strstr(fake2.sent, "\"method\":\"notifications/initialized\"") != NULL);
-    assert(strstr(fake2.sent, "\"id\"") == NULL);
+    CHECK(mcp_client_initialize(ctx, c2, "n", "v", &info) == MCP_OK);
+    CHECK(fake2.nsent == 2);
+    CHECK(strstr(fake2.sent, "\"method\":\"notifications/initialized\"") != NULL);
+    CHECK(strstr(fake2.sent, "\"id\"") == NULL);
     const char *ver = mcp_client_protocol_version(ctx, c2);
-    assert(ver != NULL && strcmp(ver, "2025-06-18") == 0);
-    assert(info != NULL);
+    CHECK(ver != NULL && strcmp(ver, "2025-06-18") == 0);
+    CHECK(info != NULL);
     const char *sname = NULL;
-    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, info, "name"), &sname) == MCP_OK);
-    assert(strcmp(sname, "s") == 0);
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, info, "name"), &sname) == MCP_OK);
+    CHECK(strcmp(sname, "s") == 0);
     mcp_json_destroy(ctx, info);
-    assert(mcp_client_call_tool(ctx, c2, "nope", NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
-    assert(mcp_client_call_tool(ctx, c2, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
-    assert(mcp_client_ping(ctx, c2) == MCP_OK);
-    assert(mcp_client_request(ctx, c2, "ping", NULL, NULL) == MCP_ERR_PROTOCOL);
+    CHECK(mcp_client_call_tool(ctx, c2, "nope", NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_call_tool(ctx, c2, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_ping(ctx, c2) == MCP_OK);
+    CHECK(mcp_client_request(ctx, c2, "ping", NULL, NULL) == MCP_ERR_PROTOCOL);
     mcp_json_value_t *tools = NULL;
-    assert(mcp_client_list_tools(ctx, c2, &tools) == MCP_OK && tools != NULL);
+    CHECK(mcp_client_list_tools(ctx, c2, &tools) == MCP_OK && tools != NULL);
     const mcp_json_value_t *tarr = mcp_json_object_get(ctx, tools, "tools");
-    assert(mcp_json_array_size(ctx, tarr) == 1);
+    CHECK(mcp_json_array_size(ctx, tarr) == 1);
     const char *tname = NULL;
-    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, mcp_json_array_get(ctx, tarr, 0),
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, mcp_json_array_get(ctx, tarr, 0),
                                                           "name"),
                                  &tname) == MCP_OK);
-    assert(strcmp(tname, "echo") == 0);
+    CHECK(strcmp(tname, "echo") == 0);
     mcp_json_destroy(ctx, tools);
-    assert(mcp_client_list_tools(ctx, c2, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_list_tools(ctx, c2, NULL) == MCP_ERR_INVALID_ARGUMENT);
     mcp_json_value_t *args = mcp_json_object_new(ctx);
-    assert(args != NULL);
-    assert(mcp_json_object_set(ctx, args, "text", mcp_json_string_new(ctx, "hi")) == MCP_OK);
+    CHECK(args != NULL);
+    CHECK(mcp_json_object_set(ctx, args, "text", mcp_json_string_new(ctx, "hi")) == MCP_OK);
     mcp_json_value_t *cres = NULL;
-    assert(mcp_client_call_tool(ctx, c2, "echo", args, &cres) == MCP_OK && cres != NULL);
+    CHECK(mcp_client_call_tool(ctx, c2, "echo", args, &cres) == MCP_OK && cres != NULL);
     const char *etext = NULL;
-    assert(mcp_json_string_value(ctx,
+    CHECK(mcp_json_string_value(ctx,
                                  mcp_json_object_get(ctx,
                                                      mcp_json_array_get(ctx,
                                                                         mcp_json_object_get(ctx,
@@ -158,24 +158,24 @@ int main(void) {
                                                                         0),
                                                      "text"),
                                  &etext) == MCP_OK);
-    assert(strcmp(etext, "hi") == 0);
+    CHECK(strcmp(etext, "hi") == 0);
     mcp_json_destroy(ctx, cres);
-    assert(mcp_client_read_resource(ctx, c2, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_read_resource(ctx, c2, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
     mcp_json_value_t *rres = NULL;
-    assert(mcp_client_read_resource(ctx, c2, "test://doc", &rres) == MCP_OK && rres != NULL);
+    CHECK(mcp_client_read_resource(ctx, c2, "test://doc", &rres) == MCP_OK && rres != NULL);
     mcp_json_destroy(ctx, rres);
     mcp_json_value_t *pres = NULL;
-    assert(mcp_client_get_prompt(ctx, c2, "p", NULL, &pres) == MCP_OK && pres != NULL);
+    CHECK(mcp_client_get_prompt(ctx, c2, "p", NULL, &pres) == MCP_OK && pres != NULL);
     mcp_json_destroy(ctx, pres);
-    assert(mcp_client_get_prompt(ctx, c2, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_get_prompt(ctx, c2, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
     // completion/complete via mcp_client_complete
-    assert(mcp_client_complete(ctx, c2, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_complete(ctx, c2, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
     mcp_json_value_t *crow = mcp_json_object_new(ctx);
-    assert(mcp_json_object_set(ctx, crow, "text", mcp_json_string_new(ctx, "x")) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, crow, "text", mcp_json_string_new(ctx, "x")) == MCP_OK);
     mcp_json_value_t *cre = NULL;
-    assert(mcp_client_complete(ctx, c2, "prompt/greet", crow, &cre) == MCP_OK && cre != NULL);
+    CHECK(mcp_client_complete(ctx, c2, "prompt/greet", crow, &cre) == MCP_OK && cre != NULL);
     const mcp_json_value_t *carr = mcp_json_object_get(ctx, cre, "completions");
-    assert(carr != NULL && mcp_json_array_size(ctx, carr) == 0);
+    CHECK(carr != NULL && mcp_json_array_size(ctx, carr) == 0);
     mcp_json_destroy(ctx, cre);
     mcp_client_destroy(ctx, c2);
     mcp_transport_destroy(ctx, t2);

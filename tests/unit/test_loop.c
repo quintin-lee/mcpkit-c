@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_check.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -46,41 +46,41 @@ static const char *kCall =
 
 static mcp_server_t *make_server(mcp_context_t *ctx) {
     mcp_server_t *srv = mcp_server_create(ctx, "loop", "0.1.0");
-    assert(srv != NULL);
+    CHECK(srv != NULL);
     mcp_json_value_t *schema = mcp_schema_object_new(ctx);
-    assert(schema != NULL);
-    assert(mcp_schema_add_property(ctx, schema, "text", mcp_schema_string_new(ctx)) ==
+    CHECK(schema != NULL);
+    CHECK(mcp_schema_add_property(ctx, schema, "text", mcp_schema_string_new(ctx)) ==
            MCP_OK);
-    assert(mcp_schema_add_required(ctx, schema, "text") == MCP_OK);
-    assert(mcp_server_add_tool(ctx, srv, mcp_tool_new(ctx, "echo", "Echo", schema,
+    CHECK(mcp_schema_add_required(ctx, schema, "text") == MCP_OK);
+    CHECK(mcp_server_add_tool(ctx, srv, mcp_tool_new(ctx, "echo", "Echo", schema,
                                                      echo_handler, NULL)) == MCP_OK);
     return srv;
 }
 
 static void check_lines(mcp_context_t *ctx, FILE *out) {
     char line[8192];
-    assert(fgets(line, (int)sizeof(line), out) != NULL);
+    CHECK(fgets(line, (int)sizeof(line), out) != NULL);
     mcp_message_t *init = mcp_message_parse(ctx, line, strlen(line));
-    assert(init != NULL && mcp_message_kind(ctx, init) == MCP_MSG_RESPONSE);
+    CHECK(init != NULL && mcp_message_kind(ctx, init) == MCP_MSG_RESPONSE);
     const mcp_json_value_t *pv =
         mcp_json_object_get(ctx, mcp_message_result(ctx, init), "protocolVersion");
     const char *s = NULL;
-    assert(pv != NULL && mcp_json_string_value(ctx, pv, &s) == MCP_OK);
-    assert(strcmp(s, "2025-06-18") == 0);
+    CHECK(pv != NULL && mcp_json_string_value(ctx, pv, &s) == MCP_OK);
+    CHECK(strcmp(s, "2025-06-18") == 0);
     mcp_message_destroy(ctx, init);
-    assert(fgets(line, (int)sizeof(line), out) != NULL);
+    CHECK(fgets(line, (int)sizeof(line), out) != NULL);
     mcp_message_t *call = mcp_message_parse(ctx, line, strlen(line));
-    assert(call != NULL && mcp_message_kind(ctx, call) == MCP_MSG_RESPONSE);
+    CHECK(call != NULL && mcp_message_kind(ctx, call) == MCP_MSG_RESPONSE);
     const mcp_json_value_t *content =
         mcp_json_object_get(ctx, mcp_message_result(ctx, call), "content");
-    assert(content != NULL && mcp_json_array_size(ctx, content) == 1);
+    CHECK(content != NULL && mcp_json_array_size(ctx, content) == 1);
     const mcp_json_value_t *text = mcp_json_object_get(
         ctx, mcp_json_array_get(ctx, content, 0), "text");
     s = NULL;
-    assert(text != NULL && mcp_json_string_value(ctx, text, &s) == MCP_OK);
-    assert(strcmp(s, "hello loop") == 0);
+    CHECK(text != NULL && mcp_json_string_value(ctx, text, &s) == MCP_OK);
+    CHECK(strcmp(s, "hello loop") == 0);
     mcp_message_destroy(ctx, call);
-    assert(fgets(line, (int)sizeof(line), out) == NULL);
+    CHECK(fgets(line, (int)sizeof(line), out) == NULL);
 }
 
 static void on_fire(mcp_context_t *ctx, void *arg) {
@@ -89,32 +89,32 @@ static void on_fire(mcp_context_t *ctx, void *arg) {
 }
 
 static void write_script(FILE *in) {
-    assert(fputs(kInit, in) != EOF && fputs(kNotif, in) != EOF &&
+    CHECK(fputs(kInit, in) != EOF && fputs(kNotif, in) != EOF &&
            fputs(kCall, in) != EOF);
     rewind(in);
 }
 
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
-    assert(ctx != NULL);
+    CHECK(ctx != NULL);
     mcp_server_t *srv = make_server(ctx);
-    assert(mcp_loop_run(NULL, srv, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
-    assert(mcp_loop_run(ctx, NULL, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
-    assert(mcp_loop_run(ctx, srv, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_loop_run(NULL, srv, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_loop_run(ctx, NULL, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_loop_run(ctx, srv, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
     mcp_server_destroy(ctx, srv);
 
     {
         mcp_server_t *s2 = make_server(ctx);
         FILE *in = tmpfile();
-        assert(in != NULL);
+        CHECK(in != NULL);
         FILE *out = tmpfile();
-        assert(out != NULL);
+        CHECK(out != NULL);
         mcp_transport_t *t = mcp_stdio_transport_create(ctx, in, out);
-        assert(t != NULL);
-        assert(mcp_transport_start(ctx, t) == MCP_OK);
+        CHECK(t != NULL);
+        CHECK(mcp_transport_start(ctx, t) == MCP_OK);
         mcp_status_t st = mcp_loop_run(ctx, s2, t, NULL, NULL);
-        assert(st == MCP_ERR_IO || st == MCP_ERR_NOT_FOUND);
-        assert(mcp_transport_stop(ctx, t) == MCP_OK);
+        CHECK(st == MCP_ERR_IO || st == MCP_ERR_NOT_FOUND);
+        CHECK(mcp_transport_stop(ctx, t) == MCP_OK);
         mcp_transport_destroy(ctx, t);
         fclose(in);
         fclose(out);
@@ -124,23 +124,23 @@ int main(void) {
     {
         int now = 0, later = 0;
         mcp_timer_t *timer = mcp_timer_create(ctx);
-        assert(timer != NULL);
+        CHECK(timer != NULL);
         mcp_executor_t *sync = mcp_sync_executor_create(ctx);
-        assert(sync != NULL);
+        CHECK(sync != NULL);
         FILE *in = tmpfile();
-        assert(in != NULL);
+        CHECK(in != NULL);
         write_script(in);
         FILE *out = tmpfile();
-        assert(out != NULL);
+        CHECK(out != NULL);
         mcp_server_t *s3 = make_server(ctx);
         mcp_transport_t *t = mcp_stdio_transport_create(ctx, in, out);
-        assert(t != NULL);
-        assert(mcp_transport_start(ctx, t) == MCP_OK);
-        assert(mcp_timer_schedule(ctx, timer, 0, on_fire, &now) == MCP_OK);
-        assert(mcp_timer_schedule(ctx, timer, 60000, on_fire, &later) == MCP_OK);
-        assert(mcp_loop_run(ctx, s3, t, sync, timer) == MCP_ERR_NOT_FOUND);
-        assert(now == 1 && later == 0);
-        assert(mcp_transport_stop(ctx, t) == MCP_OK);
+        CHECK(t != NULL);
+        CHECK(mcp_transport_start(ctx, t) == MCP_OK);
+        CHECK(mcp_timer_schedule(ctx, timer, 0, on_fire, &now) == MCP_OK);
+        CHECK(mcp_timer_schedule(ctx, timer, 60000, on_fire, &later) == MCP_OK);
+        CHECK(mcp_loop_run(ctx, s3, t, sync, timer) == MCP_ERR_NOT_FOUND);
+        CHECK(now == 1 && later == 0);
+        CHECK(mcp_transport_stop(ctx, t) == MCP_OK);
         mcp_transport_destroy(ctx, t);
         rewind(out);
         check_lines(ctx, out);
@@ -153,18 +153,18 @@ int main(void) {
 
     {
         mcp_executor_t *pool = mcp_threadpool_create(ctx, 2);
-        assert(pool != NULL);
+        CHECK(pool != NULL);
         FILE *in = tmpfile();
-        assert(in != NULL);
+        CHECK(in != NULL);
         write_script(in);
         FILE *out = tmpfile();
-        assert(out != NULL);
+        CHECK(out != NULL);
         mcp_server_t *s4 = make_server(ctx);
         mcp_transport_t *t = mcp_stdio_transport_create(ctx, in, out);
-        assert(t != NULL);
-        assert(mcp_transport_start(ctx, t) == MCP_OK);
-        assert(mcp_loop_run(ctx, s4, t, pool, NULL) == MCP_ERR_NOT_FOUND);
-        assert(mcp_transport_stop(ctx, t) == MCP_OK);
+        CHECK(t != NULL);
+        CHECK(mcp_transport_start(ctx, t) == MCP_OK);
+        CHECK(mcp_loop_run(ctx, s4, t, pool, NULL) == MCP_ERR_NOT_FOUND);
+        CHECK(mcp_transport_stop(ctx, t) == MCP_OK);
         mcp_transport_destroy(ctx, t);
         rewind(out);
         check_lines(ctx, out);

@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_check.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -56,7 +56,7 @@ static mcp_context_t *fail_ctx(void) {
     mcp_context_config_t cfg = {.allocator = &kFailAlloc, .logger = NULL,
                                 .json_backend = NULL};
     mcp_context_t *ctx = mcp_context_create(&cfg);
-    assert(ctx != NULL);
+    CHECK(ctx != NULL);
     return ctx;
 }
 
@@ -66,9 +66,9 @@ static void sweep_ui(void) {
     /* Calibrate: count allocations used by one successful call. */
     mcp_context_t *ctx = fail_ctx();
     mcp_json_value_t *result = mcp_json_object_new(ctx);
-    assert(result != NULL);
+    CHECK(result != NULL);
     g_count = 0;
-    assert(mcp_apps_result_with_ui(ctx, result, "ui://x") == MCP_OK);
+    CHECK(mcp_apps_result_with_ui(ctx, result, "ui://x") == MCP_OK);
     size_t total = g_count;
     mcp_json_destroy(ctx, result);
     mcp_context_destroy(ctx);
@@ -76,13 +76,13 @@ static void sweep_ui(void) {
     for (size_t n = 0; n <= total; n++) {
         ctx = fail_ctx();
         result = mcp_json_object_new(ctx);
-        assert(result != NULL);
+        CHECK(result != NULL);
         g_count = 0;
         g_fail_at = n;
         mcp_status_t st = mcp_apps_result_with_ui(ctx, result, "ui://x");
         g_fail_at = SIZE_MAX;
         /* Only OK (attached) or NOMEM (clean rollback) are legal. */
-        assert(st == MCP_OK || st == MCP_ERR_NOMEM);
+        CHECK(st == MCP_OK || st == MCP_ERR_NOMEM);
         mcp_json_destroy(ctx, result);
         mcp_context_destroy(ctx);
     }
@@ -113,7 +113,7 @@ static mcp_status_t cli_send(mcp_context_t *ctx, mcp_transport_t *t, const char 
 
 static mcp_status_t cli_recv(mcp_context_t *ctx, mcp_transport_t *t, char **line_out) {
     cli_fake_t *f = (cli_fake_t *)mcp_transport_backend(ctx, t);
-    assert(f->cursor < f->nscript);
+    CHECK(f->cursor < f->nscript);
     const char *line = f->script[f->cursor++];
     size_t n = strlen(line) + 1;
     char *buf = mcp_context_allocator(ctx)->malloc_fn(n, mcp_context_allocator(ctx)->userdata);
@@ -142,14 +142,14 @@ static void sweep_client(void) {
     mcp_context_t *ctx = fail_ctx();
     cli_fake_t fake = {.script = kResp, .nscript = 1, .cursor = 0};
     mcp_transport_t *t = mcp_transport_create(ctx, &kCliFake, &fake);
-    assert(t != NULL);
+    CHECK(t != NULL);
     mcp_client_t *c = mcp_client_create(ctx, t);
-    assert(c != NULL);
+    CHECK(c != NULL);
     mcp_json_value_t *out = NULL;
     g_count = 0;
-    assert(mcp_client_complete(ctx, c, "prompt/greet", NULL, &out) == MCP_OK);
+    CHECK(mcp_client_complete(ctx, c, "prompt/greet", NULL, &out) == MCP_OK);
     size_t total = g_count;
-    assert(out != NULL);
+    CHECK(out != NULL);
     mcp_json_destroy(ctx, out);
     mcp_client_destroy(ctx, c);
     mcp_transport_destroy(ctx, t);
@@ -159,21 +159,21 @@ static void sweep_client(void) {
         ctx = fail_ctx();
         fake.cursor = 0;
         t = mcp_transport_create(ctx, &kCliFake, &fake);
-        assert(t != NULL);
+        CHECK(t != NULL);
         c = mcp_client_create(ctx, t);
-        assert(c != NULL);
+        CHECK(c != NULL);
         out = NULL;
         g_count = 0;
         g_fail_at = n;
         mcp_status_t st = mcp_client_complete(ctx, c, "prompt/greet", NULL, &out);
         g_fail_at = SIZE_MAX;
         if (st == MCP_OK) {
-            assert(out != NULL);
+            CHECK(out != NULL);
             mcp_json_destroy(ctx, out);
         } else {
             /* Any error (NOMEM, PROTOCOL from a gated parse, ...) is legal
                as long as no partial result escapes. */
-            assert(out == NULL);
+            CHECK(out == NULL);
         }
         mcp_client_destroy(ctx, c);
         mcp_transport_destroy(ctx, t);
@@ -184,14 +184,14 @@ static void sweep_client(void) {
     ctx = fail_ctx();
     fake.cursor = 0;
     t = mcp_transport_create(ctx, &kCliFake, &fake);
-    assert(t != NULL);
+    CHECK(t != NULL);
     c = mcp_client_create(ctx, t);
-    assert(c != NULL);
+    CHECK(c != NULL);
     mcp_json_value_t *args = mcp_json_object_new(ctx);
-    assert(args != NULL);
+    CHECK(args != NULL);
     out = NULL;
-    assert(mcp_client_complete(ctx, c, "prompt/greet", args, &out) == MCP_OK);
-    assert(out != NULL);
+    CHECK(mcp_client_complete(ctx, c, "prompt/greet", args, &out) == MCP_OK);
+    CHECK(out != NULL);
     mcp_json_destroy(ctx, out);
     mcp_client_destroy(ctx, c);
     mcp_transport_destroy(ctx, t);
@@ -243,31 +243,31 @@ static mcp_message_t *sweep_complete_req(mcp_context_t *ctx) {
 static void sweep_dispatch(void) {
     mcp_context_t *ctx = fail_ctx();
     mcp_server_t *srv = mcp_server_create(ctx, "srv", "1");
-    assert(srv != NULL);
-    assert(mcp_server_register_completion_provider(ctx, srv, "prompt/", sweep_provider,
+    CHECK(srv != NULL);
+    CHECK(mcp_server_register_completion_provider(ctx, srv, "prompt/", sweep_provider,
                                                    NULL) == MCP_OK);
 
     /* One full pass with the gate off: init a session, dispatch, count. */
     mcp_session_t *s = mcp_server_create_session(ctx, srv);
-    assert(s != NULL);
+    CHECK(s != NULL);
     mcp_json_value_t *iparams = mcp_initialize_params_new(ctx, "cli", "1");
-    assert(iparams != NULL);
+    CHECK(iparams != NULL);
     mcp_message_t *ireq = mcp_request_new_string_id(ctx, "init", "initialize", iparams);
-    assert(ireq != NULL);
+    CHECK(ireq != NULL);
     mcp_message_t *iresp = NULL;
-    assert(mcp_server_dispatch(ctx, srv, s, ireq, &iresp) == MCP_OK && iresp != NULL);
+    CHECK(mcp_server_dispatch(ctx, srv, s, ireq, &iresp) == MCP_OK && iresp != NULL);
     mcp_message_destroy(ctx, ireq);
     mcp_message_destroy(ctx, iresp);
     mcp_message_t *notif = mcp_initialized_notification_new(ctx);
-    assert(notif != NULL);
-    assert(mcp_server_notify(ctx, srv, s, notif) == MCP_OK);
+    CHECK(notif != NULL);
+    CHECK(mcp_server_notify(ctx, srv, s, notif) == MCP_OK);
     mcp_message_destroy(ctx, notif);
 
     mcp_message_t *req = sweep_complete_req(ctx);
-    assert(req != NULL);
+    CHECK(req != NULL);
     g_count = 0;
     mcp_message_t *resp = NULL;
-    assert(mcp_server_dispatch(ctx, srv, s, req, &resp) == MCP_OK && resp != NULL);
+    CHECK(mcp_server_dispatch(ctx, srv, s, req, &resp) == MCP_OK && resp != NULL);
     size_t total = g_count;
     mcp_message_destroy(ctx, req);
     mcp_message_destroy(ctx, resp);
@@ -276,32 +276,32 @@ static void sweep_dispatch(void) {
     /* Sweep every failure point. Fresh session per iteration (per-session ids). */
     for (size_t n = 0; n <= total; n++) {
         s = mcp_server_create_session(ctx, srv);
-        assert(s != NULL);
+        CHECK(s != NULL);
         iparams = mcp_initialize_params_new(ctx, "cli", "1");
-        assert(iparams != NULL);
+        CHECK(iparams != NULL);
         ireq = mcp_request_new_string_id(ctx, "init", "initialize", iparams);
-        assert(ireq != NULL);
+        CHECK(ireq != NULL);
         iresp = NULL;
-        assert(mcp_server_dispatch(ctx, srv, s, ireq, &iresp) == MCP_OK && iresp != NULL);
+        CHECK(mcp_server_dispatch(ctx, srv, s, ireq, &iresp) == MCP_OK && iresp != NULL);
         mcp_message_destroy(ctx, ireq);
         mcp_message_destroy(ctx, iresp);
         notif = mcp_initialized_notification_new(ctx);
-        assert(notif != NULL);
-        assert(mcp_server_notify(ctx, srv, s, notif) == MCP_OK);
+        CHECK(notif != NULL);
+        CHECK(mcp_server_notify(ctx, srv, s, notif) == MCP_OK);
         mcp_message_destroy(ctx, notif);
 
         req = sweep_complete_req(ctx);
-        assert(req != NULL);
+        CHECK(req != NULL);
         g_count = 0;
         g_fail_at = n;
         resp = NULL;
         mcp_status_t st = mcp_server_dispatch(ctx, srv, s, req, &resp);
         g_fail_at = SIZE_MAX;
         if (st == MCP_OK) {
-            assert(resp != NULL);
+            CHECK(resp != NULL);
             mcp_message_destroy(ctx, resp);
         } else {
-            assert(st == MCP_ERR_NOMEM && resp == NULL);
+            CHECK(st == MCP_ERR_NOMEM && resp == NULL);
         }
         mcp_message_destroy(ctx, req);
         mcp_server_destroy_session(ctx, srv, s);

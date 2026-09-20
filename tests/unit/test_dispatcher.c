@@ -3,17 +3,7 @@
 #include <string.h>
 
 #include "mcpkit/mcpkit.h"
-
-// NDEBUG-independent check: the expression is ALWAYS evaluated (so calls
-// with side effects still run under the default Release/-DNDEBUG ctest
-// configuration) and a false result aborts with a diagnostic.
-#define CHECK(x)                                                                    \
-    do {                                                                            \
-        if (!(x)) {                                                                 \
-            fprintf(stderr, "CHECK failed: %s (%s:%d)\n", #x, __FILE__, __LINE__);  \
-            abort();                                                                \
-        }                                                                           \
-    } while (0)
+#include "test_check.h"
 
 static mcp_status_t echo_handler(mcp_context_t *c, mcp_session_t *s, const mcp_json_value_t *a,
                                  void *u, mcp_json_value_t **o) {

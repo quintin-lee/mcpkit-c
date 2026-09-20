@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_check.h"
 #include <string.h>
 
 #include "mcpkit/json/json.h"
@@ -31,18 +31,18 @@ int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
     mcp_json_set_backend(ctx, &wrap);
     mcp_json_value_t *o = mcp_json_object_new(ctx);
-    assert(o != NULL && g_new_calls == 1);
+    CHECK(o != NULL && g_new_calls == 1);
     mcp_json_value_t *v = mcp_json_parse(ctx, "{\"a\":1}", 7);
-    assert(v != NULL && g_parse_calls == 1);
+    CHECK(v != NULL && g_parse_calls == 1);
     char *s = mcp_json_serialize(ctx, v);
-    assert(s != NULL && g_serialize_calls == 1);
-    assert(strcmp(s, "{\"a\":1}") == 0);
+    CHECK(s != NULL && g_serialize_calls == 1);
+    CHECK(strcmp(s, "{\"a\":1}") == 0);
     mcp_json_free_string(ctx, s);
     mcp_json_destroy(ctx, v);
     mcp_json_destroy(ctx, o);
     mcp_json_set_backend(ctx, NULL); // restore builtin
     mcp_json_value_t *v2 = mcp_json_parse(ctx, "[true]", 6);
-    assert(v2 != NULL && g_parse_calls == 1); // wrapper bypassed
+    CHECK(v2 != NULL && g_parse_calls == 1); // wrapper bypassed
     mcp_json_destroy(ctx, v2);
     mcp_json_set_backend(NULL, &wrap); // NULL-safe no-op
     mcp_context_destroy(ctx);

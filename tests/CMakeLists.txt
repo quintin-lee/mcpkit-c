@@ -1,3 +1,5 @@
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}")
+
 add_executable(test_version unit/test_version.c)
 target_link_libraries(test_version PRIVATE mcpkit_core)
 target_include_directories(test_version PRIVATE "${CMAKE_BINARY_DIR}/include")

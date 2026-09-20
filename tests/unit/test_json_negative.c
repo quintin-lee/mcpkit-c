@@ -1,11 +1,11 @@
-#include <assert.h>
+#include "test_check.h"
 #include <string.h>
 
 #include "mcpkit/json/json.h"
 
 static void expect_null(const char *text) {
     mcp_json_value_t *v = mcp_json_parse(NULL, text, strlen(text));
-    assert(v == NULL);
+    CHECK(v == NULL);
 }
 
 int main(void) {
@@ -36,7 +36,7 @@ int main(void) {
     for (int i = 0; i < 128; i++) { deep_ok[p++] = ']'; }
     deep_ok[p] = '\0';
     mcp_json_value_t *v = mcp_json_parse(NULL, deep_ok, p);
-    assert(v != NULL);
+    CHECK(v != NULL);
     mcp_json_destroy(NULL, v);
     p = 0;
     for (int i = 0; i < 129; i++) { deep_bad[p++] = '['; }
