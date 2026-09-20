@@ -221,17 +221,28 @@ static mcp_status_t set_owned(mcp_context_t *ctx, mcp_json_value_t *dom, const c
     if (val == NULL) {
         return MCP_OK;
     }
-    if (mcp_json_object_set(ctx, dom, key, val) != MCP_OK) {
-        mcp_json_destroy(ctx, val);
-        return MCP_ERR_NOMEM;
-    }
-    return MCP_OK;
+    // Pure passthrough: on failure val is NOT attached and the caller
+    // retains ownership (matching the builder contract documented below).
+    return mcp_json_object_set(ctx, dom, key, val);
 }
 
-static mcp_message_t *finish(mcp_context_t *ctx, mcp_json_value_t *dom) {
+// Wrap-first helper for builders that take a caller-owned value: the
+// message struct is allocated BEFORE the caller value is attached, so
+// a wrap failure leaves the caller value untouched (caller retains),
+// and an attach failure destroys only the message (caller retains).
+// A caller value already attached is consumed, even if a later step
+// fails (currently only response_err/data can hit that corner, and all
+// in-tree callers pass data == NULL).
+static mcp_message_t *finish_with(mcp_context_t *ctx, mcp_json_value_t *dom,
+                                  const char *key, mcp_json_value_t *val) {
     mcp_message_t *msg = wrap(ctx, dom);
     if (msg == NULL) {
         mcp_json_destroy(ctx, dom);
+        return NULL;
+    }
+    if (set_owned(ctx, msg->dom, key, val) != MCP_OK) {
+        mcp_message_destroy(ctx, msg);
+        return NULL;
     }
     return msg;
 }
@@ -258,16 +269,18 @@ mcp_message_t *mcp_request_new_string_id(mcp_context_t *ctx, const char *id,
         }
         return NULL;
     }
-    if (mcp_json_object_set(ctx, dom, "id", idv) != MCP_OK ||
-        mcp_json_object_set(ctx, dom, "method", mv) != MCP_OK ||
-        set_owned(ctx, dom, "params", params) != MCP_OK) {
-        if (params != NULL) {
-            mcp_json_destroy(ctx, params);
-        }
+    if (mcp_json_object_set(ctx, dom, "id", idv) != MCP_OK) {
+        mcp_json_destroy(ctx, idv);
+        mcp_json_destroy(ctx, mv);
         mcp_json_destroy(ctx, dom);
         return NULL;
     }
-    return finish(ctx, dom);
+    if (mcp_json_object_set(ctx, dom, "method", mv) != MCP_OK) {
+        mcp_json_destroy(ctx, mv);
+        mcp_json_destroy(ctx, dom);
+        return NULL;
+    }
+    return finish_with(ctx, dom, "params", params);
 }
 
 mcp_message_t *mcp_request_new_number_id(mcp_context_t *ctx, double id,
@@ -290,16 +303,18 @@ mcp_message_t *mcp_request_new_number_id(mcp_context_t *ctx, double id,
         }
         return NULL;
     }
-    if (mcp_json_object_set(ctx, dom, "id", idv) != MCP_OK ||
-        mcp_json_object_set(ctx, dom, "method", mv) != MCP_OK ||
-        set_owned(ctx, dom, "params", params) != MCP_OK) {
-        if (params != NULL) {
-            mcp_json_destroy(ctx, params);
-        }
+    if (mcp_json_object_set(ctx, dom, "id", idv) != MCP_OK) {
+        mcp_json_destroy(ctx, idv);
+        mcp_json_destroy(ctx, mv);
         mcp_json_destroy(ctx, dom);
         return NULL;
     }
-    return finish(ctx, dom);
+    if (mcp_json_object_set(ctx, dom, "method", mv) != MCP_OK) {
+        mcp_json_destroy(ctx, mv);
+        mcp_json_destroy(ctx, dom);
+        return NULL;
+    }
+    return finish_with(ctx, dom, "params", params);
 }
 
 mcp_message_t *mcp_notification_new(mcp_context_t *ctx, const char *method,
@@ -318,15 +333,12 @@ mcp_message_t *mcp_notification_new(mcp_context_t *ctx, const char *method,
         }
         return NULL;
     }
-    if (mcp_json_object_set(ctx, dom, "method", mv) != MCP_OK ||
-        set_owned(ctx, dom, "params", params) != MCP_OK) {
-        if (params != NULL) {
-            mcp_json_destroy(ctx, params);
-        }
+    if (mcp_json_object_set(ctx, dom, "method", mv) != MCP_OK) {
+        mcp_json_destroy(ctx, mv);
         mcp_json_destroy(ctx, dom);
         return NULL;
     }
-    return finish(ctx, dom);
+    return finish_with(ctx, dom, "params", params);
 }
 
 static mcp_json_value_t *copy_id(mcp_context_t *ctx, const mcp_message_t *req) {
@@ -364,15 +376,12 @@ mcp_message_t *mcp_response_ok_new(mcp_context_t *ctx, const mcp_message_t *req,
         }
         return NULL;
     }
-    if (mcp_json_object_set(ctx, dom, "id", idv) != MCP_OK ||
-        set_owned(ctx, dom, "result", result) != MCP_OK) {
-        if (result != NULL) {
-            mcp_json_destroy(ctx, result);
-        }
+    if (mcp_json_object_set(ctx, dom, "id", idv) != MCP_OK) {
+        mcp_json_destroy(ctx, idv);
         mcp_json_destroy(ctx, dom);
         return NULL;
     }
-    return finish(ctx, dom);
+    return finish_with(ctx, dom, "result", result);
 }
 
 mcp_message_t *mcp_response_err_new(mcp_context_t *ctx, const mcp_message_t *req_or_null,
@@ -403,18 +412,46 @@ mcp_message_t *mcp_response_err_new(mcp_context_t *ctx, const mcp_message_t *req
         }
         return NULL;
     }
-    if (mcp_json_object_set(ctx, dom, "id", idv) != MCP_OK ||
-        mcp_json_object_set(ctx, err, "code", codev) != MCP_OK ||
-        mcp_json_object_set(ctx, err, "message", msgv) != MCP_OK ||
-        set_owned(ctx, err, "data", data) != MCP_OK ||
-        mcp_json_object_set(ctx, dom, "error", err) != MCP_OK) {
-        if (data != NULL) {
-            mcp_json_destroy(ctx, data);
-        }
+    if (mcp_json_object_set(ctx, dom, "id", idv) != MCP_OK) {
+        mcp_json_destroy(ctx, idv);
+        mcp_json_destroy(ctx, codev);
+        mcp_json_destroy(ctx, msgv);
+        mcp_json_destroy(ctx, err);
         mcp_json_destroy(ctx, dom);
         return NULL;
     }
-    return finish(ctx, dom);
+    if (mcp_json_object_set(ctx, err, "code", codev) != MCP_OK) {
+        mcp_json_destroy(ctx, codev);
+        mcp_json_destroy(ctx, msgv);
+        mcp_json_destroy(ctx, err);
+        mcp_json_destroy(ctx, dom);
+        return NULL;
+    }
+    if (mcp_json_object_set(ctx, err, "message", msgv) != MCP_OK) {
+        mcp_json_destroy(ctx, msgv);
+        mcp_json_destroy(ctx, err);
+        mcp_json_destroy(ctx, dom);
+        return NULL;
+    }
+    // Wrap before attaching the caller-owned data, so a wrap failure
+    // leaves data untouched (caller retains).
+    mcp_message_t *msg = wrap(ctx, dom);
+    if (msg == NULL) {
+        mcp_json_destroy(ctx, err);
+        mcp_json_destroy(ctx, dom);
+        return NULL;
+    }
+    if (set_owned(ctx, err, "data", data) != MCP_OK) {
+        mcp_json_destroy(ctx, err);
+        mcp_message_destroy(ctx, msg);
+        return NULL;
+    }
+    if (mcp_json_object_set(ctx, msg->dom, "error", err) != MCP_OK) {
+        mcp_json_destroy(ctx, err);
+        mcp_message_destroy(ctx, msg);
+        return NULL;
+    }
+    return msg;
 }
 
 char *mcp_message_serialize(mcp_context_t *ctx, const mcp_message_t *msg) {

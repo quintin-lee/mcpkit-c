@@ -39,8 +39,14 @@ static mcp_json_value_t *info_block(mcp_context_t *ctx, const char *name,
         }
         return NULL;
     }
-    if (mcp_json_object_set(ctx, info, "name", n) != MCP_OK ||
-        mcp_json_object_set(ctx, info, "version", v) != MCP_OK) {
+    if (mcp_json_object_set(ctx, info, "name", n) != MCP_OK) {
+        mcp_json_destroy(ctx, n);
+        mcp_json_destroy(ctx, v);
+        mcp_json_destroy(ctx, info);
+        return NULL;
+    }
+    if (mcp_json_object_set(ctx, info, "version", v) != MCP_OK) {
+        mcp_json_destroy(ctx, v);
         mcp_json_destroy(ctx, info);
         return NULL;
     }
@@ -72,9 +78,21 @@ mcp_json_value_t *mcp_initialize_params_new_v(mcp_context_t *ctx, const char *pr
         }
         return NULL;
     }
-    if (mcp_json_object_set(ctx, params, "protocolVersion", pv) != MCP_OK ||
-        mcp_json_object_set(ctx, params, "capabilities", caps) != MCP_OK ||
-        mcp_json_object_set(ctx, params, "clientInfo", ci) != MCP_OK) {
+    if (mcp_json_object_set(ctx, params, "protocolVersion", pv) != MCP_OK) {
+        mcp_json_destroy(ctx, pv);
+        mcp_json_destroy(ctx, caps);
+        mcp_json_destroy(ctx, ci);
+        mcp_json_destroy(ctx, params);
+        return NULL;
+    }
+    if (mcp_json_object_set(ctx, params, "capabilities", caps) != MCP_OK) {
+        mcp_json_destroy(ctx, caps);
+        mcp_json_destroy(ctx, ci);
+        mcp_json_destroy(ctx, params);
+        return NULL;
+    }
+    if (mcp_json_object_set(ctx, params, "clientInfo", ci) != MCP_OK) {
+        mcp_json_destroy(ctx, ci);
         mcp_json_destroy(ctx, params);
         return NULL;
     }
@@ -157,9 +175,21 @@ mcp_json_value_t *mcp_initialize_result_new(mcp_context_t *ctx, const char *serv
         }
         return NULL;
     }
-    if (mcp_json_object_set(ctx, res, "protocolVersion", pv) != MCP_OK ||
-        mcp_json_object_set(ctx, res, "capabilities", caps) != MCP_OK ||
-        mcp_json_object_set(ctx, res, "serverInfo", si) != MCP_OK) {
+    if (mcp_json_object_set(ctx, res, "protocolVersion", pv) != MCP_OK) {
+        mcp_json_destroy(ctx, pv);
+        mcp_json_destroy(ctx, caps);
+        mcp_json_destroy(ctx, si);
+        mcp_json_destroy(ctx, res);
+        return NULL;
+    }
+    if (mcp_json_object_set(ctx, res, "capabilities", caps) != MCP_OK) {
+        mcp_json_destroy(ctx, caps);
+        mcp_json_destroy(ctx, si);
+        mcp_json_destroy(ctx, res);
+        return NULL;
+    }
+    if (mcp_json_object_set(ctx, res, "serverInfo", si) != MCP_OK) {
+        mcp_json_destroy(ctx, si);
         mcp_json_destroy(ctx, res);
         return NULL;
     }

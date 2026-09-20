@@ -111,6 +111,10 @@ add_executable(test_plugin unit/test_plugin.c)
 target_link_libraries(test_plugin PRIVATE mcpkit_core)
 add_test(NAME test_plugin COMMAND test_plugin)
 
+add_executable(test_alloc_fail unit/test_alloc_fail.c)
+target_link_libraries(test_alloc_fail PRIVATE mcpkit_core)
+add_test(NAME test_alloc_fail COMMAND test_alloc_fail)
+
 if(MCPKIT_BUILD_HTTP)
   add_executable(test_http unit/test_http.c)
   target_link_libraries(test_http PRIVATE mcpkit_core)
