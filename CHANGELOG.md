@@ -34,6 +34,18 @@ Format follows Keep a Changelog. Versions follow SemVer.
 - Example hardening: `socket-server` handlers migrated from the
   error-prone chained-`object_set` pattern to
   `mcp_json_object_set_take`.
+- Advanced protocol methods: `logging/setLevel` (drives the per-server log
+  floor of the dispatcher's log sites; `warn` accepted as an alias for
+  `warning`), `resources/subscribe` / `resources/unsubscribe`
+  (per-server deduplicated subscription set, idempotent),
+  `resources/templates/list` (honest empty `{templates: []}`); advanced
+  notifications (`notifications/cancelled`, `notifications/progress`, the
+  four `*_list_changed`, `notifications/resources/updated`,
+  `logging/message`) are consumed by `mcp_server_notify` rather than
+  answered as requests.
+- `mcp_server_request_client`: push a server->client numbered request
+  (`roots/list`, `sampling/createMessage`, `elicitation/create`, ...) into
+  the per-server outbox; serve loops drain it before each transport read.
 
 ## [0.1.0] - 2026-09-20
 

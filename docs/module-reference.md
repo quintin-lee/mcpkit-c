@@ -257,9 +257,11 @@ Three-level pipeline. All functions return `mcp_status_t`.
 /* L1: JSON-RPC envelope — jsonrpc=="2.0", exactly one of result/error */
 int mcp_message_validate_envelope(ctx, const mcp_message_t *msg);
 
-/* L2: known method name (shared 11-method server table + 15 spec-known
-   non-routed names; responses skip this level). A request naming a
-   non-routed method passes L2 and is answered -32601 by the dispatcher. */
+/* L2: known method name (shared 15-method server table + 4 spec-known
+   non-routed names: roots/list, roots/list_changed, sampling/createMessage,
+   elicitation/create; responses skip this level). A REQUEST for one of the
+   non-routed names passes L2 and is answered -32601 by the dispatcher;
+   NOTIFICATION kind is consumed by mcp_server_notify. */
 int mcp_message_validate_method(ctx, const mcp_message_t *msg);
 
 /* L3: per-method params rules (incl. full initialize params validation) */
@@ -300,6 +302,13 @@ int           mcp_server_notify_client(ctx, s, const char *method,
 /* Pop one pending push (LIFO); caller owns and destroys the message.
    MCP_ERR_NOT_FOUND with *out = NULL when empty. */
 int           mcp_server_outbox_pop(ctx, s, mcp_message_t **out);
+
+/* Server->client numbered request (e.g. roots/list, sampling/createMessage):
+   built with the server's next_server_id counter, enqueued in the outbox;
+   serve loops drain it before each transport read. TAKES params on OK,
+   caller retains on error. */
+int           mcp_server_request_client(ctx, s, const char *method,
+                                        mcp_json_value_t *params);
 
 /* Observability: lock-free atomic counters (monotonic, never reset) */
 typedef struct mcp_server_counters {
@@ -394,6 +403,19 @@ List pagination: `tools/list`, `resources/list`, `prompts/list` return at
 most 100 entries per call. Pass the returned `nextCursor` string back as
 `params.cursor` for the next page; the last page omits `nextCursor`.
 A malformed `cursor` fails with `MCP_ERR_INVALID_PARAMS`.
+
+### Advanced protocol methods
+
+`logging/setLevel` (`debug`/`info`/`notice`/`warning`/`error`, `warn`
+accepted as an alias) sets the per-server log floor that gates the
+dispatcher's `dlogf_srv` sites; `resources/subscribe` /
+`resources/unsubscribe` maintain a per-server deduplicated subscription set
+(idempotent); `resources/templates/list` answers an honest empty
+`{templates: []}`. Advanced notifications (`notifications/cancelled`,
+`notifications/progress`, the four `*_list_changed`,
+`notifications/resources/updated`, `logging/message`) are consumed by
+`mcp_server_notify` (counter + DEBUG log, no response) rather than being
+routed as requests.
 
 ---
 
