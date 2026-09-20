@@ -27,13 +27,20 @@ static mcp_status_t echo_handler(mcp_context_t *ctx, mcp_session_t *session,
     mcp_json_value_t *result = mcp_json_object_new(ctx);
     mcp_json_value_t *tyv = mcp_json_string_new(ctx, "text");
     mcp_json_value_t *stv = mcp_json_string_new(ctx, s);
-    if (item == NULL || content == NULL || result == NULL || tyv == NULL || stv == NULL ||
-        mcp_json_object_set(ctx, item, "type", tyv) != MCP_OK ||
-        mcp_json_object_set(ctx, item, "text", stv) != MCP_OK ||
-        mcp_json_array_append(ctx, content, item) != MCP_OK ||
-        mcp_json_object_set(ctx, result, "content", content) != MCP_OK) {
+    if (item == NULL || content == NULL || result == NULL || tyv == NULL || stv == NULL) {
+        mcp_json_destroy(ctx, item);
+        mcp_json_destroy(ctx, content);
+        mcp_json_destroy(ctx, result);
         mcp_json_destroy(ctx, tyv);
         mcp_json_destroy(ctx, stv);
+        return MCP_ERR_NOMEM;
+    }
+    // Per-step attach: set_take destroys the value only when the set
+    // failed, so an already-attached child is never freed twice.
+    if (mcp_json_object_set_take(ctx, item, "type", tyv) != MCP_OK ||
+        mcp_json_object_set_take(ctx, item, "text", stv) != MCP_OK ||
+        mcp_json_array_append(ctx, content, item) != MCP_OK ||
+        mcp_json_object_set_take(ctx, result, "content", content) != MCP_OK) {
         mcp_json_destroy(ctx, item);
         mcp_json_destroy(ctx, content);
         mcp_json_destroy(ctx, result);
