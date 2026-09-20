@@ -319,6 +319,18 @@ mcp_transport_t *mcp_stdio_transport_create(mcp_context_t *ctx, FILE *in, FILE *
     return t;
 }
 
+static mcp_status_t send_notification(mcp_context_t *ctx, mcp_transport_t *t,
+                                     mcp_message_t *msg) {
+    char *out = mcp_message_serialize(ctx, msg);
+    mcp_message_destroy(ctx, msg);
+    if (out == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_status_t st = mcp_transport_send(ctx, t, out, strlen(out));
+    mcp_json_free_string(ctx, out);
+    return st;
+}
+
 static mcp_status_t send_error(mcp_context_t *ctx, mcp_transport_t *t, int code,
                                const char *text) {
     mcp_message_t *err = mcp_response_err_new(ctx, NULL, code, text, NULL);
@@ -354,8 +366,22 @@ mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_trans
             status = MCP_ERR_CANCELLED;
             break;
         }
+        mcp_status_t st = MCP_OK;
+        // Flush any pending server-originated notifications before taking
+        // new client work so the outbox never grows without bound.
+        for (;;) {
+            mcp_message_t *notify = NULL;
+            if (mcp_server_outbox_pop(ctx, server, &notify) != MCP_OK) {
+                break;
+            }
+            st = send_notification(ctx, t, notify);
+            if (st != MCP_OK) {
+                status = st;
+                goto done;
+            }
+        }
         char *line = NULL;
-        mcp_status_t st = mcp_transport_recv(ctx, t, &line);
+        st = mcp_transport_recv(ctx, t, &line);
         if (st == MCP_ERR_IO) {
             break;
         }
@@ -411,6 +437,7 @@ mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_trans
             }
         }
     }
+done:
     mcp_server_destroy_session(ctx, server, sess);
     return status;
 }

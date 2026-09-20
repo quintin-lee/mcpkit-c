@@ -242,6 +242,45 @@ mcp_status_t mcp_server_notify(mcp_context_t *ctx, mcp_server_t *server,
                                mcp_session_t *session, const mcp_message_t *notif);
 
 /**
+ * @brief Enqueues a server-originated notification for delivery to the
+ *        client on the server's next transport flush.
+ *
+ * This is the server->client push path: it builds a JSON-RPC notification
+ * and places it in the server's outbox. The outbox is drained by a serve
+ * loop (mcp_stdio_serve, mcp_loop_run) or by a host that owns its own
+ * transport; until drained, the notification is NOT sent.
+ *
+ * Ownership: the server TAKES ownership of `params` on MCP_OK; on any
+ * error the caller retains it and must destroy it.
+ *
+ * @param ctx     Context; may be NULL.
+ * @param server  Target server.
+ * @param method  Notification method name; must be non-NULL.
+ * @param params  Owned JSON value; server takes it on success. May be NULL.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if server or method
+ *         is NULL; MCP_ERR_NOMEM on allocation failure.
+ */
+mcp_status_t mcp_server_notify_client(mcp_context_t *ctx, mcp_server_t *server,
+                                      const char *method, mcp_json_value_t *params);
+
+/**
+ * @brief Pops and destroys one outbox entry, returning it to the caller.
+ *
+ * Serve loops call this in a drain loop (while it returns MCP_OK) to
+ * flush pending server-originated notifications onto the transport. The
+ * returned message is caller-owned; the caller serializes, sends, and
+ * destroys it.
+ *
+ * @param ctx    Context; may be NULL.
+ * @param server Target server.
+ * @param out    Receives the popped message; set to NULL first for safety.
+ * @return MCP_OK with *out set if an entry was available; MCP_ERR_NOT_FOUND
+ *         with *out = NULL when the outbox is empty.
+ */
+mcp_status_t mcp_server_outbox_pop(mcp_context_t *ctx, mcp_server_t *server,
+                                   mcp_message_t **out);
+
+/**
  * @brief Snapshot of dispatch counters.
  *
  * Counters are atomic: dispatch may run on threadpool workers while

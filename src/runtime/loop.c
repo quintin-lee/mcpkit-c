@@ -119,8 +119,22 @@ mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server, mcp_transpor
                 break;
             }
         }
+        // Flush any pending server-originated notifications before taking
+        // new client work so the outbox never grows without bound.
+        mcp_status_t st = MCP_OK;
+        for (;;) {
+            mcp_message_t *notify = NULL;
+            if (mcp_server_outbox_pop(ctx, server, &notify) != MCP_OK) {
+                break;
+            }
+            st = send_response(ctx, t, notify);
+            if (st != MCP_OK) {
+                status = st;
+                goto done;
+            }
+        }
         char *line = NULL;
-        mcp_status_t st = mcp_transport_recv(ctx, t, &line);
+        st = mcp_transport_recv(ctx, t, &line);
         if (st == MCP_ERR_IO) {
             break;
         }
@@ -169,6 +183,7 @@ mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server, mcp_transpor
             }
         }
     }
+done:
     mcp_server_destroy_session(ctx, server, sess);
     return status;
 }

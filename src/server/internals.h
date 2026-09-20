@@ -89,6 +89,12 @@ struct mcp_server {
     atomic_ullong c_tools_called;
     mcp_trace_fn tracer;
     void *tracer_ud;
+    // Outbox: caller-pushed server-originated notifications awaiting a
+    // transport flush. Growable; drained by serve loops (stdio/loop) or by
+    // a host that owns its own transport. Destroyed with the server.
+    mcp_message_t **outbox;
+    size_t n_outbox;
+    size_t cap_outbox;
 };
 
 struct mcp_queue {

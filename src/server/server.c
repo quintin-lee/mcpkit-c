@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "internals.h"
+#include "mcpkit/protocol/message.h"
 #include "mcpkit/server/dispatcher.h"
 #include "mcpkit/server/session.h"
 
@@ -106,6 +107,17 @@ static void free_all_completions(mcp_context_t *ctx, mcp_server_t *srv) {
     srv_free(ctx, srv->completions);
 }
 
+// Outbox entries are caller-built notifications; destroy any that were
+// pushed but never drained by a transport before the server tears down.
+static void free_outbox(mcp_context_t *ctx, mcp_server_t *srv) {
+    for (size_t i = 0; i < srv->n_outbox; i++) {
+        mcp_message_destroy(ctx, srv->outbox[i]);
+    }
+    srv_free(ctx, srv->outbox);
+    srv->n_outbox = 0;
+    srv->cap_outbox = 0;
+}
+
 void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     if (srv == NULL) {
         return;
@@ -115,6 +127,7 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     free_all_resources(ctx, srv);
     free_all_prompts(ctx, srv);
     free_all_completions(ctx, srv);
+    free_outbox(ctx, srv);
     srv_free(ctx, srv->name);
     srv_free(ctx, srv->version);
     srv_free(ctx, srv);
@@ -302,5 +315,44 @@ mcp_status_t mcp_server_set_tracer(mcp_context_t *ctx, mcp_server_t *srv,
     }
     srv->tracer = fn_or_null;
     srv->tracer_ud = userdata;
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_notify_client(mcp_context_t *ctx, mcp_server_t *srv,
+                                      const char *method, mcp_json_value_t *params) {
+    if (srv == NULL || method == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    // Server takes params on success only; the builder retains them on
+    // failure, so the caller's value is never leaked on the error path.
+    mcp_message_t *notif = mcp_notification_new(ctx, method, params);
+    if (notif == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    if (srv->n_outbox == srv->cap_outbox) {
+        size_t ncap = srv->cap_outbox == 0 ? 4 : srv->cap_outbox * 2;
+        mcp_message_t **narr = srv_realloc(ctx, srv->outbox, ncap * sizeof(*narr));
+        if (narr == NULL) {
+            mcp_message_destroy(ctx, notif);
+            return MCP_ERR_NOMEM;
+        }
+        srv->outbox = narr;
+        srv->cap_outbox = ncap;
+    }
+    srv->outbox[srv->n_outbox++] = notif;
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_outbox_pop(mcp_context_t *ctx, mcp_server_t *srv,
+                                   mcp_message_t **out) {
+    if (srv == NULL || out == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    *out = NULL;
+    if (srv->n_outbox == 0) {
+        return MCP_ERR_NOT_FOUND;
+    }
+    *out = srv->outbox[--srv->n_outbox];
+    srv->outbox[srv->n_outbox] = NULL;
     return MCP_OK;
 }
