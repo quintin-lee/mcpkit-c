@@ -13,12 +13,16 @@
 #include "mcpkit/server/dispatcher.h"
 
 #include <stdio.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "internals.h"
+#include "mcpkit/core/context.h"
 #include "mcpkit/json/array.h"
 #include "mcpkit/json/object.h"
 #include "mcpkit/json/schema.h"
+#include "mcpkit/logging/logger.h"
 #include "mcpkit/protocol/initialize.h"
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/server/server.h"
@@ -27,6 +31,20 @@
 static mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req, int code,
                                const char *text) {
     return mcp_response_err_new(ctx, req, code, text, NULL);
+}
+
+// Flat k=v dispatch log; NULL-ctx safe (NULL logger discards).
+static void dlogf(mcp_context_t *ctx, mcp_log_level_t level, const char *fmt, ...) {
+    mcp_logger_t *lg = mcp_context_logger(ctx);
+    if (lg == NULL) {
+        return;
+    }
+    char buf[256];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    mcp_logger_log(lg, level, buf);
 }
 
 #define MCP_LIST_PAGE_SIZE 100u
@@ -287,6 +305,8 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
     mcp_json_value_t *result = NULL;
     mcp_status_t st = tool->handler(ctx, s, args, tool->user_data, &result);
     if (st != MCP_OK) {
+        dlogf(ctx, MCP_LOG_WARN, "event=tool_error tool=%s status=%s", name,
+              mcp_status_string(st));
         return tool_error_result(ctx, req, st);
     }
     if (result == NULL) {
@@ -615,6 +635,7 @@ static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_s
     if (strcmp(method, "completion/complete") == 0) {
         return route_completion_complete(ctx, srv, s, req);
     }
+    dlogf(ctx, MCP_LOG_WARN, "event=unknown_method method=%s", method);
     return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "unknown method");
 }
 
@@ -629,15 +650,18 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
     }
     int code = 0;
     if (mcp_message_validate(ctx, req, &code) != MCP_OK) {
+        dlogf(ctx, MCP_LOG_WARN, "event=invalid_request code=%d", code);
         *resp_out = err_resp(ctx, req, code, "invalid request");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
     const char *method = mcp_message_method(ctx, req);
     if (method == NULL) {
+        dlogf(ctx, MCP_LOG_WARN, "event=missing_method");
         *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "missing method");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
     if (!session->initialized && strcmp(method, "initialize") != 0) {
+        dlogf(ctx, MCP_LOG_WARN, "event=uninitialized method=%s", method);
         *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "session not initialized");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
@@ -647,16 +671,19 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
         double id_num = 0;
         mcp_message_id_number(ctx, req, &id_num);
         if (mcp_idset_contains(ctx, session->ids, id_type, id_str, id_num)) {
+            dlogf(ctx, MCP_LOG_WARN, "event=duplicate_id method=%s", method);
             *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "duplicate request id");
             return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
         }
         if (mcp_idset_add(ctx, session->ids, id_type, id_str, id_num) != MCP_OK) {
+            dlogf(ctx, MCP_LOG_ERROR, "event=id_tracking_failed method=%s", method);
             *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "id tracking failed");
             return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
         }
     }
     mcp_message_t *resp = route_request(ctx, srv, session, req, method);
     if (resp == NULL) {
+        dlogf(ctx, MCP_LOG_ERROR, "event=route_failed method=%s", method);
         *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "internal error");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }

@@ -32,6 +32,7 @@
 #include "mcpkit/core/shutdown.h"
 #include "mcpkit/core/types.h"
 #include "mcpkit/json/json.h"
+#include "mcpkit/logging/logger.h"
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/server/server.h"
 #include "mcpkit/transport/transport.h"
@@ -188,6 +189,10 @@ static mcp_status_t stdio_recv(mcp_context_t *ctx, mcp_transport_t *t, char **li
         if (deadline != 0) {
             mcp_status_t ws = wait_readable(fd, deadline);
             if (ws != MCP_OK) {
+                if (ws == MCP_ERR_TIMEOUT) {
+                    mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_DEBUG,
+                                    "event=recv_timeout transport=stdio");
+                }
                 a->free_fn(buf, a->userdata);
                 *line_out = NULL;
                 return ws;
@@ -338,12 +343,14 @@ mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_trans
     if (sess == NULL) {
         return MCP_ERR_NOMEM;
     }
+    mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=serve_start transport=stdio");
     mcp_status_t status = MCP_OK;
     for (;;) {
         // Shutdown requested while idle or during the previous
         // dispatch: stop before taking new work. The in-flight
         // request (if any) already ran to completion above.
         if (mcp_shutdown_requested()) {
+            mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=shutdown");
             status = MCP_ERR_CANCELLED;
             break;
         }
@@ -365,6 +372,7 @@ mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_trans
         mcp_message_t *msg = mcp_message_parse(ctx, line, strlen(line));
         mcp_json_free_string(ctx, line);
         if (msg == NULL) {
+            mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_WARN, "event=parse_error");
             if (send_error(ctx, t, MCP_RPC_PARSE_ERROR, "Parse error") != MCP_OK) {
                 status = MCP_ERR_NOMEM;
                 break;

@@ -29,6 +29,7 @@
 #include "mcpkit/core/context.h"
 #include "mcpkit/core/types.h"
 #include "mcpkit/json/json.h"
+#include "mcpkit/logging/logger.h"
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/transport/transport.h"
 
@@ -221,6 +222,10 @@ static mcp_status_t sock_recv(mcp_context_t *ctx, mcp_transport_t *t, char **lin
         if (deadline != 0) {
             mcp_status_t ws = wait_until(b->fd, POLLIN, deadline);
             if (ws != MCP_OK) {
+                if (ws == MCP_ERR_TIMEOUT) {
+                    mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_DEBUG,
+                                    "event=recv_timeout transport=socket");
+                }
                 a->free_fn(buf, a->userdata);
                 *line_out = NULL;
                 return ws;

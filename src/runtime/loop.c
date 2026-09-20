@@ -11,10 +11,12 @@
  */
 #include <string.h>
 
+#include "mcpkit/core/context.h"
 #include "mcpkit/core/error.h"
 #include "mcpkit/core/shutdown.h"
 #include "mcpkit/json/json.h"
 #include "mcpkit/json/value.h"
+#include "mcpkit/logging/logger.h"
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/runtime/executor.h"
 #include "mcpkit/runtime/loop.h"
@@ -99,12 +101,14 @@ mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server, mcp_transpor
     if (sess == NULL) {
         return MCP_ERR_NOMEM;
     }
+    mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=serve_start transport=loop");
     mcp_status_t status = MCP_ERR_NOT_FOUND;
     for (;;) {
         // Shutdown requested while idle or during the previous
         // dispatch: stop before taking new work. The in-flight
         // request (if any) already ran to completion above.
         if (mcp_shutdown_requested()) {
+            mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=shutdown");
             status = MCP_ERR_CANCELLED;
             break;
         }
@@ -133,6 +137,7 @@ mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server, mcp_transpor
         mcp_message_t *msg = mcp_message_parse(ctx, line, strlen(line));
         mcp_json_free_string(ctx, line);
         if (msg == NULL) {
+            mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_WARN, "event=parse_error");
             if (send_error(ctx, t, MCP_RPC_PARSE_ERROR, "Parse error") != MCP_OK) {
                 status = MCP_ERR_NOMEM;
                 break;
