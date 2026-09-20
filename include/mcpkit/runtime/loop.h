@@ -35,13 +35,20 @@ typedef struct mcp_timer mcp_timer_t;
  * The caller manages the transport lifecycle: call mcp_transport_start
  * before mcp_loop_run and mcp_transport_stop/destroy after.
  *
+ * Shutdown: if mcp_request_shutdown() was called (e.g. from the
+ * host's own SIGTERM/SIGINT handler — the library installs none),
+ * the in-flight request runs to completion and the loop returns
+ * MCP_ERR_CANCELLED. A finite recv timeout lets an idle loop wake
+ * up promptly to observe the flag.
+ *
  * @param ctx Context; may be NULL.
  * @param server Target server to dispatch to.
  * @param t Transport; caller must have called mcp_transport_start.
  * @param ex_or_null Optional executor for parallel dispatch; NULL for
  *                   inline (sequential) dispatch.
  * @param timer_or_null Optional timer list polled before each recv.
- * @return MCP_OK on clean EOF; MCP_ERR_IO on I/O failure.
+ * @return MCP_OK on clean EOF; MCP_ERR_IO on I/O failure;
+ *         MCP_ERR_CANCELLED on requested shutdown.
  */
 mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server,
                           mcp_transport_t *t,

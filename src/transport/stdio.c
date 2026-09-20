@@ -29,6 +29,7 @@
 
 #include "internals.h"
 #include "mcpkit/core/context.h"
+#include "mcpkit/core/shutdown.h"
 #include "mcpkit/core/types.h"
 #include "mcpkit/json/json.h"
 #include "mcpkit/protocol/message.h"
@@ -333,15 +334,30 @@ mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_trans
     if (server == NULL || t == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
+    // A stale flag from a previous run must not kill a fresh loop.
+    mcp_shutdown_clear();
     mcp_session_t *sess = mcp_server_create_session(ctx, server);
     if (sess == NULL) {
         return MCP_ERR_NOMEM;
     }
     mcp_status_t status = MCP_OK;
     for (;;) {
+        // Shutdown requested while idle or during the previous
+        // dispatch: stop before taking new work. The in-flight
+        // request (if any) already ran to completion above.
+        if (mcp_shutdown_requested()) {
+            status = MCP_ERR_CANCELLED;
+            break;
+        }
         char *line = NULL;
         mcp_status_t st = mcp_transport_recv(ctx, t, &line);
         if (st == MCP_ERR_IO) {
+            break;
+        }
+        // A recv timeout is an idle wakeup: exit only if shutdown was
+        // requested, otherwise keep the pre-existing break semantics.
+        if (st == MCP_ERR_TIMEOUT) {
+            status = mcp_shutdown_requested() ? MCP_ERR_CANCELLED : st;
             break;
         }
         if (st != MCP_OK) {

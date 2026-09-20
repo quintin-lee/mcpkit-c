@@ -4,6 +4,14 @@
 
 #include "mcpkit/mcpkit.h"
 
+// Reference host wiring: terminate gracefully so the in-flight request
+// drains and the session is destroyed. The library itself installs no
+// handlers; mcp_request_shutdown() is async-signal-safe.
+static void on_term(int sig) {
+    (void)sig;
+    mcp_request_shutdown();
+}
+
 static mcp_status_t echo_handler(mcp_context_t *ctx, mcp_session_t *session,
                                  const mcp_json_value_t *args, void *user_data,
                                  mcp_json_value_t **result_out) {
@@ -38,6 +46,8 @@ static mcp_status_t echo_handler(mcp_context_t *ctx, mcp_session_t *session,
 int main(int argc, char **argv) {
     /* A closed peer must surface as EPIPE/MCP_ERR_IO, not a SIGPIPE kill. */
     signal(SIGPIPE, SIG_IGN);
+    signal(SIGTERM, on_term);
+    signal(SIGINT, on_term);
     if (argc < 2) {
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
         return 1;

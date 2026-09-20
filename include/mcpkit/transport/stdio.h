@@ -50,10 +50,17 @@ mcp_transport_t *mcp_stdio_transport_create(mcp_context_t *ctx, FILE *in, FILE *
  * mcp_transport_start/stop (the serve function manages the transport
  * lifecycle internally).
  *
+ * Shutdown: if mcp_request_shutdown() was called (e.g. from the
+ * host's own SIGTERM/SIGINT handler — the library installs none),
+ * the in-flight request runs to completion and the loop returns
+ * MCP_ERR_CANCELLED. A finite recv timeout lets an idle loop wake
+ * up promptly to observe the flag.
+ *
  * @param ctx Context; may be NULL.
  * @param server Target server to dispatch to.
  * @param t Transport created by mcp_stdio_transport_create.
- * @return MCP_OK on clean EOF; MCP_ERR_IO on I/O failure.
+ * @return MCP_OK on clean EOF; MCP_ERR_IO on I/O failure;
+ *         MCP_ERR_CANCELLED on requested shutdown.
  */
 mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_transport_t *t);
 
