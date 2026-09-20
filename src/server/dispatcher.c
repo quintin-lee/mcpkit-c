@@ -21,6 +21,7 @@
 #include <time.h>
 
 #include "internals.h"
+#include "../method_table.h"
 #include "mcpkit/core/context.h"
 #include "mcpkit/json/array.h"
 #include "mcpkit/json/object.h"
@@ -620,11 +621,13 @@ static mcp_message_t *route_completion_complete(mcp_context_t *ctx, mcp_server_t
 }
 
 static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s,
-                                     const mcp_message_t *req, const char *method) {
-    if (strcmp(method, "initialize") == 0) {
+                                    const mcp_message_t *req, const char *method) {
+    // Method names come from method_table.h so the route table and the
+    // validate.c L2 table can never drift apart.
+    if (strcmp(method, k_mcp_server_methods[0]) == 0) {
         return route_initialize(ctx, srv, s, req);
     }
-    if (strcmp(method, "ping") == 0) {
+    if (strcmp(method, k_mcp_server_methods[1]) == 0) {
         mcp_json_value_t *result = mcp_json_object_new(ctx);
         if (result == NULL) {
             return NULL;
@@ -635,28 +638,28 @@ static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_s
         }
         return resp;
     }
-    if (strcmp(method, "tools/list") == 0) {
+    if (strcmp(method, k_mcp_server_methods[2]) == 0) {
         return route_tools_list(ctx, srv, s, req);
     }
-    if (strcmp(method, "tools/call") == 0) {
+    if (strcmp(method, k_mcp_server_methods[3]) == 0) {
         return route_tools_call(ctx, srv, s, req);
     }
-    if (strcmp(method, "resources/list") == 0) {
+    if (strcmp(method, k_mcp_server_methods[4]) == 0) {
         return route_resources_list(ctx, srv, req);
     }
-    if (strcmp(method, "resources/read") == 0) {
+    if (strcmp(method, k_mcp_server_methods[5]) == 0) {
         return route_resources_read(ctx, srv, s, req);
     }
-    if (strcmp(method, "prompts/list") == 0) {
+    if (strcmp(method, k_mcp_server_methods[6]) == 0) {
         return route_prompts_list(ctx, srv, req);
     }
-    if (strcmp(method, "prompts/get") == 0) {
+    if (strcmp(method, k_mcp_server_methods[7]) == 0) {
         return route_prompts_get(ctx, srv, s, req);
     }
-    if (strcmp(method, "completion/list") == 0) {
+    if (strcmp(method, k_mcp_server_methods[8]) == 0) {
         return route_completion_list(ctx, srv, req);
     }
-    if (strcmp(method, "completion/complete") == 0) {
+    if (strcmp(method, k_mcp_server_methods[9]) == 0) {
         return route_completion_complete(ctx, srv, s, req);
     }
     dlogf(ctx, MCP_LOG_WARN, "event=unknown_method method=%s", method);

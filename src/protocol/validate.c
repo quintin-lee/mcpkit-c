@@ -23,6 +23,7 @@
 #include "mcpkit/json/json.h"
 #include "mcpkit/json/object.h"
 #include "mcpkit/protocol/initialize.h"
+#include "../method_table.h"
 
 // One entry in the id set: stores the type discriminator plus the
 // value. String ids have s != NULL and n unused; numeric ids have
@@ -161,22 +162,11 @@ bool mcp_idset_contains(mcp_context_t *ctx, const mcp_idset_t *set,
     return id_find(set, type, s, n) >= 0;
 }
 
-static const char *const k_known_methods[] = {
-    "initialize",
-    "ping",
-    "tools/list",
-    "tools/call",
-    "resources/list",
+static const char *const k_l2_only_methods[] = {
     "resources/templates/list",
-    "resources/read",
     "resources/subscribe",
     "resources/unsubscribe",
-    "prompts/list",
-    "prompts/get",
-    "completion/complete",
-    "completion/list",
     "logging/setLevel",
-    "notifications/initialized",
     "notifications/cancelled",
     "notifications/progress",
     "notifications/tools/list_changed",
@@ -194,8 +184,16 @@ bool mcp_method_known(const char *method) {
     if (method == NULL) {
         return false;
     }
-    for (size_t i = 0; i < sizeof(k_known_methods) / sizeof(k_known_methods[0]); i++) {
-        if (strcmp(method, k_known_methods[i]) == 0) {
+    // L2 accepts methods that the dispatcher routes plus a set of
+    // spec-known names this build does not implement; both lists live
+    // in method_table.h so the two can never drift apart.
+    for (size_t i = 0; i < MCP_SERVER_METHOD_COUNT; i++) {
+        if (strcmp(method, k_mcp_server_methods[i]) == 0) {
+            return true;
+        }
+    }
+    for (size_t i = 0; i < sizeof(k_l2_only_methods) / sizeof(k_l2_only_methods[0]); i++) {
+        if (strcmp(method, k_l2_only_methods[i]) == 0) {
             return true;
         }
     }
