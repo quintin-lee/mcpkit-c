@@ -178,3 +178,7 @@ endif()
 add_executable(test_pagination unit/test_pagination.c)
 target_link_libraries(test_pagination PRIVATE mcpkit_core)
 add_test(NAME test_pagination COMMAND test_pagination)
+
+add_executable(test_shutdown unit/test_shutdown.c)
+target_link_libraries(test_shutdown PRIVATE mcpkit_core)
+add_test(NAME test_shutdown COMMAND test_shutdown)
