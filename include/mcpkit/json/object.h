@@ -5,6 +5,9 @@
  * Ownership contract:
  * - `mcp_json_object_set` transfers ownership of `val` to `obj` on
  *   MCP_OK. On error the caller retains ownership and must free it.
+ * - `mcp_json_object_set_take` takes `val` on ALL paths: on error `val`
+ *   is destroyed and `obj` stays alive (holding earlier children).
+ *   After calling it, never touch `val` again.
  * - All getters return BORROWED pointers valid while `obj` is alive.
  * - Re-setting an existing key replaces the old value (the old value
  *   is freed by the container; the new value is taken).
@@ -34,6 +37,25 @@
  */
 mcp_status_t mcp_json_object_set(mcp_context_t *ctx, mcp_json_value_t *obj, const char *key,
                                  mcp_json_value_t *val);
+
+/**
+ * @brief Attaches a value to an object, consuming it on all paths.
+ *
+ * Same as mcp_json_object_set on success (`obj` owns `val`), but on
+ * failure `val` is destroyed instead of returned to the caller. `obj`
+ * stays alive holding any earlier children; the caller destroys `obj`.
+ * After this call, never touch `val` again — it is owned or freed.
+ * Sibling values not yet attached stay caller-owned and must be freed.
+ * A NULL `val` yields MCP_ERR_INVALID_ARGUMENT without touching `obj`.
+ *
+ * @param ctx  Context; NULL uses the default allocator and built-in backend.
+ * @param obj  Object to modify; must not be NULL.
+ * @param key  Key string (borrowed).
+ * @param val  Value to store; consumed on all paths.
+ * @return MCP_OK on success; backend status (NOMEM/INVALID_ARGUMENT) on error.
+ */
+mcp_status_t mcp_json_object_set_take(mcp_context_t *ctx, mcp_json_value_t *obj,
+                                       const char *key, mcp_json_value_t *val);
 
 /**
  * @brief Returns a BORROWED pointer to the value stored under `key`.

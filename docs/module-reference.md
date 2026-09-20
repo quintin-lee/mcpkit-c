@@ -112,6 +112,9 @@ mcp_status_t      mcp_json_string_value(ctx, const mcp_json_value_t *, const cha
 /* container takes ownership of val on OK; caller keeps it on ERR */
 mcp_status_t          mcp_json_object_set(ctx, mcp_json_value_t *obj,
                                           const char *key, mcp_json_value_t *val);
+/* take variant: val consumed on ALL paths (destroyed on ERR, obj stays alive) */
+mcp_status_t          mcp_json_object_set_take(ctx, mcp_json_value_t *obj,
+                                          const char *key, mcp_json_value_t *val);
 const mcp_json_value_t *mcp_json_object_get(ctx, const mcp_json_value_t *obj,
                                              const char *key);   /* borrowed */
 bool                  mcp_json_object_has(ctx, const mcp_json_value_t *obj,

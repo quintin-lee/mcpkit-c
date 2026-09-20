@@ -143,8 +143,8 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
         }
         if (t->schema != NULL) {
             mcp_json_value_t *copy = mcp_json_clone(ctx, t->schema);
-            if (copy == NULL || mcp_json_object_set(ctx, entry, "inputSchema", copy) != MCP_OK) {
-                mcp_json_destroy(ctx, copy);
+            if (copy == NULL ||
+                mcp_json_object_set_take(ctx, entry, "inputSchema", copy) != MCP_OK) {
                 mcp_json_destroy(ctx, entry);
                 mcp_json_destroy(ctx, result);
                 mcp_json_destroy(ctx, arr);
@@ -158,9 +158,8 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
             return NULL;
         }
     }
-    if (mcp_json_object_set(ctx, result, "tools", arr) != MCP_OK) {
+    if (mcp_json_object_set_take(ctx, result, "tools", arr) != MCP_OK) {
         mcp_json_destroy(ctx, result);
-        mcp_json_destroy(ctx, arr);
         return NULL;
     }
     mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
@@ -175,14 +174,24 @@ static mcp_message_t *tool_error_result(mcp_context_t *ctx, const mcp_message_t 
     mcp_json_value_t *result = mcp_json_object_new(ctx);
     mcp_json_value_t *content = mcp_json_array_new(ctx);
     mcp_json_value_t *item = mcp_json_object_new(ctx);
-    if (result == NULL || content == NULL || item == NULL ||
-        set_string(ctx, item, "type", "text") != MCP_OK ||
-        set_string(ctx, item, "text", mcp_status_string(st)) != MCP_OK ||
-        mcp_json_array_append(ctx, content, item) != MCP_OK ||
-        mcp_json_object_set(ctx, result, "content", content) != MCP_OK ||
-        mcp_json_object_set(ctx, result, "isError", mcp_json_bool_new(ctx, true)) != MCP_OK) {
+    if (result == NULL || content == NULL || item == NULL) {
         mcp_json_destroy(ctx, item);
         mcp_json_destroy(ctx, content);
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    if (set_string(ctx, item, "type", "text") != MCP_OK ||
+        set_string(ctx, item, "text", mcp_status_string(st)) != MCP_OK ||
+        mcp_json_array_append(ctx, content, item) != MCP_OK) {
+        mcp_json_destroy(ctx, item);
+        mcp_json_destroy(ctx, content);
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    /* item now owned by content; take consumes content/flag on all paths */
+    if (mcp_json_object_set_take(ctx, result, "content", content) != MCP_OK ||
+        mcp_json_object_set_take(ctx, result, "isError", mcp_json_bool_new(ctx, true)) !=
+            MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -261,9 +270,8 @@ static mcp_message_t *route_resources_list(mcp_context_t *ctx, mcp_server_t *srv
             return NULL;
         }
     }
-    if (mcp_json_object_set(ctx, result, "resources", arr) != MCP_OK) {
+    if (mcp_json_object_set_take(ctx, result, "resources", arr) != MCP_OK) {
         mcp_json_destroy(ctx, result);
-        mcp_json_destroy(ctx, arr);
         return NULL;
     }
     mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
@@ -297,9 +305,12 @@ static mcp_message_t *route_resources_read(mcp_context_t *ctx, mcp_server_t *srv
         return err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "resources/read: bad contents");
     }
     mcp_json_value_t *result = mcp_json_object_new(ctx);
-    if (result == NULL || mcp_json_object_set(ctx, result, "contents", contents) != MCP_OK) {
-        mcp_json_destroy(ctx, result);
+    if (result == NULL) {
         mcp_json_destroy(ctx, contents);
+        return NULL;
+    }
+    if (mcp_json_object_set_take(ctx, result, "contents", contents) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
         return NULL;
     }
     mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
@@ -331,9 +342,8 @@ static mcp_message_t *route_prompts_list(mcp_context_t *ctx, mcp_server_t *srv,
             return NULL;
         }
     }
-    if (mcp_json_object_set(ctx, result, "prompts", arr) != MCP_OK) {
+    if (mcp_json_object_set_take(ctx, result, "prompts", arr) != MCP_OK) {
         mcp_json_destroy(ctx, result);
-        mcp_json_destroy(ctx, arr);
         return NULL;
     }
     mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
@@ -368,9 +378,12 @@ static mcp_message_t *route_prompts_get(mcp_context_t *ctx, mcp_server_t *srv, m
         return err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "prompts/get: bad messages");
     }
     mcp_json_value_t *result = mcp_json_object_new(ctx);
-    if (result == NULL || mcp_json_object_set(ctx, result, "messages", messages) != MCP_OK) {
-        mcp_json_destroy(ctx, result);
+    if (result == NULL) {
         mcp_json_destroy(ctx, messages);
+        return NULL;
+    }
+    if (mcp_json_object_set_take(ctx, result, "messages", messages) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
         return NULL;
     }
     if (prompt->description != NULL && set_string(ctx, result, "description", prompt->description) != MCP_OK) {
@@ -394,9 +407,8 @@ static mcp_message_t *route_completion_list(mcp_context_t *ctx, mcp_server_t *sr
         mcp_json_destroy(ctx, comps);
         return NULL;
     }
-    if (mcp_json_object_set(ctx, result, "completions", comps) != MCP_OK) {
+    if (mcp_json_object_set_take(ctx, result, "completions", comps) != MCP_OK) {
         mcp_json_destroy(ctx, result);
-        mcp_json_destroy(ctx, comps);
         return NULL;
     }
     mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
@@ -453,10 +465,12 @@ static mcp_message_t *route_completion_complete(mcp_context_t *ctx, mcp_server_t
                                 "completion/complete: provider returned non-array");
             }
             mcp_json_value_t *result = mcp_json_object_new(ctx);
-            if (result == NULL ||
-                mcp_json_object_set(ctx, result, "completions", comps) != MCP_OK) {
-                mcp_json_destroy(ctx, result);
+            if (result == NULL) {
                 mcp_json_destroy(ctx, comps);
+                return NULL;
+            }
+            if (mcp_json_object_set_take(ctx, result, "completions", comps) != MCP_OK) {
+                mcp_json_destroy(ctx, result);
                 return NULL;
             }
             mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
@@ -474,9 +488,8 @@ static mcp_message_t *route_completion_complete(mcp_context_t *ctx, mcp_server_t
         mcp_json_destroy(ctx, comps);
         return NULL;
     }
-    if (mcp_json_object_set(ctx, result, "completions", comps) != MCP_OK) {
+    if (mcp_json_object_set_take(ctx, result, "completions", comps) != MCP_OK) {
         mcp_json_destroy(ctx, result);
-        mcp_json_destroy(ctx, comps);
         return NULL;
     }
     mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);

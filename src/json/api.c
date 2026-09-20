@@ -107,6 +107,15 @@ mcp_status_t mcp_json_object_set(mcp_context_t *ctx, mcp_json_value_t *obj, cons
     return resolve(ctx)->object_set(ctx, obj, key, val);
 }
 
+mcp_status_t mcp_json_object_set_take(mcp_context_t *ctx, mcp_json_value_t *obj,
+                                       const char *key, mcp_json_value_t *val) {
+    mcp_status_t st = mcp_json_object_set(ctx, obj, key, val);
+    if (st != MCP_OK) {
+        mcp_json_destroy(ctx, val);
+    }
+    return st;
+}
+
 const mcp_json_value_t *mcp_json_object_get(mcp_context_t *ctx, const mcp_json_value_t *obj,
                                             const char *key) {
     return resolve(ctx)->object_get(ctx, obj, key);

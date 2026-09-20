@@ -59,15 +59,30 @@ static mcp_status_t ui_read(mcp_context_t *ctx, mcp_session_t *session, const ch
     mcp_json_value_t *uval = mcp_json_string_new(ctx, uri);
     mcp_json_value_t *mval = mcp_json_string_new(ctx, MCP_APPS_UI_MIME);
     mcp_json_value_t *tval = mcp_json_string_new(ctx, d->doc);
-    if (arr == NULL || item == NULL || uval == NULL || mval == NULL || tval == NULL ||
-        mcp_json_object_set(ctx, item, "uri", uval) != MCP_OK ||
-        mcp_json_object_set(ctx, item, "mimeType", mval) != MCP_OK ||
-        mcp_json_object_set(ctx, item, "text", tval) != MCP_OK ||
-        mcp_json_array_append(ctx, arr, item) != MCP_OK) {
+    if (arr == NULL || item == NULL || uval == NULL || mval == NULL || tval == NULL) {
         mcp_json_destroy(ctx, uval);
         mcp_json_destroy(ctx, mval);
         mcp_json_destroy(ctx, tval);
         mcp_json_destroy(ctx, item);
+        mcp_json_destroy(ctx, arr);
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set_take(ctx, item, "uri", uval) != MCP_OK) {
+        mcp_json_destroy(ctx, mval); /* unattached siblings */
+        mcp_json_destroy(ctx, tval);
+        mcp_json_destroy(ctx, item);
+        mcp_json_destroy(ctx, arr);
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set_take(ctx, item, "mimeType", mval) != MCP_OK) {
+        mcp_json_destroy(ctx, tval); /* unattached; item owns uval */
+        mcp_json_destroy(ctx, item);
+        mcp_json_destroy(ctx, arr);
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set_take(ctx, item, "text", tval) != MCP_OK ||
+        mcp_json_array_append(ctx, arr, item) != MCP_OK) {
+        mcp_json_destroy(ctx, item); /* owns uval/mval/tval */
         mcp_json_destroy(ctx, arr);
         return MCP_ERR_NOMEM;
     }
@@ -158,19 +173,16 @@ mcp_status_t mcp_apps_result_with_ui(mcp_context_t *ctx, mcp_json_value_t *resul
         mcp_json_destroy(ctx, meta);
         return MCP_ERR_NOMEM;
     }
-    if (mcp_json_object_set(ctx, mui, "resourceUri", muri) != MCP_OK) {
-        mcp_json_destroy(ctx, muri); /* not attached */
+    if (mcp_json_object_set_take(ctx, mui, "resourceUri", muri) != MCP_OK) {
         mcp_json_destroy(ctx, mui);
         mcp_json_destroy(ctx, meta);
         return MCP_ERR_NOMEM;
     }
-    if (mcp_json_object_set(ctx, meta, "ui", mui) != MCP_OK) {
-        mcp_json_destroy(ctx, mui); /* recursively frees attached muri */
+    if (mcp_json_object_set_take(ctx, meta, "ui", mui) != MCP_OK) {
         mcp_json_destroy(ctx, meta);
         return MCP_ERR_NOMEM;
     }
-    if (mcp_json_object_set(ctx, result, "_meta", meta) != MCP_OK) {
-        mcp_json_destroy(ctx, meta); /* recursively frees mui/muri */
+    if (mcp_json_object_set_take(ctx, result, "_meta", meta) != MCP_OK) {
         return MCP_ERR_NOMEM;
     }
     return MCP_OK;

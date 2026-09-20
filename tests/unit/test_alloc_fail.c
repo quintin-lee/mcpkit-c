@@ -311,10 +311,137 @@ static void sweep_dispatch(void) {
     mcp_context_destroy(ctx);
 }
 
+static mcp_session_t *sweep_init_session(mcp_context_t *ctx, mcp_server_t *srv) {
+    mcp_session_t *s = mcp_server_create_session(ctx, srv);
+    CHECK(s != NULL);
+    mcp_json_value_t *iparams = mcp_initialize_params_new(ctx, "cli", "1");
+    CHECK(iparams != NULL);
+    mcp_message_t *ireq = mcp_request_new_string_id(ctx, "init", "initialize", iparams);
+    CHECK(ireq != NULL);
+    mcp_message_t *iresp = NULL;
+    CHECK(mcp_server_dispatch(ctx, srv, s, ireq, &iresp) == MCP_OK && iresp != NULL);
+    mcp_message_destroy(ctx, ireq);
+    mcp_message_destroy(ctx, iresp);
+    mcp_message_t *notif = mcp_initialized_notification_new(ctx);
+    CHECK(notif != NULL);
+    CHECK(mcp_server_notify(ctx, srv, s, notif) == MCP_OK);
+    mcp_message_destroy(ctx, notif);
+    return s;
+}
+
+static mcp_status_t sweep_err_tool(mcp_context_t *ctx, mcp_session_t *s,
+                                   const mcp_json_value_t *args, void *ud,
+                                   mcp_json_value_t **out) {
+    (void)ctx;
+    (void)s;
+    (void)args;
+    (void)ud;
+    *out = NULL;
+    return MCP_ERR_IO;
+}
+
+static mcp_message_t *sweep_call_req(mcp_context_t *ctx, const char *tool) {
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_value_t *nv = params != NULL ? mcp_json_string_new(ctx, tool) : NULL;
+    if (params == NULL || nv == NULL ||
+        mcp_json_object_set(ctx, params, "name", nv) != MCP_OK) {
+        mcp_json_destroy(ctx, nv);
+        mcp_json_destroy(ctx, params);
+        return NULL;
+    }
+    mcp_message_t *req = mcp_request_new_string_id(ctx, "call", "tools/call", params);
+    if (req == NULL) {
+        mcp_json_destroy(ctx, params);
+    }
+    return req;
+}
+
+static void sweep_expect(mcp_context_t *ctx, mcp_server_t *srv, mcp_message_t *req) {
+    mcp_session_t *s = sweep_init_session(ctx, srv);
+    CHECK(s != NULL);
+    g_count = 0;
+    mcp_message_t *resp = NULL;
+    /* Full pass with the gate off to count allocations. */
+    g_fail_at = SIZE_MAX;
+    CHECK(mcp_server_dispatch(ctx, srv, s, req, &resp) == MCP_OK && resp != NULL);
+    size_t total = g_count;
+    mcp_message_destroy(ctx, resp);
+    mcp_server_destroy_session(ctx, srv, s);
+
+    for (size_t n = 0; n <= total; n++) {
+        s = sweep_init_session(ctx, srv);
+        CHECK(s != NULL);
+        g_count = 0;
+        g_fail_at = n;
+        resp = NULL;
+        mcp_status_t st = mcp_server_dispatch(ctx, srv, s, req, &resp);
+        g_fail_at = SIZE_MAX;
+        if (st == MCP_OK) {
+            CHECK(resp != NULL);
+            mcp_message_destroy(ctx, resp);
+        } else {
+            CHECK(st == MCP_ERR_NOMEM && resp == NULL);
+        }
+        mcp_server_destroy_session(ctx, srv, s);
+    }
+}
+
+static void sweep_tool_error(void) {
+    mcp_context_t *ctx = fail_ctx();
+    mcp_server_t *srv = mcp_server_create(ctx, "srv", "1");
+    CHECK(srv != NULL);
+    mcp_tool_t *t = mcp_tool_new(ctx, "boom", NULL, NULL, sweep_err_tool, NULL);
+    CHECK(t != NULL);
+    CHECK(mcp_server_add_tool(ctx, srv, t) == MCP_OK);
+
+    mcp_message_t *req = sweep_call_req(ctx, "boom");
+    CHECK(req != NULL);
+    sweep_expect(ctx, srv, req);
+    mcp_message_destroy(ctx, req);
+
+    mcp_server_destroy(ctx, srv);
+    mcp_context_destroy(ctx);
+}
+
+static mcp_message_t *sweep_read_req(mcp_context_t *ctx, const char *uri) {
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_value_t *uv = params != NULL ? mcp_json_string_new(ctx, uri) : NULL;
+    if (params == NULL || uv == NULL ||
+        mcp_json_object_set(ctx, params, "uri", uv) != MCP_OK) {
+        mcp_json_destroy(ctx, uv);
+        mcp_json_destroy(ctx, params);
+        return NULL;
+    }
+    mcp_message_t *req = mcp_request_new_string_id(ctx, "read", "resources/read", params);
+    if (req == NULL) {
+        mcp_json_destroy(ctx, params);
+    }
+    return req;
+}
+
+static void sweep_ui_read(void) {
+    mcp_context_t *ctx = fail_ctx();
+    mcp_server_t *srv = mcp_server_create(ctx, "srv", "1");
+    CHECK(srv != NULL);
+    mcp_resource_t *res = mcp_apps_ui_resource_new(ctx, "ui://x", "x", "<p>hi</p>", NULL);
+    CHECK(res != NULL);
+    CHECK(mcp_server_add_resource(ctx, srv, res) == MCP_OK);
+
+    mcp_message_t *req = sweep_read_req(ctx, "ui://x");
+    CHECK(req != NULL);
+    sweep_expect(ctx, srv, req);
+    mcp_message_destroy(ctx, req);
+
+    mcp_server_destroy(ctx, srv);
+    mcp_context_destroy(ctx);
+}
+
 int main(void) {
     sweep_ui();
     sweep_client();
     sweep_dispatch();
+    sweep_tool_error();
+    sweep_ui_read();
     printf("test_alloc_fail OK\n");
     return 0;
 }
