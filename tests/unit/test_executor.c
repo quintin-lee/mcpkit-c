@@ -1,4 +1,5 @@
 #include "test_check.h"
+#include <stdatomic.h>
 #include <stddef.h>
 #include <string.h>
 #include <threads.h>
@@ -9,14 +10,14 @@
 
 static void bump(mcp_context_t *ctx, void *arg) {
     (void)ctx;
-    (*(int *)arg)++;
+    atomic_fetch_add((atomic_int *)arg, 1);
 }
 
 static void slow_bump(mcp_context_t *ctx, void *arg) {
     (void)ctx;
     struct timespec ts = {.tv_sec = 0, .tv_nsec = 50 * 1000 * 1000};
     thrd_sleep(&ts, NULL);
-    (*(int *)arg)++;
+    atomic_fetch_add((atomic_int *)arg, 1);
 }
 
 static mcp_status_t echo_handler(mcp_context_t *c, mcp_session_t *s, const mcp_json_value_t *a,
@@ -121,13 +122,13 @@ int main(void) {
     mcp_executor_t *ex = mcp_sync_executor_create(NULL);
     CHECK(ex != NULL);
 
-    int n = 0;
+    atomic_int n = 0;
     CHECK(mcp_executor_submit(NULL, ex, bump, &n) == MCP_OK);
-    CHECK(n == 1);
+    CHECK(atomic_load(&n) == 1);
     CHECK(mcp_executor_submit(NULL, ex, bump, &n) == MCP_OK);
     CHECK(mcp_executor_submit(NULL, ex, bump, &n) == MCP_OK);
     CHECK(mcp_executor_wait(NULL, ex) == MCP_OK);
-    CHECK(n == 3);
+    CHECK(atomic_load(&n) == 3);
 
     CHECK(mcp_executor_wait(NULL, ex) == MCP_OK);
 
@@ -146,22 +147,22 @@ int main(void) {
     mcp_executor_t *tp = mcp_threadpool_create(NULL, 4);
     CHECK(tp != NULL);
 
-    int m = 0;
+    atomic_int m = 0;
     for (int i = 0; i < 32; i++) {
         CHECK(mcp_executor_submit(NULL, tp, bump, &m) == MCP_OK);
     }
     CHECK(mcp_executor_wait(NULL, tp) == MCP_OK);
-    CHECK(m == 32);
+    CHECK(atomic_load(&m) == 32);
     CHECK(mcp_executor_wait(NULL, tp) == MCP_OK);
 
-    int fast = 0;
-    int slow = 0;
+    atomic_int fast = 0;
+    atomic_int slow = 0;
     CHECK(mcp_executor_submit(NULL, tp, slow_bump, &slow) == MCP_OK);
     for (int i = 0; i < 4; i++) {
         CHECK(mcp_executor_submit(NULL, tp, bump, &fast) == MCP_OK);
     }
     CHECK(mcp_executor_wait(NULL, tp) == MCP_OK);
-    CHECK(fast == 4 && slow == 1);
+    CHECK(atomic_load(&fast) == 4 && atomic_load(&slow) == 1);
 
     int pool_ok = 0;
     run_dispatch_jobs(tp, &pool_ok);
@@ -170,7 +171,7 @@ int main(void) {
 
     mcp_executor_t *tp2 = mcp_threadpool_create(NULL, 2);
     CHECK(tp2 != NULL);
-    int q = 0;
+    atomic_int q = 0;
     CHECK(mcp_executor_submit(NULL, tp2, bump, &q) == MCP_OK);
     CHECK(mcp_executor_submit(NULL, tp2, bump, &q) == MCP_OK);
     mcp_executor_destroy(NULL, tp2);
