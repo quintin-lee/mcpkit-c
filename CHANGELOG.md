@@ -4,8 +4,25 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-20
+
 ### Added
 
+- Socket TCP transport (line-framed, server/client modes) with
+  socket-server example (`MCPKIT_BUILD_SOCKET`, default ON).
+- `completion/list` + `completion/complete` (provider registry,
+  prefix match, client API) with prompt-server example.
+- GitHub Actions CI (gcc / clang / ASan+UBSan triple gate),
+  HTTP + schema + message fuzz targets with deterministic corpora,
+  shared-library option with pkg-config and CMake package files.
+- `mcp_json_object_set_take`: failure-consumes-value attach variant
+  unifying all multi-step object-build paths.
+- Version single-sourced from `VERSION` via generated header macro;
+  `mcpkit-cli` reports the library version.
+- Formal Doxygen contracts on all public headers + `Doxyfile`
+  (generated `docs/api`, 205 pages, zero warnings); module-level
+  `@file` blocks sit at the top of every header.
+- NDEBUG-independent `CHECK` macro rolled out to all test files.
 - Phase 0 bootstrap: CMake build, C23 baseline, core
   (`types` / `error` / `result` / `version`) with unit tests.
 - Phase 1: pluggable allocator, logger, context, zero-dependency JSON.
@@ -27,3 +44,23 @@ Format follows Keep a Changelog. Versions follow SemVer.
 - Phase 9: mcpkit-cli (inspect/call/validate/test), deterministic JSON
   fuzz corpus, CMake sanitizer presets, CPack TGZ packaging, CLI
   acceptance test against P3/P7 example services.
+
+### Fixed
+
+- Schema `integer` check accepted out-of-int64-range finite doubles
+  (now symmetric ±2^53-1 bounds with regression tests).
+- Plugin registry merged to single-pass first-fit; HTTP header-end
+  off-by-one at exact buffer end.
+- Double-free class in chained `object_set` paths (client complete,
+  `result_with_ui`, `tool_error_result`, `ui_read`): per-step checks,
+  then unified via `object_set_take`.
+- Completion provider received a borrowed `argument` pointer — now
+  cloned before the callback.
+- Protocol builders destroyed caller-owned values on failure,
+  contradicting the caller-retains contract.
+- Global plugin registry is now mutex-guarded (thread-safe).
+- I/O hardening: EINTR retry on `accept()`/stdio reads,
+  `MSG_NOSIGNAL` on socket sends, `SIGPIPE` ignored in all example
+  and CLI binaries (closed peer → EPIPE/`MCP_ERR_IO`, no kill).
+- `test_executor` counters are now atomic (killed the 32-task
+  threadpool count flake).
