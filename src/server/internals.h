@@ -12,8 +12,10 @@
 #ifndef MCPKIT_SERVER_INTERNALS_H
 #define MCPKIT_SERVER_INTERNALS_H
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "mcpkit/core/context.h"
 #include "mcpkit/protocol/validate.h"
@@ -81,6 +83,12 @@ struct mcp_server {
     mcp_session_t **sessions;
     size_t n_sessions;
     size_t cap_sessions;
+    atomic_ullong c_requests_total;
+    atomic_ullong c_requests_error;
+    atomic_ullong c_notifications_total;
+    atomic_ullong c_tools_called;
+    mcp_trace_fn tracer;
+    void *tracer_ud;
 };
 
 struct mcp_queue {

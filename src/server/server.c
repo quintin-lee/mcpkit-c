@@ -56,6 +56,10 @@ mcp_server_t *mcp_server_create(mcp_context_t *ctx, const char *name, const char
         return NULL;
     }
     memset(srv, 0, sizeof(*srv));
+    atomic_init(&srv->c_requests_total, 0);
+    atomic_init(&srv->c_requests_error, 0);
+    atomic_init(&srv->c_notifications_total, 0);
+    atomic_init(&srv->c_tools_called, 0);
     srv->name = srv_strdup(ctx, name);
     srv->version = srv_strdup(ctx, version);
     if (srv->name == NULL || srv->version == NULL) {
@@ -275,4 +279,28 @@ mcp_status_t mcp_server_remove_completion_provider(mcp_context_t *ctx, mcp_serve
         }
     }
     return MCP_ERR_NOT_FOUND;
+}
+
+mcp_status_t mcp_server_counters(mcp_context_t *ctx, const mcp_server_t *srv,
+                                 mcp_server_counters_t *out) {
+    (void)ctx;
+    if (srv == NULL || out == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    out->requests_total = atomic_load(&srv->c_requests_total);
+    out->requests_error = atomic_load(&srv->c_requests_error);
+    out->notifications_total = atomic_load(&srv->c_notifications_total);
+    out->tools_called = atomic_load(&srv->c_tools_called);
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_set_tracer(mcp_context_t *ctx, mcp_server_t *srv,
+                                   mcp_trace_fn fn_or_null, void *userdata) {
+    (void)ctx;
+    if (srv == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    srv->tracer = fn_or_null;
+    srv->tracer_ud = userdata;
+    return MCP_OK;
 }

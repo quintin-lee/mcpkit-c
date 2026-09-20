@@ -182,3 +182,7 @@ add_test(NAME test_pagination COMMAND test_pagination)
 add_executable(test_shutdown unit/test_shutdown.c)
 target_link_libraries(test_shutdown PRIVATE mcpkit_core)
 add_test(NAME test_shutdown COMMAND test_shutdown)
+
+add_executable(test_observability unit/test_observability.c)
+target_link_libraries(test_observability PRIVATE mcpkit_core)
+add_test(NAME test_observability COMMAND test_observability)

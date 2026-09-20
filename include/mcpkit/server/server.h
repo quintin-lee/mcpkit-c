@@ -25,6 +25,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "mcpkit/core/error.h"
 
@@ -239,5 +240,65 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *server,
  */
 mcp_status_t mcp_server_notify(mcp_context_t *ctx, mcp_server_t *server,
                                mcp_session_t *session, const mcp_message_t *notif);
+
+/**
+ * @brief Snapshot of dispatch counters.
+ *
+ * Counters are atomic: dispatch may run on threadpool workers while
+ * the host reads the snapshot concurrently.
+ */
+typedef struct mcp_server_counters {
+    uint64_t requests_total;      /**< Dispatch attempts (all outcomes). */
+    uint64_t requests_error;      /**< Dispatches with an RPC error response. */
+    uint64_t notifications_total; /**< Notifications handled. */
+    uint64_t tools_called;        /**< Tool handler invocations. */
+} mcp_server_counters_t;
+
+/**
+ * @brief Reads the current counter snapshot.
+ *
+ * @param ctx Context; may be NULL.
+ * @param server Target server.
+ * @param out Receives the snapshot.
+ * @return MCP_OK; MCP_ERR_INVALID_ARGUMENT if server or out is NULL.
+ */
+mcp_status_t mcp_server_counters(mcp_context_t *ctx, const mcp_server_t *server,
+                                 mcp_server_counters_t *out);
+
+/**
+ * @brief Tracer event: fired at request begin and end.
+ */
+typedef enum {
+    MCP_TRACE_BEGIN, /**< Routed request started; status and duration_ns are 0. */
+    MCP_TRACE_END,   /**< Request finished; status is 0 or the RPC error code. */
+} mcp_trace_event_t;
+
+/**
+ * @brief Tracer callback signature.
+ *
+ * @param ctx Context of the dispatch.
+ * @param ev BEGIN or END.
+ * @param method Borrowed method string; valid for the call duration.
+ * @param status 0 on BEGIN; 0 or RPC error code on END.
+ * @param duration_ns 0 on BEGIN; CLOCK_MONOTONIC delta on END.
+ * @param userdata Pointer supplied at registration.
+ *
+ * The hook is borrowed and may fire on threadpool workers: it must
+ * be thread-safe and must not call back into the server.
+ */
+typedef void (*mcp_trace_fn)(mcp_context_t *ctx, mcp_trace_event_t ev, const char *method,
+                             int status, uint64_t duration_ns, void *userdata);
+
+/**
+ * @brief Installs or removes the request tracer hook.
+ *
+ * @param ctx Context; may be NULL.
+ * @param server Target server.
+ * @param fn_or_null Tracer callback; NULL removes the hook (zero overhead).
+ * @param userdata Forwarded to the callback.
+ * @return MCP_OK; MCP_ERR_INVALID_ARGUMENT if server is NULL.
+ */
+mcp_status_t mcp_server_set_tracer(mcp_context_t *ctx, mcp_server_t *server,
+                                   mcp_trace_fn fn_or_null, void *userdata);
 
 #endif
