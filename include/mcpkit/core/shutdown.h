@@ -35,8 +35,9 @@ bool mcp_shutdown_requested(void);
 /**
  * @brief Clears a pending shutdown request.
  *
- * Serve loops call this on entry so a stale flag from a previous
- * run does not kill a fresh loop.
+ * Loops never clear the flag themselves, so a request made before a
+ * run takes effect immediately. A host that reuses the process for a
+ * fresh run after a cancelled one must call this first.
  */
 void mcp_shutdown_clear(void);
 

@@ -334,8 +334,6 @@ mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_trans
     if (server == NULL || t == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
-    // A stale flag from a previous run must not kill a fresh loop.
-    mcp_shutdown_clear();
     mcp_session_t *sess = mcp_server_create_session(ctx, server);
     if (sess == NULL) {
         return MCP_ERR_NOMEM;
