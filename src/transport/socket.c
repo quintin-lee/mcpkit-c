@@ -114,7 +114,7 @@ static mcp_status_t sock_send(mcp_context_t *ctx, mcp_transport_t *t, const char
     }
     size_t off = 0;
     while (off < len) {
-        ssize_t n = write(b->fd, data + off, len - off);
+        ssize_t n = send(b->fd, data + off, len - off, MSG_NOSIGNAL);
         if (n < 0) {
             if (errno == EINTR) {
                 continue;
@@ -126,7 +126,9 @@ static mcp_status_t sock_send(mcp_context_t *ctx, mcp_transport_t *t, const char
         }
         off += (size_t)n;
     }
-    if (write(b->fd, "\n", 1) < 0) {
+    // MSG_NOSIGNAL: a peer that closed the socket yields EPIPE ->
+    // MCP_ERR_IO instead of the default SIGPIPE process kill.
+    if (send(b->fd, "\n", 1, MSG_NOSIGNAL) < 0) {
         return MCP_ERR_IO;
     }
     return MCP_OK;
