@@ -15,6 +15,7 @@
 
 #include "mcpkit/logging/logger.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 
 /* Private logger layout. The allocator snapshot captured at create time is
@@ -86,6 +87,18 @@ void mcp_logger_log(mcp_logger_t *logger, mcp_log_level_t level, const char *mes
         return;
     }
     logger->sink(level, message, logger->userdata);
+}
+
+void mcp_logger_logf(mcp_logger_t *logger, mcp_log_level_t level, const char *fmt, ...) {
+    if (logger == NULL || fmt == NULL || level < logger->level) {
+        return;
+    }
+    char buf[256];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    logger->sink(level, buf, logger->userdata);
 }
 
 mcp_logger_t *mcp_logger_default_stderr(const mcp_allocator_t *alloc) {

@@ -35,5 +35,24 @@ int main(void) {
     mcp_logger_t *d = mcp_logger_default_stderr(NULL);
     CHECK(d != NULL);
     mcp_logger_destroy(d);
+    mcp_logger_t *f = mcp_logger_create(NULL, mem_sink, NULL);
+    CHECK(f != NULL);
+    g_len = 0;
+    mcp_logger_logf(f, MCP_LOG_INFO, "%s=%d", "k", 7);
+    CHECK(g_len == 3 && memcmp(g_buf, "k=7", 3) == 0);
+    g_len = 0;
+    mcp_logger_set_level(f, MCP_LOG_ERROR);
+    mcp_logger_logf(f, MCP_LOG_INFO, "suppressed");
+    CHECK(g_len == 0);
+    mcp_logger_set_level(f, MCP_LOG_DEBUG);
+    g_len = 0;
+    char big[300];
+    memset(big, 'x', sizeof(big) - 1);
+    big[sizeof(big) - 1] = '\0';
+    mcp_logger_logf(f, MCP_LOG_INFO, "%s", big);
+    CHECK(g_len == 255);
+    mcp_logger_logf(NULL, MCP_LOG_INFO, "noop");
+    mcp_logger_logf(f, MCP_LOG_INFO, NULL);
+    mcp_logger_destroy(f);
     return 0;
 }

@@ -88,6 +88,20 @@ mcp_log_level_t mcp_logger_get_level(mcp_logger_t *logger);
 void mcp_logger_log(mcp_logger_t *logger, mcp_log_level_t level, const char *message);
 
 /**
+ * @brief Emits a printf-style message at the given level.
+ *
+ * Formats into a 256-byte stack buffer (255 chars + NUL); longer
+ * output is truncated. Otherwise identical to mcp_logger_log:
+ * NULL logger or NULL fmt discards silently, and messages below
+ * the threshold never reach the sink.
+ *
+ * @param logger Target logger; NULL discards silently.
+ * @param level Level of the message.
+ * @param fmt printf-style format; may be NULL (no-op).
+ */
+void mcp_logger_logf(mcp_logger_t *logger, mcp_log_level_t level, const char *fmt, ...);
+
+/**
  * @brief Built-in stderr sink.
  *
  * Writes `[LEVEL] message\n` to stderr. Suitable for use directly as
