@@ -56,6 +56,18 @@ mcp_logger_t    *mcp_context_logger(mcp_context_t *ctx);
 A context is the implicit first argument to almost every API call.
 Pass `NULL` to use all defaults (libc allocator, no logger, builtin JSON).
 
+### `shutdown.h`
+Process-wide graceful-shutdown flag (a `volatile sig_atomic_t`; safe to set
+from a signal handler, never blocks):
+```c
+void mcp_request_shutdown(void);   /* e.g. from SIGTERM/SIGINT handler */
+bool mcp_shutdown_requested(void);
+void mcp_shutdown_clear(void);     /* host calls explicitly before a run */
+```
+`mcp_loop_run` and `mcp_stdio_serve` drain in-flight requests and return
+`MCP_ERR_CANCELLED` once the flag is set. Pair with a finite recv timeout
+so an idle loop wakes up promptly.
+
 ---
 
 ## Logging (`mcpkit/logging/`)
@@ -72,8 +84,13 @@ void          mcp_logger_destroy(mcp_context_t *ctx, mcp_logger_t *l);
 void          mcp_log(mcp_logger_t *l, mcp_log_level_t level,
                       const char *fmt, ...);
 void          mcp_logger_set_sink(mcp_logger_t *l, mcp_log_fn fn, void *ud);
+/* printf-style convenience (truncated to 256 bytes incl. NUL) */
+void          mcp_logger_logf(mcp_logger_t *logger, mcp_log_level_t level,
+                              const char *fmt, ...);
 ```
 Default sink writes to stderr; replace via `mcp_logger_set_sink`.
+The dispatch pipeline logs rejects at WARN/ERROR and lifecycle events at
+INFO; logger is never locked — the host owns thread safety.
 
 ---
 
@@ -272,6 +289,26 @@ void           mcp_server_destroy_session(ctx, s, mcp_session_t *);
 int           mcp_server_dispatch(ctx, s, session, mcp_message_t *req,
                                   mcp_message_t **resp_out);
 int           mcp_server_notify(ctx, s, session, mcp_message_t *notif);
+
+/* Observability: lock-free atomic counters (monotonic, never reset) */
+typedef struct mcp_server_counters {
+    uint64_t requests_total;        /* dispatch entries */
+    uint64_t requests_error;        /* requests ending in an RPC error */
+    uint64_t notifications_total;   /* successful notifications */
+    uint64_t tools_called;          /* tool handler invocations */
+} mcp_server_counters_t;
+int           mcp_server_counters(ctx, s, mcp_server_counters_t *out);
+
+/* Request tracer hook: BEGIN/END per dispatch with method, status
+   (0 on success, RPC code on error) and duration_ns. May fire on worker
+   threads — the callback must be thread-safe and must not call back
+   into the server. */
+typedef enum { MCP_TRACE_BEGIN, MCP_TRACE_END } mcp_trace_event_t;
+typedef void (*mcp_trace_fn)(mcp_context_t *ctx, mcp_trace_event_t ev,
+                             const char *method, int status,
+                             uint64_t duration_ns, void *userdata);
+int           mcp_server_set_tracer(ctx, s, mcp_trace_fn fn_or_null,
+                                    void *userdata);
 ```
 
 ### `tool.h`
@@ -339,6 +376,13 @@ int               mcp_dispatcher_submit(ctx, mcp_dispatcher_t *d,
 int               mcp_dispatcher_process_one(ctx, mcp_dispatcher_t *d,
                                               mcp_message_t **msg_out);
 ```
+Push fails with `MCP_ERR_NOMEM` once the queue holds `MCP_QUEUE_MAX_LEN`
+(1024) messages — the host must drain before pushing more.
+
+List pagination: `tools/list`, `resources/list`, `prompts/list` return at
+most 100 entries per call. Pass the returned `nextCursor` string back as
+`params.cursor` for the next page; the last page omits `nextCursor`.
+A malformed `cursor` fails with `MCP_ERR_INVALID_PARAMS`.
 
 ---
 
@@ -363,6 +407,15 @@ int              mcp_transport_send(ctx, mcp_transport_t *t,
                                     const char *data, size_t len);
 int              mcp_transport_recv(ctx, mcp_transport_t *t, char **line_out);
 void            *mcp_transport_backend(ctx, mcp_transport_t *t);
+
+/* Per-call I/O timeouts in ms (0 = block forever, the default).
+   Stored on the wrapper; socket and stdio backends honor them and
+   return MCP_ERR_TIMEOUT on expiry. */
+int              mcp_transport_set_timeout(ctx, mcp_transport_t *t,
+                                          uint64_t read_ms, uint64_t write_ms);
+int              mcp_transport_get_timeout(ctx, const mcp_transport_t *t,
+                                          uint64_t *read_ms_out,
+                                          uint64_t *write_ms_out);
 ```
 `recv` returns `MCP_ERR_IO` when the input stream is at EOF and there is no
 incomplete line. `send` is fire-and-forget on stdio (line-buffered); on
@@ -376,7 +429,9 @@ int              mcp_stdio_serve(ctx, mcp_server_t *, mcp_transport_t *t);
 ```
 Framing: one JSON-RPC message per line (`\n`-terminated, `\r` stripped).
 Oversized lines (> `MCP_PROTOCOL_MAX_MESSAGE_BYTES` = 4 MB) are discarded
-and `recv` returns `MCP_ERR_PROTOCOL`.
+and `recv` returns `MCP_ERR_PROTOCOL`. Honors the wrapper recv timeout
+(`MCP_ERR_TIMEOUT` on expiry); returns `MCP_ERR_CANCELLED` once
+`mcp_shutdown_requested()` is set.
 
 ### `http.h`
 Buffer-level HTTP/1.1 parser/builder (no sockets).
@@ -429,6 +484,8 @@ int          mcp_client_initialize(ctx, c, const char *client_name,
    returns result (caller destroys). */
 int          mcp_client_ping(ctx, c);
 int          mcp_client_list_tools(ctx, c, mcp_json_value_t **result_out);
+/* list_tools auto-paginates: follows nextCursor and returns the merged
+   {"tools": [...]} object, so callers never see pages. */
 int          mcp_client_call_tool(ctx, c, const char *name,
                                   mcp_json_value_t *args,
                                   mcp_json_value_t **result_out);
@@ -502,7 +559,9 @@ int mcp_loop_run(ctx, mcp_server_t *srv, mcp_transport_t *t,
 When `ex_or_null` is non-NULL, each dispatch job is submitted to the
 executor and the loop waits before the next iteration (sequential,
 session-safe). When `timer_or_null` is non-NULL, `poll` is called before
-every recv.
+every recv. The loop drains in-flight requests and returns
+`MCP_ERR_CANCELLED` once `mcp_shutdown_requested()` is set; a finite
+recv timeout keeps an idle loop responsive to shutdown.
 
 ---
 

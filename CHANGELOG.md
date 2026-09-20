@@ -4,6 +4,24 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ## [Unreleased]
 
+### Added
+
+- Transport I/O timeouts: `mcp_transport_set_timeout` / `get_timeout`
+  (per-call read/write deadlines in ms, 0 = block forever); socket and
+  stdio backends return `MCP_ERR_TIMEOUT` on expiry.
+- Bounded dispatch queue: `MCP_QUEUE_MAX_LEN` (1024); push beyond the
+  cap fails with `MCP_ERR_NOMEM`.
+- Cursor pagination on `tools/list`, `resources/list`, `prompts/list`
+  (100 entries per page via `nextCursor` / `params.cursor`);
+  `mcp_client_list_tools` follows pages and merges them transparently.
+- Graceful shutdown: `mcp_request_shutdown()` /
+  `mcp_shutdown_requested()` / `mcp_shutdown_clear()`; `mcp_loop_run`
+  and `mcp_stdio_serve` drain in-flight requests and return
+  `MCP_ERR_CANCELLED`.
+- Observability: `mcp_logger_logf` formatter, dispatch-path log sites,
+  atomic `mcp_server_counters()` snapshot, `mcp_server_set_tracer()`
+  BEGIN/END request hook.
+
 ## [0.1.0] - 2026-09-20
 
 ### Added
