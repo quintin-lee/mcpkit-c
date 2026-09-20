@@ -163,10 +163,6 @@ bool mcp_idset_contains(mcp_context_t *ctx, const mcp_idset_t *set,
 }
 
 static const char *const k_l2_only_methods[] = {
-    "resources/templates/list",
-    "resources/subscribe",
-    "resources/unsubscribe",
-    "logging/setLevel",
     "notifications/cancelled",
     "notifications/progress",
     "notifications/tools/list_changed",
@@ -324,6 +320,15 @@ mcp_status_t mcp_validate_params(mcp_context_t *ctx, const mcp_message_t *msg,
         if (ref == NULL || arg == NULL ||
             mcp_json_type(ctx, ref) != MCP_JSON_OBJECT ||
             mcp_json_type(ctx, arg) != MCP_JSON_OBJECT) {
+            goto invalid;
+        }
+    } else if (strcmp(method, "logging/setLevel") == 0) {
+        if (require_string_param(ctx, params, "level") != MCP_OK) {
+            goto invalid;
+        }
+    } else if (strcmp(method, "resources/subscribe") == 0 ||
+               strcmp(method, "resources/unsubscribe") == 0) {
+        if (require_string_param(ctx, params, "uri") != MCP_OK) {
             goto invalid;
         }
     }

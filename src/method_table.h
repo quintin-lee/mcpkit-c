@@ -20,9 +20,13 @@ static const char *const k_mcp_server_methods[] = {
     "completion/list",
     "completion/complete",
     "notifications/initialized",
+    "logging/setLevel",
+    "resources/subscribe",
+    "resources/unsubscribe",
+    "resources/templates/list",
 };
 
-#define MCP_SERVER_METHOD_COUNT 11
+#define MCP_SERVER_METHOD_COUNT 15
 
 _Static_assert(sizeof(k_mcp_server_methods) / sizeof(*k_mcp_server_methods) ==
                    MCP_SERVER_METHOD_COUNT,

@@ -51,6 +51,29 @@ static void dlogf(mcp_context_t *ctx, mcp_log_level_t level, const char *fmt, ..
     mcp_logger_log(lg, level, buf);
 }
 
+// Dispatch-route log variant: consults the server's log floor set by
+// logging/setLevel so an operator can quiet verbose routes at runtime.
+// Serve-loop stations (loop.c/stdio.c) have no server and stay
+// logger-level-filtered only.
+static void dlogf_srv(mcp_context_t *ctx, mcp_server_t *srv, mcp_log_level_t level,
+                      const char *fmt, ...) {
+    if (level < srv->log_floor) {
+        return;
+    }
+    // Forward to the plain variant to keep a single formatting path.
+    va_list ap;
+    va_start(ap, fmt);
+    mcp_logger_t *lg = mcp_context_logger(ctx);
+    if (lg == NULL) {
+        va_end(ap);
+        return;
+    }
+    char buf[256];
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    mcp_logger_log(lg, level, buf);
+}
+
 // Monotonic nanoseconds for tracer durations.
 static uint64_t trace_now(void) {
     struct timespec ts;
@@ -330,7 +353,7 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
     mcp_status_t st = tool->handler(ctx, s, args, tool->user_data, &result);
     atomic_fetch_add(&srv->c_tools_called, 1);
     if (st != MCP_OK) {
-        dlogf(ctx, MCP_LOG_WARN, "event=tool_error tool=%s status=%s", name,
+        dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=tool_error tool=%s status=%s", name,
               mcp_status_string(st));
         return tool_error_result(ctx, req, st);
     }
@@ -620,8 +643,115 @@ static mcp_message_t *route_completion_complete(mcp_context_t *ctx, mcp_server_t
     return resp;
 }
 
+static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s,
+                                     const mcp_message_t *req, const char *method) {
+    (void)s;
+    // Returns NULL when method is not one of the advanced routes so the
+    // caller falls through to the unknown_method handler.
+    if (strcmp(method, "logging/setLevel") == 0) {
+        const mcp_json_value_t *params = mcp_message_params(ctx, req);
+        const char *lvl = NULL;
+        if (params == NULL || get_string(ctx, params, "level", &lvl) != MCP_OK || lvl == NULL) {
+            return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "logging/setLevel: missing level");
+        }
+        mcp_log_level_t mapped;
+        if (strcmp(lvl, "debug") == 0) {
+            mapped = MCP_LOG_DEBUG;
+        } else if (strcmp(lvl, "info") == 0 || strcmp(lvl, "notice") == 0) {
+            mapped = MCP_LOG_INFO;
+        } else if (strcmp(lvl, "warning") == 0 || strcmp(lvl, "warn") == 0) {
+            mapped = MCP_LOG_WARN;
+        } else if (strcmp(lvl, "error") == 0) {
+            mapped = MCP_LOG_ERROR;
+        } else {
+            return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "logging/setLevel: bad level");
+        }
+        srv->log_floor = mapped;
+        mcp_json_value_t *result = mcp_json_object_new(ctx);
+        if (result == NULL) {
+            return NULL;
+        }
+        mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
+        if (resp == NULL) {
+            mcp_json_destroy(ctx, result);
+        }
+        return resp;
+    }
+    if (strcmp(method, "resources/subscribe") == 0 ||
+        strcmp(method, "resources/unsubscribe") == 0) {
+        const mcp_json_value_t *params = mcp_message_params(ctx, req);
+        const char *uri = NULL;
+        if (params == NULL || get_string(ctx, params, "uri", &uri) != MCP_OK || uri == NULL) {
+            return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "missing uri");
+        }
+        bool is_sub = strcmp(method, "resources/subscribe") == 0;
+        if (is_sub) {
+            bool seen = false;
+            for (size_t i = 0; i < srv->n_subscribed; i++) {
+                if (strcmp(srv->subscribed_uris[i], uri) == 0) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) {
+                if (srv->n_subscribed == srv->cap_subscribed) {
+                    size_t ncap = srv->cap_subscribed == 0 ? 4 : srv->cap_subscribed * 2;
+                    char **nu = srv_realloc(ctx, srv->subscribed_uris, ncap * sizeof(*nu));
+                    if (nu == NULL) {
+                        return NULL;
+                    }
+                    srv->subscribed_uris = nu;
+                    srv->cap_subscribed = ncap;
+                }
+                char *copy = srv_strdup(ctx, uri);
+                if (copy == NULL) {
+                    return NULL;
+                }
+                srv->subscribed_uris[srv->n_subscribed++] = copy;
+            }
+        } else {
+            for (size_t i = 0; i < srv->n_subscribed; i++) {
+                if (strcmp(srv->subscribed_uris[i], uri) == 0) {
+                    srv_free(ctx, srv->subscribed_uris[i]);
+                    srv->subscribed_uris[i] = srv->subscribed_uris[--srv->n_subscribed];
+                    break;
+                }
+            }
+        }
+        mcp_json_value_t *result = mcp_json_object_new(ctx);
+        if (result == NULL) {
+            return NULL;
+        }
+        mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
+        if (resp == NULL) {
+            mcp_json_destroy(ctx, result);
+        }
+        return resp;
+    }
+    if (strcmp(method, "resources/templates/list") == 0) {
+        mcp_json_value_t *result = mcp_json_object_new(ctx);
+        mcp_json_value_t *arr = mcp_json_array_new(ctx);
+        if (result == NULL || arr == NULL) {
+            mcp_json_destroy(ctx, result);
+            mcp_json_destroy(ctx, arr);
+            return NULL;
+        }
+        if (mcp_json_object_set_take(ctx, result, "templates", arr) != MCP_OK) {
+            // set_take owns (and freed) arr on failure; result is still ours.
+            mcp_json_destroy(ctx, result);
+            return NULL;
+        }
+        mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
+        if (resp == NULL) {
+            mcp_json_destroy(ctx, result);
+        }
+        return resp;
+    }
+    return NULL;
+}
+
 static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s,
-                                    const mcp_message_t *req, const char *method) {
+                                     const mcp_message_t *req, const char *method) {
     // Method names come from method_table.h so the route table and the
     // validate.c L2 table can never drift apart.
     if (strcmp(method, k_mcp_server_methods[0]) == 0) {
@@ -662,7 +792,11 @@ static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_s
     if (strcmp(method, k_mcp_server_methods[9]) == 0) {
         return route_completion_complete(ctx, srv, s, req);
     }
-    dlogf(ctx, MCP_LOG_WARN, "event=unknown_method method=%s", method);
+    mcp_message_t *adv = route_advanced(ctx, srv, s, req, method);
+    if (adv != NULL) {
+        return adv;
+    }
+    dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=unknown_method method=%s", method);
     // No counter or trace here: dispatch counts error responses and
     // fires END centrally after route_request returns; doing it here
     // would double both.
@@ -681,20 +815,20 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
     atomic_fetch_add(&srv->c_requests_total, 1);
     int code = 0;
     if (mcp_message_validate(ctx, req, &code) != MCP_OK) {
-        dlogf(ctx, MCP_LOG_WARN, "event=invalid_request code=%d", code);
+        dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=invalid_request code=%d", code);
         atomic_fetch_add(&srv->c_requests_error, 1);
         *resp_out = err_resp(ctx, req, code, "invalid request");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
     const char *method = mcp_message_method(ctx, req);
     if (method == NULL) {
-        dlogf(ctx, MCP_LOG_WARN, "event=missing_method");
+        dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=missing_method");
         atomic_fetch_add(&srv->c_requests_error, 1);
         *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "missing method");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
     if (!session->initialized && strcmp(method, "initialize") != 0) {
-        dlogf(ctx, MCP_LOG_WARN, "event=uninitialized method=%s", method);
+        dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=uninitialized method=%s", method);
         atomic_fetch_add(&srv->c_requests_error, 1);
         *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "session not initialized");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
@@ -705,13 +839,13 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
         double id_num = 0;
         mcp_message_id_number(ctx, req, &id_num);
         if (mcp_idset_contains(ctx, session->ids, id_type, id_str, id_num)) {
-            dlogf(ctx, MCP_LOG_WARN, "event=duplicate_id method=%s", method);
+            dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=duplicate_id method=%s", method);
             atomic_fetch_add(&srv->c_requests_error, 1);
             *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "duplicate request id");
             return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
         }
         if (mcp_idset_add(ctx, session->ids, id_type, id_str, id_num) != MCP_OK) {
-            dlogf(ctx, MCP_LOG_ERROR, "event=id_tracking_failed method=%s", method);
+            dlogf_srv(ctx, srv, MCP_LOG_ERROR, "event=id_tracking_failed method=%s", method);
             atomic_fetch_add(&srv->c_requests_error, 1);
             *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "id tracking failed");
             return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
@@ -721,7 +855,7 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
     trace_begin(ctx, srv, method);
     mcp_message_t *resp = route_request(ctx, srv, session, req, method);
     if (resp == NULL) {
-        dlogf(ctx, MCP_LOG_ERROR, "event=route_failed method=%s", method);
+        dlogf_srv(ctx, srv, MCP_LOG_ERROR, "event=route_failed method=%s", method);
         atomic_fetch_add(&srv->c_requests_error, 1);
         trace_end(ctx, srv, method, t0, MCP_RPC_INTERNAL_ERROR);
         *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "internal error");

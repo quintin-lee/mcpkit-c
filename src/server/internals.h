@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "mcpkit/core/context.h"
+#include "mcpkit/logging/log.h"
 #include "mcpkit/protocol/validate.h"
 #include "mcpkit/server/resource.h"
 #include "mcpkit/server/prompt.h"
@@ -95,6 +96,14 @@ struct mcp_server {
     mcp_message_t **outbox;
     size_t n_outbox;
     size_t cap_outbox;
+    // Advanced-method state (Phase 5): log floor consulted by dlogf on
+    // dispatch routes, the resource-subscription uri set, and the
+    // server-originated request id counter (starts 1.0, monotonic per-server).
+    mcp_log_level_t log_floor;
+    char **subscribed_uris;
+    size_t n_subscribed;
+    size_t cap_subscribed;
+    double next_server_id;
 };
 
 struct mcp_queue {

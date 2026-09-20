@@ -61,6 +61,8 @@ mcp_server_t *mcp_server_create(mcp_context_t *ctx, const char *name, const char
     atomic_init(&srv->c_requests_error, 0);
     atomic_init(&srv->c_notifications_total, 0);
     atomic_init(&srv->c_tools_called, 0);
+    srv->log_floor = MCP_LOG_DEBUG;
+    srv->next_server_id = 1.0;
     srv->name = srv_strdup(ctx, name);
     srv->version = srv_strdup(ctx, version);
     if (srv->name == NULL || srv->version == NULL) {
@@ -118,6 +120,17 @@ static void free_outbox(mcp_context_t *ctx, mcp_server_t *srv) {
     srv->cap_outbox = 0;
 }
 
+// Resource-subscription set: each entry is a srv_strdup'd uri owned by
+// the server; freed in bulk at teardown.
+static void free_subscribed(mcp_context_t *ctx, mcp_server_t *srv) {
+    for (size_t i = 0; i < srv->n_subscribed; i++) {
+        srv_free(ctx, srv->subscribed_uris[i]);
+    }
+    srv_free(ctx, srv->subscribed_uris);
+    srv->n_subscribed = 0;
+    srv->cap_subscribed = 0;
+}
+
 void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     if (srv == NULL) {
         return;
@@ -128,6 +141,7 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     free_all_prompts(ctx, srv);
     free_all_completions(ctx, srv);
     free_outbox(ctx, srv);
+    free_subscribed(ctx, srv);
     srv_free(ctx, srv->name);
     srv_free(ctx, srv->version);
     srv_free(ctx, srv);
