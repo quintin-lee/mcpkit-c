@@ -12,6 +12,7 @@
  * @see mcpkit-runtime
  * @see mcpkit-apps
  * @see mcpkit-plugin
+ * @see mcpkit-logging
  *
  * Including this one header is enough for applications that use several
  * layers; library authors that need only a slice can include the

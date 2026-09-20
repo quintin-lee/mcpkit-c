@@ -11,7 +11,7 @@
  * @defgroup mcpkit-core Core
  * @brief Opaque handle types, allocator, context, error codes, version.
  * @ingroup mcpkit-core
- * @see mcpkit-json, mcpkit-logging
+ * @see mcpkit-json
  */
 
 #ifndef MCPKIT_CORE_TYPES_H

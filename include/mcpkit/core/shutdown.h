@@ -1,6 +1,7 @@
 /**
  * @file shutdown.h
  * @brief Process-wide graceful-shutdown flag for serve loops.
+ * @ingroup mcpkit-core
  *
  * A single async-signal-safe flag shared by all serve loops in the
  * process. The library never installs signal handlers: the host

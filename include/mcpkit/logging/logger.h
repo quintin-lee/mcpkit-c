@@ -7,6 +7,9 @@
  * the configured threshold are discarded before reaching the sink,
  * so sinks can be expensive (e.g. network) without paying for
  * suppressed levels.
+ *
+ * @ingroup mcpkit-logging
+ * @see mcpkit-core
  */
 
 #ifndef MCPKIT_LOGGING_LOGGER_H
