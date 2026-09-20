@@ -21,6 +21,19 @@ Format follows Keep a Changelog. Versions follow SemVer.
 - Observability: `mcp_logger_logf` formatter, dispatch-path log sites,
   atomic `mcp_server_counters()` snapshot, `mcp_server_set_tracer()`
   BEGIN/END request hook.
+- Protocol honesty: one shared method table (`method_table.h`)
+  between L2 validation and the dispatcher route; the 15 spec-known
+  but unimplemented methods (roots, sampling, elicitation, resource
+  subscriptions, ...) are no longer silent — a request for one is
+  answered `-32601` Method Not Found, while the NOTIFICATION kind of
+  `notifications/initialized` is still consumed by the dispatcher.
+- Server→client push: `mcp_server_notify_client()` enqueues a
+  notification in a per-server outbox; `mcp_server_outbox_pop()`
+  drains it. `mcp_stdio_serve` and `mcp_loop_run` flush the outbox
+  before each read, so tool handlers can push updates mid-request.
+- Example hardening: `socket-server` handlers migrated from the
+  error-prone chained-`object_set` pattern to
+  `mcp_json_object_set_take`.
 
 ## [0.1.0] - 2026-09-20
 

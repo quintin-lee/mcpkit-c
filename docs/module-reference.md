@@ -257,7 +257,9 @@ Three-level pipeline. All functions return `mcp_status_t`.
 /* L1: JSON-RPC envelope — jsonrpc=="2.0", exactly one of result/error */
 int mcp_message_validate_envelope(ctx, const mcp_message_t *msg);
 
-/* L2: known method name (25-method table; responses skip this level) */
+/* L2: known method name (shared 11-method server table + 15 spec-known
+   non-routed names; responses skip this level). A request naming a
+   non-routed method passes L2 and is answered -32601 by the dispatcher. */
 int mcp_message_validate_method(ctx, const mcp_message_t *msg);
 
 /* L3: per-method params rules (incl. full initialize params validation) */
@@ -289,6 +291,15 @@ void           mcp_server_destroy_session(ctx, s, mcp_session_t *);
 int           mcp_server_dispatch(ctx, s, session, mcp_message_t *req,
                                   mcp_message_t **resp_out);
 int           mcp_server_notify(ctx, s, session, mcp_message_t *notif);
+
+/* Server->client push: enqueue a notification; drained by serve loops
+   (mcp_stdio_serve / mcp_loop_run) or a host-owned transport. TAKES
+   params on OK, caller retains on error. */
+int           mcp_server_notify_client(ctx, s, const char *method,
+                                       mcp_json_value_t *params);
+/* Pop one pending push (LIFO); caller owns and destroys the message.
+   MCP_ERR_NOT_FOUND with *out = NULL when empty. */
+int           mcp_server_outbox_pop(ctx, s, mcp_message_t **out);
 
 /* Observability: lock-free atomic counters (monotonic, never reset) */
 typedef struct mcp_server_counters {
