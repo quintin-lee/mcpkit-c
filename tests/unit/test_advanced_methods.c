@@ -38,6 +38,46 @@ static mcp_json_value_t *obj_pair(mcp_context_t *ctx, const char *key, const cha
     return o;
 }
 
+/* notifications/cancelled + notifications/progress are CONSUMED as notifications
+ * (counter++, DEBUG log) — not routed as requests. */
+static void t_notifications_consumed(mcp_context_t *ctx, mcp_server_t *srv,
+                                     mcp_session_t *s) {
+    mcp_server_counters_t c0;
+    CHECK(mcp_server_counters(ctx, srv, &c0) == MCP_OK);
+    mcp_message_t *n = mcp_notification_new(ctx, "notifications/cancelled",
+                                             mcp_json_null_new(ctx));
+    CHECK(n != NULL);
+    CHECK(mcp_server_notify(ctx, srv, s, n) == MCP_OK);
+    mcp_message_destroy(ctx, n);
+    n = mcp_notification_new(ctx, "notifications/progress", mcp_json_null_new(ctx));
+    CHECK(n != NULL);
+    CHECK(mcp_server_notify(ctx, srv, s, n) == MCP_OK);
+    mcp_message_destroy(ctx, n);
+    mcp_server_counters_t c1;
+    CHECK(mcp_server_counters(ctx, srv, &c1) == MCP_OK);
+    CHECK(c1.notifications_total == c0.notifications_total + 2);
+}
+
+/* mcp_server_request_client pushes a number-id request into the outbox. */
+static void t_request_client(mcp_context_t *ctx, mcp_server_t *srv) {
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    CHECK(params != NULL);
+    CHECK(mcp_server_request_client(ctx, srv, "roots/list", params) == MCP_OK);
+    mcp_message_t *out = NULL;
+    CHECK(mcp_server_outbox_pop(ctx, srv, &out) == MCP_OK);
+    CHECK(out != NULL);
+    CHECK(mcp_message_kind(ctx, out) == MCP_MSG_REQUEST);
+    const char *method = mcp_message_method(ctx, out);
+    CHECK(method != NULL && strcmp(method, "roots/list") == 0);
+    mcp_message_destroy(ctx, out);
+    /* NULL params is valid (request with no params). */
+    CHECK(mcp_server_request_client(ctx, srv, "sampling/createMessage", NULL) == MCP_OK);
+    CHECK(mcp_server_outbox_pop(ctx, srv, &out) == MCP_OK);
+    mcp_message_destroy(ctx, out);
+    /* NULL guards. */
+    CHECK(mcp_server_request_client(ctx, NULL, "roots/list", NULL) == MCP_ERR_INVALID_ARGUMENT);
+}
+
 int main(void) {
     mcp_logger_t *lg = mcp_logger_create(NULL, mem_sink, NULL);
     CHECK(lg != NULL);
@@ -100,24 +140,26 @@ int main(void) {
     CHECK(mcp_json_array_size(ctx, tpl) == 0);
     mcp_message_destroy(ctx, r);
 
-    // --- floor effect on dlogf: set floor to error -> WARNs suppressed;
-    //     reset to debug -> WARNs recorded again. Use roots/list (routed-but-
-    //     no-handler -> -32601 + unknown_method WARN at floor DEBUG). ---
-    r = dispatch_new(ctx, srv, s, "s3", "logging/setLevel", obj_pair(ctx, "level", "error"));
+    // --- floor effect on dlogf: roots/list -> -32601 + unknown_method WARN
+    //     (suppressed when floor is raised above WARN; restored at DEBUG). ---
+    r = dispatch_new(ctx, srv, s, "s3", "logging/setLevel",
+                     obj_pair(ctx, "level", "error")); // floor=ERROR
     mcp_message_destroy(ctx, r);
-    int warns_before = g_warns;
-    r = dispatch_new(ctx, srv, s, "f1", "logging/setLevel",
-                     obj_pair(ctx, "level", "bogus")); // this one's WARN is a param err, level WARN
+    int warns_at_error = g_warns;
+    r = dispatch_new(ctx, srv, s, "q1", "roots/list", NULL); // WARN suppressed
     mcp_message_destroy(ctx, r);
-    // unknown_method path is a WARN event; with floor=ERROR it must be suppressed.
-    // (The bogus-level -32602 path is routed, no unknown_method WARN emitted.)
-    int warns_after_suppressed = g_warns;
-    r = dispatch_new(ctx, srv, s, "s4", "logging/setLevel", obj_pair(ctx, "level", "debug"));
+    CHECK(g_warns == warns_at_error);
+    r = dispatch_new(ctx, srv, s, "s4", "logging/setLevel",
+                     obj_pair(ctx, "level", "debug")); // floor=DEBUG
     mcp_message_destroy(ctx, r);
-    int warns_restored = g_warns;
-    (void)warns_before;
-    (void)warns_after_suppressed;
-    (void)warns_restored; // verified at gate; counters asserted in T2 test
+    int warns_at_debug = g_warns;
+    r = dispatch_new(ctx, srv, s, "q2", "roots/list", NULL); // WARN recorded
+    mcp_message_destroy(ctx, r);
+    CHECK(g_warns == warns_at_debug + 1);
+    (void)warns_at_error;
+
+    t_notifications_consumed(ctx, srv, s);
+    t_request_client(ctx, srv);
 
     mcp_server_destroy(ctx, srv);
     mcp_context_destroy(ctx);

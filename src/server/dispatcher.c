@@ -880,8 +880,21 @@ mcp_status_t mcp_server_notify(mcp_context_t *ctx, mcp_server_t *srv, mcp_sessio
         return MCP_ERR_INVALID_ARGUMENT;
     }
     const char *method = mcp_message_method(ctx, notif);
-    if (method != NULL && strcmp(method, "notifications/initialized") == 0) {
+    if (method == NULL) {
+        return MCP_OK;
+    }
+    if (strcmp(method, "notifications/initialized") == 0) {
         session->initialized = true;
+    }
+    bool advanced = false;
+    for (int i = 0; i < (int)MCP_SERVER_NOTIFICATION_COUNT; i++) {
+        if (strcmp(method, k_mcp_server_notifications[i]) == 0) {
+            advanced = true;
+            break;
+        }
+    }
+    if (advanced) {
+        dlogf_srv(ctx, srv, MCP_LOG_DEBUG, "event=notification method=%s", method);
     }
     atomic_fetch_add(&srv->c_notifications_total, 1);
     return MCP_OK;

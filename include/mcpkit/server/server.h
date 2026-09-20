@@ -352,4 +352,26 @@ typedef void (*mcp_trace_fn)(mcp_context_t *ctx, mcp_trace_event_t ev, const cha
 mcp_status_t mcp_server_set_tracer(mcp_context_t *ctx, mcp_server_t *server,
                                    mcp_trace_fn fn_or_null, void *userdata);
 
+/**
+ * @brief Push a server->client number-id request into the outbox.
+ *
+ * For roots/list, sampling/createMessage, elicitation/create and similar
+ * client-capability requests the server needs a response. The request is
+ * built with mcp_request_new_number_id using the server's next_server_id
+ * counter and appended to the per-server outbox; serve loops drain the
+ * outbox before each transport read.
+ *
+ * On success the server TAKES ownership of @p params (or uses NULL params);
+ * on failure the caller retains @p params.
+ *
+ * @param ctx    Context; may be NULL.
+ * @param server Target server.
+ * @param method Method string; copied into the message.
+ * @param params Owned JSON params; may be NULL.
+ * @return MCP_OK on success; MCP_ERR_NOMEM if the message or outbox cannot
+ *         be built; MCP_ERR_INVALID_ARGUMENT if server or method is NULL.
+ */
+mcp_status_t mcp_server_request_client(mcp_context_t *ctx, mcp_server_t *server,
+                                       const char *method, mcp_json_value_t *params);
+
 #endif

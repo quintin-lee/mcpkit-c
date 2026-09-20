@@ -358,7 +358,7 @@ mcp_status_t mcp_server_notify_client(mcp_context_t *ctx, mcp_server_t *srv,
 }
 
 mcp_status_t mcp_server_outbox_pop(mcp_context_t *ctx, mcp_server_t *srv,
-                                   mcp_message_t **out) {
+                                    mcp_message_t **out) {
     if (srv == NULL || out == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
@@ -368,5 +368,31 @@ mcp_status_t mcp_server_outbox_pop(mcp_context_t *ctx, mcp_server_t *srv,
     }
     *out = srv->outbox[--srv->n_outbox];
     srv->outbox[srv->n_outbox] = NULL;
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_request_client(mcp_context_t *ctx, mcp_server_t *srv,
+                                       const char *method, mcp_json_value_t *params) {
+    if (srv == NULL || method == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    // Server takes params on success; builder retains on failure (no leak).
+    double id = srv->next_server_id;
+    srv->next_server_id += 1.0;
+    mcp_message_t *req = mcp_request_new_number_id(ctx, id, method, params);
+    if (req == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    if (srv->n_outbox == srv->cap_outbox) {
+        size_t ncap = srv->cap_outbox == 0 ? 4 : srv->cap_outbox * 2;
+        mcp_message_t **narr = srv_realloc(ctx, srv->outbox, ncap * sizeof(*narr));
+        if (narr == NULL) {
+            mcp_message_destroy(ctx, req);
+            return MCP_ERR_NOMEM;
+        }
+        srv->outbox = narr;
+        srv->cap_outbox = ncap;
+    }
+    srv->outbox[srv->n_outbox++] = req;
     return MCP_OK;
 }

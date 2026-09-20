@@ -162,14 +162,14 @@ bool mcp_idset_contains(mcp_context_t *ctx, const mcp_idset_t *set,
     return id_find(set, type, s, n) >= 0;
 }
 
+/*
+ * L2-only methods: spec names this build exposes (to L2) but does not
+ * route to a handler. Requests for these honestly fall through to
+ * route fallback -> -32601. The 7 notification names now live in
+ * k_mcp_server_notifications (method_table.h) and are covered by the
+ * k_mcp_server_methods loop above only when the kind is NOTIFICATION.
+ */
 static const char *const k_l2_only_methods[] = {
-    "notifications/cancelled",
-    "notifications/progress",
-    "notifications/tools/list_changed",
-    "notifications/resources/list_changed",
-    "notifications/resources/updated",
-    "notifications/prompts/list_changed",
-    "notifications/message",
     "roots/list",
     "roots/list_changed",
     "sampling/createMessage",
@@ -190,6 +190,11 @@ bool mcp_method_known(const char *method) {
     }
     for (size_t i = 0; i < sizeof(k_l2_only_methods) / sizeof(k_l2_only_methods[0]); i++) {
         if (strcmp(method, k_l2_only_methods[i]) == 0) {
+            return true;
+        }
+    }
+    for (size_t i = 0; i < MCP_SERVER_NOTIFICATION_COUNT; i++) {
+        if (strcmp(method, k_mcp_server_notifications[i]) == 0) {
             return true;
         }
     }
