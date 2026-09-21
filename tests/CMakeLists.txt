@@ -97,6 +97,10 @@ add_executable(test_client_e2e unit/test_client_e2e.c)
 target_link_libraries(test_client_e2e PRIVATE mcpkit_core)
 add_test(NAME test_client_e2e COMMAND test_client_e2e)
 
+add_executable(test_client_providers unit/test_client_providers.c)
+target_link_libraries(test_client_providers PRIVATE mcpkit_core)
+add_test(NAME test_client_providers COMMAND test_client_providers)
+
 add_executable(test_executor unit/test_executor.c)
 target_link_libraries(test_executor PRIVATE mcpkit_core)
 add_test(NAME test_executor COMMAND test_executor)

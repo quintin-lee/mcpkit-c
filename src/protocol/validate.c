@@ -171,7 +171,6 @@ bool mcp_idset_contains(mcp_context_t *ctx, const mcp_idset_t *set,
  */
 static const char *const k_l2_only_methods[] = {
     "roots/list",
-    "roots/list_changed",
     "sampling/createMessage",
     "elicitation/create",
 };

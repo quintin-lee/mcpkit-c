@@ -38,6 +38,12 @@ mcp_client_t *mcp_client_create(mcp_context_t *ctx, mcp_transport_t *transport) 
     c->t = transport;
     c->next_id = 1.0;
     c->version = NULL;
+    c->roots_fn = NULL;
+    c->roots_ud = NULL;
+    c->sample_fn = NULL;
+    c->sample_ud = NULL;
+    c->elicitation_fn = NULL;
+    c->elicitation_ud = NULL;
     return c;
 }
 
@@ -400,4 +406,114 @@ mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
         return MCP_ERR_NOMEM;
     }
     return mcp_client_request(ctx, client, "completion/complete", params, result_out);
+}
+
+void mcp_client_set_roots_provider(mcp_context_t *ctx, mcp_client_t *c,
+                                   mcp_client_roots_fn fn, void *user_data) {
+    (void)ctx;
+    if (c == NULL) {
+        return;
+    }
+    c->roots_fn = fn;
+    c->roots_ud = user_data;
+}
+
+void mcp_client_set_sample_provider(mcp_context_t *ctx, mcp_client_t *c,
+                                    mcp_client_sample_fn fn, void *user_data) {
+    (void)ctx;
+    if (c == NULL) {
+        return;
+    }
+    c->sample_fn = fn;
+    c->sample_ud = user_data;
+}
+
+void mcp_client_set_elicitation_provider(mcp_context_t *ctx, mcp_client_t *c,
+                                        mcp_client_elicitation_fn fn, void *user_data) {
+    (void)ctx;
+    if (c == NULL) {
+        return;
+    }
+    c->elicitation_fn = fn;
+    c->elicitation_ud = user_data;
+}
+
+mcp_status_t mcp_client_handle_server_request(mcp_context_t *ctx, mcp_client_t *c,
+                                              const mcp_message_t *req,
+                                              mcp_message_t **resp_out) {
+    if (c == NULL || req == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    *resp_out = NULL;
+
+    const char *method = mcp_message_method(ctx, req);
+    if (method == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    const mcp_json_value_t *params = mcp_message_params(ctx, req);
+
+    if (strcmp(method, "roots/list") == 0) {
+        if (c->roots_fn == NULL) {
+            *resp_out = mcp_response_err_new(ctx, req, MCP_RPC_METHOD_NOT_FOUND,
+                                             "roots not supported", NULL);
+            return *resp_out != NULL ? MCP_OK : MCP_ERR_NOMEM;
+        }
+        mcp_json_value_t *result = c->roots_fn(ctx, c->roots_ud);
+        if (result == NULL) {
+            *resp_out = mcp_response_err_new(ctx, req, MCP_RPC_METHOD_NOT_FOUND,
+                                             "roots not supported", NULL);
+            return *resp_out != NULL ? MCP_OK : MCP_ERR_NOMEM;
+        }
+        *resp_out = mcp_response_ok_new(ctx, req, result);
+        if (*resp_out == NULL) {
+            mcp_json_destroy(ctx, result);
+            return MCP_ERR_NOMEM;
+        }
+        return MCP_OK;
+    }
+
+    if (strcmp(method, "sampling/createMessage") == 0) {
+        if (c->sample_fn == NULL) {
+            *resp_out = mcp_response_err_new(ctx, req, MCP_RPC_METHOD_NOT_FOUND,
+                                             "sampling not supported", NULL);
+            return *resp_out != NULL ? MCP_OK : MCP_ERR_NOMEM;
+        }
+        mcp_json_value_t *result = c->sample_fn(ctx, params, c->sample_ud);
+        if (result == NULL) {
+            *resp_out = mcp_response_err_new(ctx, req, MCP_RPC_METHOD_NOT_FOUND,
+                                             "sampling not supported", NULL);
+            return *resp_out != NULL ? MCP_OK : MCP_ERR_NOMEM;
+        }
+        *resp_out = mcp_response_ok_new(ctx, req, result);
+        if (*resp_out == NULL) {
+            mcp_json_destroy(ctx, result);
+            return MCP_ERR_NOMEM;
+        }
+        return MCP_OK;
+    }
+
+    if (strcmp(method, "elicitation/create") == 0) {
+        if (c->elicitation_fn == NULL) {
+            *resp_out = mcp_response_err_new(ctx, req, MCP_RPC_METHOD_NOT_FOUND,
+                                             "elicitation not supported", NULL);
+            return *resp_out != NULL ? MCP_OK : MCP_ERR_NOMEM;
+        }
+        mcp_json_value_t *result = c->elicitation_fn(ctx, params, c->elicitation_ud);
+        if (result == NULL) {
+            *resp_out = mcp_response_err_new(ctx, req, MCP_RPC_METHOD_NOT_FOUND,
+                                             "elicitation not supported", NULL);
+            return *resp_out != NULL ? MCP_OK : MCP_ERR_NOMEM;
+        }
+        *resp_out = mcp_response_ok_new(ctx, req, result);
+        if (*resp_out == NULL) {
+            mcp_json_destroy(ctx, result);
+            return MCP_ERR_NOMEM;
+        }
+        return MCP_OK;
+    }
+
+    *resp_out = mcp_response_err_new(ctx, req, MCP_RPC_METHOD_NOT_FOUND,
+                                     "unknown method", NULL);
+    return *resp_out != NULL ? MCP_OK : MCP_ERR_NOMEM;
 }

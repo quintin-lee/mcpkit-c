@@ -200,6 +200,116 @@ mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
                                  const char *ref, mcp_json_value_t *args,
                                  mcp_json_value_t **result_out);
 
+/**
+ * @brief Host-injected callback that responds to a roots/list request
+ *        sent by the server to the client.
+ *
+ * The callback receives ctx and user_data.  It returns an owned JSON
+ * array of Root objects ([{uri, name?}, …]) that the client will send
+ * as the result of the roots/list request.  Return NULL if the host
+ * does not support roots; the client will reply with a -32601 error.
+ */
+typedef mcp_json_value_t *(*mcp_client_roots_fn)(mcp_context_t *ctx, void *user_data);
+
+/**
+ * @brief Registers the host's roots provider on the client.
+ *
+ * fn is stored on the client; user_data is passed back to fn on each
+ * invocation.  A NULL fn clears the provider (client replies -32601 to
+ * any roots/list request).
+ *
+ * @param ctx Context; may be NULL (default allocator).
+ * @param c Target client; must not be NULL.
+ * @param fn Provider callback, or NULL to clear.
+ * @param user_data Opaque pointer passed to fn on each call.
+ */
+void mcp_client_set_roots_provider(mcp_context_t *ctx, mcp_client_t *c,
+                                   mcp_client_roots_fn fn, void *user_data);
+
+/**
+ * @brief Host-injected callback that responds to a sampling/createMessage
+ *        request sent by the server to the client.
+ *
+ * The callback receives the request parameters (messages, modelPreferences,
+ * systemPrompt, maxTokens) as a single JSON object and returns an owned
+ * result JSON object conforming to the spec's sampling response shape
+ * ({role, content, model, stopReason}).  Return NULL if sampling is not
+ * supported; the client will reply with a -32601 error.
+ */
+typedef mcp_json_value_t *(*mcp_client_sample_fn)(mcp_context_t *ctx,
+                                                   const mcp_json_value_t *params,
+                                                   void *user_data);
+
+/**
+ * @brief Registers the host's sampling provider on the client.
+ *
+ * fn is stored on the client; user_data is passed back to fn on each
+ * invocation.  A NULL fn clears the provider (client replies -32601 to
+ * any sampling/createMessage request).
+ *
+ * @param ctx Context; may be NULL (default allocator).
+ * @param c Target client; must not be NULL.
+ * @param fn Provider callback, or NULL to clear.
+ * @param user_data Opaque pointer passed to fn on each call.
+ */
+void mcp_client_set_sample_provider(mcp_context_t *ctx, mcp_client_t *c,
+                                    mcp_client_sample_fn fn, void *user_data);
+
+/**
+ * @brief Host-injected callback that responds to an elicitation/create
+ *        request sent by the server to the client.
+ *
+ * The callback receives the request parameters (message, requestedSchema)
+ * as a single JSON object and returns an owned result JSON object
+ * containing the user-supplied data.  Return NULL if elicitation is not
+ * supported; the client will reply with a -32601 error.
+ */
+typedef mcp_json_value_t *(*mcp_client_elicitation_fn)(mcp_context_t *ctx,
+                                                       const mcp_json_value_t *params,
+                                                       void *user_data);
+
+/**
+ * @brief Registers the host's elicitation provider on the client.
+ *
+ * fn is stored on the client; user_data is passed back to fn on each
+ * invocation.  A NULL fn clears the provider (client replies -32601 to
+ * any elicitation/create request).
+ *
+ * @param ctx Context; may be NULL (default allocator).
+ * @param c Target client; must not be NULL.
+ * @param fn Provider callback, or NULL to clear.
+ * @param user_data Opaque pointer passed to fn on each call.
+ */
+void mcp_client_set_elicitation_provider(mcp_context_t *ctx, mcp_client_t *c,
+                                         mcp_client_elicitation_fn fn, void *user_data);
+
+/**
+ * @brief Routes an incoming server-originated JSON-RPC request to the
+ *        registered provider and builds the response to send back.
+ *
+ * Recognized methods: roots/list, sampling/createMessage, elicitation/create.
+ *
+ * If no provider is registered (or the provider returns NULL), the
+ * response is an mcp_response_err_new with MCP_RPC_METHOD_NOT_FOUND
+ * (-32601).  For roots/list a NULL provider means "roots not supported";
+ * the error message is chosen accordingly.
+ *
+ * The caller does NOT own `req`; it is only read.  On MCP_OK the caller
+ * owns *resp_out (an mcp_message_t) and must serialize + send it, then
+ * destroy it with mcp_message_destroy.
+ *
+ * @param ctx        Context; may be NULL.
+ * @param c          Target client; NULL returns INVALID_ARGUMENT.
+ * @param req        Parsed server-originated request (MCP_MSG_REQUEST kind).
+ * @param resp_out   Receives the caller-owned response message.
+ * @return MCP_OK on success (even when the response is a -32601 error
+ *         — the host should still send it); INVALID_ARGUMENT if c or
+ *         req is NULL; NOMEM on allocation failure.
+ */
+mcp_status_t mcp_client_handle_server_request(mcp_context_t *ctx, mcp_client_t *c,
+                                              const mcp_message_t *req,
+                                              mcp_message_t **resp_out);
+
 /** @} */
 
 #endif

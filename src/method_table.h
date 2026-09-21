@@ -46,9 +46,10 @@ static const char *const k_mcp_server_notifications[] = {
     "notifications/resources/updated",
     "notifications/prompts/list_changed",
     "notifications/message",
+    "notifications/roots/list_changed",
 };
 
-#define MCP_SERVER_NOTIFICATION_COUNT 8
+#define MCP_SERVER_NOTIFICATION_COUNT 9
 
 _Static_assert(sizeof(k_mcp_server_notifications) / sizeof(*k_mcp_server_notifications) ==
                    MCP_SERVER_NOTIFICATION_COUNT,
