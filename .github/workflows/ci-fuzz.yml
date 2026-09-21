@@ -1,0 +1,27 @@
+name: CI-Fuzz
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (fuzz)
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DMCPKIT_BUILD_HTTP=ON \
+            -DMCPKIT_BUILD_SOCKET=ON \
+            -DMCPKIT_BUILD_FUZZ=ON
+      - name: Build
+        run: cmake --build build -j
+      - name: Run deterministic fuzz corpus (ctest)
+        run: |
+          ctest --test-dir build --output-on-failure \
+                -R 'fuzz'
+      - name: Drive stdin harnesses
+        run: bash tests/fuzz/fuzz_run.sh build
