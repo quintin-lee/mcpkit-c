@@ -15,3 +15,7 @@ compile_commands.json
 
 # generated doxygen output
 /docs/api/
+
+# tooling artifacts
+/.agents/
+/skills-lock.json
