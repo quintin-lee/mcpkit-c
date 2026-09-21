@@ -358,8 +358,11 @@ mcp_status_t mcp_server_set_tracer(mcp_context_t *ctx, mcp_server_t *server,
  * For roots/list, sampling/createMessage, elicitation/create and similar
  * client-capability requests the server needs a response. The request is
  * built with mcp_request_new_number_id using the server's next_server_id
- * counter and appended to the per-server outbox; serve loops drain the
- * outbox before each transport read.
+ * counter (starts at 1000.0 to keep server-originated IDs in a separate
+ * namespace from client-originated IDs, which start at 1.0 — both sides
+ * may be in flight simultaneously on the same transport) and appended to
+ * the per-server outbox; serve loops drain the outbox before each
+ * transport read.
  *
  * On success the server TAKES ownership of @p params (or uses NULL params);
  * on failure the caller retains @p params.

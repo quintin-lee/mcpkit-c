@@ -62,7 +62,7 @@ mcp_server_t *mcp_server_create(mcp_context_t *ctx, const char *name, const char
     atomic_init(&srv->c_notifications_total, 0);
     atomic_init(&srv->c_tools_called, 0);
     srv->log_floor = MCP_LOG_DEBUG;
-    srv->next_server_id = 1.0;
+    srv->next_server_id = 1000.0;
     srv->name = srv_strdup(ctx, name);
     srv->version = srv_strdup(ctx, version);
     if (srv->name == NULL || srv->version == NULL) {
