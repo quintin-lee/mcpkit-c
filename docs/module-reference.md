@@ -304,9 +304,10 @@ int           mcp_server_notify_client(ctx, s, const char *method,
 int           mcp_server_outbox_pop(ctx, s, mcp_message_t **out);
 
 /* Server->client numbered request (e.g. roots/list, sampling/createMessage):
-   built with the server's next_server_id counter, enqueued in the outbox;
-   serve loops drain it before each transport read. TAKES params on OK,
-   caller retains on error. */
+    built with the server's next_server_id counter (starts at 1000.0 to
+    avoid collision with client-side request IDs which start at 1.0),
+    enqueued in the outbox; serve loops drain it before each transport
+    read. TAKES params on OK, caller retains on error. */
 int           mcp_server_request_client(ctx, s, const char *method,
                                         mcp_json_value_t *params);
 
