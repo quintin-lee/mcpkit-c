@@ -1,0 +1,44 @@
+name: CI-Package
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMCPKIT_BUILD_HTTP=ON \
+            -DMCPKIT_BUILD_SOCKET=ON \
+            -DMCPKIT_BUILD_TOOLS=ON
+      - name: Build + package
+        run: |
+          cmake --build build -j
+          cmake --build build --target package
+      - name: Inspect package contents
+        run: |
+          set -e
+          tgz=$(ls build/mcpkit-*.tar.gz)
+          echo "artifact: $tgz"
+          mkdir pkg && tar -xzf "$tgz" -C pkg
+          # The TGZ nests everything under a top-level mcpkit-VERSION-OS/ dir
+          top=$(ls pkg/)
+          echo "top-level dir: $top"
+          test -f "pkg/$top/lib/libmcpkit_core.a"
+          test -d "pkg/$top/include/mcpkit"
+          test -f "pkg/$top/lib/pkgconfig/mcpkit.pc"
+          test -f "pkg/$top/lib/cmake/mcpkit/mcpkit-config.cmake"
+          # pkg-config resolves against the extracted package
+          PKG_CONFIG_PATH="pkg/$top/lib/pkgconfig" pkg-config --exists mcpkit
+          echo "package layout OK"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcpkit-package
+          path: build/mcpkit-*.tar.gz
