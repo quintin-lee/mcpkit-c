@@ -16,6 +16,9 @@
  *   the body pointer must be invalidated.
  * - mcp_http_response_new(): caller owns the response; destroy with
  *   mcp_http_response_destroy().
+ * - mcp_http_response_set_body(): stores the caller's pointer (no
+ *   copy); the caller must keep the body buffer alive for the
+ *   response's lifetime.
  * - mcp_http_response_serialize(): returns a BORROWED const char*
  *   (a single owned snapshot stored in the response); valid until
  *   the next set_header/set_body call or destroy.
@@ -139,12 +142,12 @@ mcp_status_t mcp_http_response_set_header(mcp_context_t *ctx,
 /**
  * @brief Sets the response body.
  *
- * The buffer is COPIED (owned by the response); the caller may free it
- * immediately.
+ * The buffer pointer is stored (not copied); the caller must keep the
+ * body buffer alive for the lifetime of the response.
  *
  * @param ctx Context; may be NULL.
  * @param resp Target response.
- * @param body Body bytes; copied, not owned.
+ * @param body Body bytes; pointer stored, not copied.
  * @param len Body length in bytes.
  * @return MCP_OK on success; MCP_ERR_NOMEM on allocation failure.
  */

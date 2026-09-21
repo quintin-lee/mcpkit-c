@@ -7,9 +7,11 @@
  * Ownership asymmetry: the parsed request OWNS its header strings
  * (strdup'd, freed on destroy) but BORROWS the body pointer from the
  * caller's input buffer — the caller must keep that buffer alive for
- * the request's lifetime. Response set_body COPIES the body, so the
- * caller may free its source immediately. Response serialize()
- * returns a single owned snapshot valid until the next mutation.
+ * the request's lifetime. mcp_http_response_set_body stores the
+ * caller's pointer (does not copy); the caller must keep the body
+ * buffer alive for the response's lifetime. mcp_http_response_serialize()
+ * returns a single owned snapshot valid until the next mutation or
+ * destroy.
  */
 #include "mcpkit/transport/http.h"
 
