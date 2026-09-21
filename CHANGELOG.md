@@ -47,6 +47,22 @@ Format follows Keep a Changelog. Versions follow SemVer.
   (`roots/list`, `sampling/createMessage`, `elicitation/create`, ...) into
   the per-server outbox; serve loops drain it before each transport read.
 
+### Fixed
+
+- `queue_grow` NOMEM dangling pointer: if the sessions realloc failed
+  after the msgs realloc had succeeded, `q->msgs` was left pointing to the
+  old (possibly invalidated) allocation and `nm` leaked. Now `q->msgs` is
+  committed to the new buffer before the sessions realloc is attempted, so a
+  sessions failure leaves the queue in a safe state (no dangling pointer,
+  no leak).
+- `mcp_client_list_tools` double-free: `mcp_json_object_set_take` destroys
+  `acc` on failure; the error path called `mcp_json_destroy(ctx, acc)` a
+  second time. Removed the redundant destroy.
+- `mcp_server_request_client` ID namespace collision: `next_server_id`
+  previously started at `1.0`, identical to the client's `next_id`, making
+  it ambiguous which in-flight request a response with `id=1.0` belonged
+  to in a dual-role process. Server-originated IDs now start at `1000.0`.
+
 ## [0.1.0] - 2026-09-20
 
 ### Added
