@@ -29,8 +29,8 @@ core.
   filters, and session permission masks.
 - **CLI** — `mcpkit-cli` with `inspect`, `call`, `validate`, and
   `test` subcommands that spawn and drive a server process over pipes.
-- **Tested** — 32 unit + acceptance tests, deterministic fuzz corpus,
-  AddressSanitizer + UBSanitizer build presets.
+- **Tested** — 40+ unit / acceptance / fuzz tests under CTest,
+  deterministic fuzz corpus, AddressSanitizer + UBSanitizer build presets.
 
 ## Quick start
 
