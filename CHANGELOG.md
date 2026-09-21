@@ -6,6 +6,15 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ### Added
 
+- CI: `ci-fuzz` workflow builds with `-DMCPKIT_BUILD_FUZZ=ON` and drives
+  the four stdin fuzz harnesses against valid/invalid/empty inputs via
+  `tests/fuzz/fuzz_run.sh`; a crash (rc >= 128) fails the job.
+- CI: `ci-package` workflow runs the CPack `package` target, extracts the
+  TGZ, and smoke-checks the packaged layout (lib, headers, mcpkit.pc,
+  mcpkit-config.cmake) plus `pkg-config --exists mcpkit`.
+- `tests/fuzz/fuzz_run.sh`: reusable local/CI driver for the stdin
+  fuzz harnesses; exit 0 means all harnesses ran without crashing.
+
 - Transport I/O timeouts: `mcp_transport_set_timeout` / `get_timeout`
   (per-call read/write deadlines in ms, 0 = block forever); socket and
   stdio backends return `MCP_ERR_TIMEOUT` on expiry.
