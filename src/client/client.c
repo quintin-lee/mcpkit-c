@@ -277,8 +277,10 @@ mcp_status_t mcp_client_list_tools(mcp_context_t *ctx, mcp_client_t *client,
     }
     mcp_json_value_t *result = mcp_json_object_new(ctx);
     if (result == NULL || mcp_json_object_set_take(ctx, result, "tools", acc) != MCP_OK) {
-        mcp_json_destroy(ctx, result);
-        mcp_json_destroy(ctx, acc);
+        /* set_take destroys acc on failure; only result may need freeing here. */
+        if (result != NULL) {
+            mcp_json_destroy(ctx, result);
+        }
         return MCP_ERR_NOMEM;
     }
     *tools_out = result;
