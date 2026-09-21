@@ -55,6 +55,15 @@ Format follows Keep a Changelog. Versions follow SemVer.
 - `mcp_server_request_client`: push a server->client numbered request
   (`roots/list`, `sampling/createMessage`, `elicitation/create`, ...) into
   the per-server outbox; serve loops drain it before each transport read.
+- Client provider injection: `mcp_client_set_roots_provider` /
+  `mcp_client_set_sample_provider` /
+  `mcp_client_set_elicitation_provider` register host callbacks that answer
+  the corresponding server->client requests; `mcp_client_handle_server_request`
+  routes an incoming `roots/list`, `sampling/createMessage`, or
+  `elicitation/create` to the registered provider and builds the response
+  (`-32601` when no provider is set or it returns NULL).
+  `notifications/roots/list_changed` is now consumed by `mcp_server_notify`
+  (moved from the spec-known-unrouted L2 set to the notification table).
 
 ### Fixed
 

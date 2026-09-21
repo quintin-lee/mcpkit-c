@@ -257,11 +257,11 @@ Three-level pipeline. All functions return `mcp_status_t`.
 /* L1: JSON-RPC envelope — jsonrpc=="2.0", exactly one of result/error */
 int mcp_message_validate_envelope(ctx, const mcp_message_t *msg);
 
-/* L2: known method name (shared 15-method server table + 4 spec-known
-   non-routed names: roots/list, roots/list_changed, sampling/createMessage,
-   elicitation/create; responses skip this level). A REQUEST for one of the
-   non-routed names passes L2 and is answered -32601 by the dispatcher;
-   NOTIFICATION kind is consumed by mcp_server_notify. */
+ /* L2: known method name (shared 15-method server table + 3 spec-known
+    non-routed names: roots/list, sampling/createMessage,
+    elicitation/create; responses skip this level). A REQUEST for one of the
+    non-routed names passes L2 and is answered -32601 by the dispatcher;
+    NOTIFICATION kind is consumed by mcp_server_notify. */
 int mcp_message_validate_method(ctx, const mcp_message_t *msg);
 
 /* L3: per-method params rules (incl. full initialize params validation) */
@@ -538,6 +538,18 @@ int          mcp_client_request(ctx, c, const char *method,
                                 mcp_json_value_t **result_out);
 
 const char  *mcp_client_protocol_version(ctx, const mcp_client_t *c);
+
+/* Server->client provider injection (roots/sampling/elicitation).
+   Each set_*_provider stores a host callback; NULL fn clears it.
+   mcp_client_handle_server_request routes an incoming request to the
+   matching provider and builds the response (caller owns *resp_out,
+   serialize + send + mcp_message_destroy). No provider, or provider
+   returns NULL -> -32601 response. */
+void         mcp_client_set_roots_provider(ctx, c, mcp_client_roots_fn fn, void *ud);
+void         mcp_client_set_sample_provider(ctx, c, mcp_client_sample_fn fn, void *ud);
+void         mcp_client_set_elicitation_provider(ctx, c, mcp_client_elicitation_fn fn, void *ud);
+int          mcp_client_handle_server_request(ctx, c, const mcp_message_t *req,
+                                              mcp_message_t **resp_out);
 ```
 
 ---
