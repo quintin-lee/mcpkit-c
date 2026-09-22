@@ -468,6 +468,23 @@ and `recv` returns `MCP_ERR_PROTOCOL`. Honors the wrapper recv timeout
 (`MCP_ERR_TIMEOUT` on expiry); returns `MCP_ERR_CANCELLED` once
 `mcp_shutdown_requested()` is set.
 
+### `socket.h`
+```c
+mcp_transport_t *mcp_socket_transport_create(ctx, const char *host_or_null,
+                                             uint16_t port, bool server_mode);
+int mcp_socket_serve(ctx, mcp_server_t *srv, uint16_t port,
+                     mcp_executor_t *pool_or_null);
+```
+`mcp_socket_transport_create`: in server mode binds+listens on 0.0.0.0:port
+(port 0 = ephemeral); in client mode connects immediately. `start()` in
+server mode accepts a single connection; in client mode it is a no-op.
+
+`mcp_socket_serve`: accept-loop on the calling thread; each accepted
+connection is submitted to `pool` (threadpool) and served by a worker.
+Blocks until `mcp_shutdown_requested()`; drains `pool` before returning.
+`pool_or_null` = NULL runs each connection inline (sequential, no
+concurrency). Newline-framed, same 4 MB cap as stdio.
+
 ### `http.h`
 Buffer-level HTTP/1.1 parser/builder (no sockets).
 ```c

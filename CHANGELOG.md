@@ -14,6 +14,14 @@ Format follows Keep a Changelog. Versions follow SemVer.
   mcpkit-config.cmake) plus `pkg-config --exists mcpkit`.
 - `tests/fuzz/fuzz_run.sh`: reusable local/CI driver for the stdin
   fuzz harnesses; exit 0 means all harnesses ran without crashing.
+- `mcp_socket_serve`: multi-connection TCP accept-loop; each accepted
+  connection is served on a threadpool worker.  Blocks until
+  `mcp_shutdown_requested()`; drains in-flight connections before
+  returning.  `pool=NULL` runs connections inline (sequential).
+- Concurrency hardening: `log_floor` is now an `atomic_int` and
+  `subscribed_uris` is guarded by `pthread_mutex_t subscribed_lock` so
+  that concurrent `mcp_server_dispatch` calls from multiple threadpool
+  workers cannot race on the advanced-method server state.
 
 - Transport I/O timeouts: `mcp_transport_set_timeout` / `get_timeout`
   (per-call read/write deadlines in ms, 0 = block forever); socket and
