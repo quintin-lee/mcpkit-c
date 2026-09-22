@@ -92,6 +92,38 @@ static char *run_script(mcp_context_t *ctx, mcp_server_t *srv, const char **reqs
     return m.out;
 }
 
+static bool auth_always_true(mcp_context_t *ctx, const char *tok, void *ud) {
+    (void)ctx; (void)tok; (void)ud;
+    return true;
+}
+
+typedef struct {
+    const char *expected;
+    int calls;
+} auth_expected_t;
+
+static bool auth_check_token(mcp_context_t *ctx, const char *tok, void *ud) {
+    (void)ctx;
+    auth_expected_t *e = ud;
+    e->calls++;
+    return strcmp(tok, e->expected) == 0;
+}
+
+static char *run_script_auth(mcp_context_t *ctx, mcp_server_t *srv,
+                             const char **reqs, size_t n, mcp_status_t *st_out,
+                             mcp_http_auth_fn auth_fn, void *auth_ud) {
+    mem_io_t m;
+    memset(&m, 0, sizeof(m));
+    m.reqs = reqs;
+    m.nreqs = n;
+    mcp_http_io_t io;
+    io.user = &m;
+    io.read = mem_read;
+    io.write = mem_write;
+    *st_out = mcp_http_serve_with_auth(ctx, srv, &io, auth_fn, auth_ud);
+    return m.out;
+}
+
 static const char *kInitBody =
     "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{"
     "\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},"
@@ -230,6 +262,105 @@ int main(void) {
         CHECK(c100 != NULL);
         CHECK(strstr(out, "HTTP/1.1 200 OK") != NULL);
         CHECK(strstr(out, "Mcp-Session-Id:") != NULL);
+        free(out);
+    }
+
+    /* (k) auth: no Authorization header + auth enabled -> 401 */
+    {
+        char buf[4096];
+        char *req = make_post(kInitBody, NULL, buf, sizeof(buf));
+        const char *reqs[] = { req };
+        char *out = run_script_auth(ctx, srv, reqs, 1, &st, auth_always_true, NULL);
+        CHECK(st == MCP_OK && out != NULL);
+        CHECK(strstr(out, "HTTP/1.1 401 Unauthorized") != NULL);
+        CHECK(strstr(out, "WWW-Authenticate: Bearer") != NULL);
+        free(out);
+    }
+
+    /* (l) auth: Authorization: Bearer good + callback true -> 200 */
+    {
+        char buf[4096];
+        int n = snprintf(buf, sizeof(buf),
+                         "POST /mcp HTTP/1.1\r\nContent-Length: %zu\r\n"
+                         "Content-Type: application/json\r\n"
+                         "Authorization: Bearer good\r\n\r\n%s",
+                         strlen(kInitBody), kInitBody);
+        CHECK(n > 0 && (size_t)n < sizeof(buf));
+        const char *reqs[] = { buf };
+        auth_expected_t exp = { .expected = "good", .calls = 0 };
+        char *out = run_script_auth(ctx, srv, reqs, 1, &st, auth_check_token, &exp);
+        CHECK(st == MCP_OK && out != NULL);
+        CHECK(exp.calls == 1);
+        CHECK(strstr(out, "HTTP/1.1 200 OK") != NULL);
+        CHECK(strstr(out, "Mcp-Session-Id:") != NULL);
+        free(out);
+    }
+
+    /* (m) auth: Authorization: Bearer bad + callback false -> 401 */
+    {
+        char buf[4096];
+        int n = snprintf(buf, sizeof(buf),
+                         "POST /mcp HTTP/1.1\r\nContent-Length: %zu\r\n"
+                         "Content-Type: application/json\r\n"
+                         "Authorization: Bearer bad\r\n\r\n%s",
+                         strlen(kInitBody), kInitBody);
+        CHECK(n > 0 && (size_t)n < sizeof(buf));
+        const char *reqs[] = { buf };
+        auth_expected_t exp = { .expected = "good", .calls = 0 };
+        char *out = run_script_auth(ctx, srv, reqs, 1, &st, auth_check_token, &exp);
+        CHECK(st == MCP_OK && out != NULL);
+        CHECK(exp.calls == 1);
+        CHECK(strstr(out, "HTTP/1.1 401 Unauthorized") != NULL);
+        free(out);
+    }
+
+    /* (n) auth: "Authorization: Bearer" (no token, value trimmed to
+           6 chars by the parser) -> prefix check fails -> 401 */
+    {
+        char buf[4096];
+        int n = snprintf(buf, sizeof(buf),
+                         "POST /mcp HTTP/1.1\r\nContent-Length: %zu\r\n"
+                         "Content-Type: application/json\r\n"
+                         "Authorization: Bearer\r\n\r\n%s",
+                         strlen(kInitBody), kInitBody);
+        CHECK(n > 0 && (size_t)n < sizeof(buf));
+        const char *reqs[] = { buf };
+        auth_expected_t exp = { .expected = "", .calls = 0 };
+        char *out = run_script_auth(ctx, srv, reqs, 1, &st, auth_check_token, &exp);
+        CHECK(st == MCP_OK && out != NULL);
+        CHECK(exp.calls == 0);
+        CHECK(strstr(out, "HTTP/1.1 401 Unauthorized") != NULL);
+        free(out);
+    }
+
+    /* (o) auth: case-insensitive prefix "bearer good" -> 200 when
+           callback accepts */
+    {
+        char buf[4096];
+        int n = snprintf(buf, sizeof(buf),
+                         "POST /mcp HTTP/1.1\r\nContent-Length: %zu\r\n"
+                         "Content-Type: application/json\r\n"
+                         "Authorization: bearer good\r\n\r\n%s",
+                         strlen(kInitBody), kInitBody);
+        CHECK(n > 0 && (size_t)n < sizeof(buf));
+        const char *reqs[] = { buf };
+        auth_expected_t exp = { .expected = "good", .calls = 0 };
+        char *out = run_script_auth(ctx, srv, reqs, 1, &st, auth_check_token, &exp);
+        CHECK(st == MCP_OK && out != NULL);
+        CHECK(exp.calls == 1);
+        CHECK(strstr(out, "HTTP/1.1 200 OK") != NULL);
+        free(out);
+    }
+
+    /* (p) auth disabled (auth_fn=NULL) with a no-Authorization POST ->
+           still 200 (existing behavior unchanged) */
+    {
+        char buf[4096];
+        char *req = make_post(kInitBody, NULL, buf, sizeof(buf));
+        const char *reqs[] = { req };
+        char *out = run_script_auth(ctx, srv, reqs, 1, &st, NULL, NULL);
+        CHECK(st == MCP_OK && out != NULL);
+        CHECK(strstr(out, "HTTP/1.1 200 OK") != NULL);
         free(out);
     }
 
