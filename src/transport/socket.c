@@ -20,6 +20,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <pthread.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <time.h>
@@ -27,10 +28,16 @@
 
 #include "internals.h"
 #include "mcpkit/core/context.h"
+#include "mcpkit/core/shutdown.h"
 #include "mcpkit/core/types.h"
 #include "mcpkit/json/json.h"
+#include "mcpkit/json/value.h"
 #include "mcpkit/logging/logger.h"
 #include "mcpkit/protocol/message.h"
+#include "mcpkit/runtime/executor.h"
+#include "mcpkit/server/dispatcher.h"
+#include "mcpkit/server/server.h"
+#include "mcpkit/server/session.h"
 #include "mcpkit/transport/transport.h"
 
 #define SOCK_LINE_CAP 4096u
@@ -305,6 +312,186 @@ static const mcp_transport_ops_t kSocketOps = {
     sock_recv,
     sock_stop,
 };
+
+// Wraps an already-connected fd in a client-mode transport. Used by
+// mcp_socket_serve to hand each accepted connection to a worker.
+static mcp_transport_t *socket_transport_from_fd(mcp_context_t *ctx, int fd) {
+    const mcp_allocator_t *a = alloc_of(ctx);
+    socket_backend_t *b = a->malloc_fn(sizeof(*b), a->userdata);
+    if (b == NULL) {
+        return NULL;
+    }
+    b->fd = fd;
+    b->server_mode = false; // already connected; sock_start is a no-op
+    mcp_transport_t *t = mcp_transport_create(ctx, &kSocketOps, b);
+    if (t == NULL) {
+        a->free_fn(b, a->userdata);
+        close(fd);
+    }
+    return t;
+}
+
+/* Helpers for the per-connection serve loop (serve_one_conn). */
+static mcp_status_t conn_send_error(mcp_context_t *ctx, mcp_transport_t *t, int code,
+                                   const char *text) {
+    mcp_message_t *err = mcp_response_err_new(ctx, NULL, code, text, NULL);
+    if (err == NULL) return MCP_ERR_NOMEM;
+    char *out = mcp_message_serialize(ctx, err);
+    mcp_message_destroy(ctx, err);
+    if (out == NULL) return MCP_ERR_NOMEM;
+    mcp_status_t st = mcp_transport_send(ctx, t, out, strlen(out));
+    mcp_json_free_string(ctx, out);
+    return st;
+}
+
+static mcp_status_t conn_send_response(mcp_context_t *ctx, mcp_transport_t *t,
+                                       mcp_message_t *resp) {
+    char *out = mcp_message_serialize(ctx, resp);
+    mcp_message_destroy(ctx, resp);
+    if (out == NULL) return MCP_ERR_NOMEM;
+    mcp_status_t st = mcp_transport_send(ctx, t, out, strlen(out));
+    mcp_json_free_string(ctx, out);
+    return st;
+}
+
+typedef struct {
+    mcp_context_t *ctx;
+    mcp_server_t  *server;
+    int            cfd;
+    const mcp_allocator_t *alloc;
+} conn_job_t;
+
+// Runs one connection's serve loop on a pool worker thread.
+// Creates a session, drains the outbox, processes requests/notifications
+// until clean EOF, then tears down the session and transport.
+static void serve_one_conn(mcp_context_t *ctx, void *arg) {
+    conn_job_t *job = (conn_job_t *)arg;
+    const mcp_allocator_t *a = job->alloc;
+    mcp_transport_t *t = socket_transport_from_fd(ctx, job->cfd);
+    if (t == NULL) {
+        a->free_fn(job, a->userdata);
+        return;
+    }
+    mcp_session_t *sess = mcp_server_create_session(ctx, job->server);
+    if (sess == NULL) {
+        mcp_transport_destroy(ctx, t);
+        a->free_fn(job, a->userdata);
+        return;
+    }
+    mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=conn_start transport=socket");
+    for (;;) {
+        if (mcp_shutdown_requested()) break;
+        // Drain outbox before each read.
+        mcp_status_t st = MCP_OK;
+        for (;;) {
+            mcp_message_t *notify = NULL;
+            if (mcp_server_outbox_pop(ctx, job->server, &notify) != MCP_OK) break;
+            st = conn_send_response(ctx, t, notify);
+            if (st != MCP_OK) goto done;
+        }
+        char *line = NULL;
+        st = mcp_transport_recv(ctx, t, &line);
+        if (st == MCP_ERR_IO || st == MCP_ERR_TIMEOUT) break;
+        if (st != MCP_OK) {
+            mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_WARN, "event=conn_recv_err");
+            break;
+        }
+        mcp_message_t *msg = mcp_message_parse(ctx, line, strlen(line));
+        mcp_json_free_string(ctx, line);
+        if (msg == NULL) {
+            mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_WARN, "event=parse_error");
+            if (conn_send_error(ctx, t, MCP_RPC_PARSE_ERROR, "Parse error") != MCP_OK) goto done;
+            continue;
+        }
+        mcp_msg_kind_t kind = mcp_message_kind(ctx, msg);
+        if (kind == MCP_MSG_NOTIFICATION) {
+            mcp_server_notify(ctx, job->server, sess, msg);
+            mcp_message_destroy(ctx, msg);
+            continue;
+        }
+        if (kind != MCP_MSG_REQUEST) {
+            mcp_message_destroy(ctx, msg);
+            continue;
+        }
+        mcp_message_t *resp = NULL;
+        mcp_status_t dst = mcp_server_dispatch(ctx, job->server, sess, msg, &resp);
+        mcp_message_destroy(ctx, msg);
+        if (dst != MCP_OK) {
+            mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_DEBUG, "event=dispatch_err");
+            break;
+        }
+        if (resp != NULL) {
+            st = conn_send_response(ctx, t, resp);
+            if (st != MCP_OK) goto done;
+        }
+    }
+done:
+    mcp_server_destroy_session(ctx, job->server, sess);
+    mcp_transport_stop(ctx, t);
+    mcp_transport_destroy(ctx, t);
+    mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=conn_end transport=socket");
+    a->free_fn(job, a->userdata);
+}
+
+mcp_status_t mcp_socket_serve(mcp_context_t *ctx, mcp_server_t *server,
+                              uint16_t port, mcp_executor_t *pool) {
+    if (server == NULL || pool == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    int lfd = open_socket(NULL, port, true);
+    if (lfd < 0) {
+        return MCP_ERR_NOMEM;
+    }
+    const mcp_allocator_t *a = alloc_of(ctx);
+    mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=serve_start transport=socket");
+    for (;;) {
+        struct pollfd pfd;
+        pfd.fd = lfd;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+        int n = poll(&pfd, 1, 500);
+        if (n < 0 && errno != EINTR) {
+            close(lfd);
+            return MCP_ERR_IO;
+        }
+        if (mcp_shutdown_requested()) {
+            mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=shutdown transport=socket");
+            break;
+        }
+        if (n == 0) {
+            continue;
+        }
+        struct sockaddr_in client_addr;
+        socklen_t slen = sizeof(client_addr);
+        int cfd;
+        do {
+            cfd = accept(lfd, (struct sockaddr *)&client_addr, &slen);
+        } while (cfd < 0 && errno == EINTR);
+        if (cfd < 0) {
+            continue;
+        }
+        int one = 1;
+        setsockopt(cfd, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof(one));
+        conn_job_t *job = a->malloc_fn(sizeof(*job), a->userdata);
+        if (job == NULL) {
+            close(cfd);
+            continue;
+        }
+        job->ctx = ctx;
+        job->server = server;
+        job->cfd = cfd;
+        job->alloc = a;
+        mcp_status_t st = mcp_executor_submit(ctx, pool, serve_one_conn, job);
+        if (st != MCP_OK) {
+            a->free_fn(job, a->userdata);
+            close(cfd);
+        }
+    }
+    close(lfd);
+    mcp_executor_wait(ctx, pool);
+    mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=serve_end transport=socket");
+    return MCP_OK;
+}
 
 mcp_transport_t *mcp_socket_transport_create(mcp_context_t *ctx, const char *host,
                                              uint16_t port, bool server_mode) {
