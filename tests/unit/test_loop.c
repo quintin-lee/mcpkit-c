@@ -3,6 +3,8 @@
 #include <string.h>
 
 #include "mcpkit/mcpkit.h"
+#include "mcpkit/client/client.h"
+#include "mcpkit/runtime/loop.h"
 
 static mcp_status_t echo_handler(mcp_context_t *c, mcp_session_t *s,
                                  const mcp_json_value_t *a, void *u,
@@ -94,6 +96,27 @@ static void write_script(FILE *in) {
     rewind(in);
 }
 
+static mcp_json_value_t *test_roots_provider(mcp_context_t *ctx, void *ud) {
+    (void)ud;
+    mcp_json_value_t *arr = mcp_json_array_new(ctx);
+    if (arr == NULL) return NULL;
+    mcp_json_value_t *root = mcp_json_object_new(ctx);
+    if (root == NULL) { mcp_json_destroy(ctx, arr); return NULL; }
+    mcp_json_value_t *uri = mcp_json_string_new(ctx, "file:///loop-test");
+    if (uri == NULL || mcp_json_object_set_take(ctx, root, "uri", uri) != MCP_OK) {
+        if (uri != NULL) mcp_json_destroy(ctx, uri);
+        mcp_json_destroy(ctx, root);
+        mcp_json_destroy(ctx, arr);
+        return NULL;
+    }
+    if (mcp_json_array_append(ctx, arr, root) != MCP_OK) {
+        mcp_json_destroy(ctx, root);
+        mcp_json_destroy(ctx, arr);
+        return NULL;
+    }
+    return arr;
+}
+
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
     CHECK(ctx != NULL);
@@ -172,6 +195,43 @@ int main(void) {
         fclose(out);
         mcp_executor_destroy(ctx, pool);
         mcp_server_destroy(ctx, s4);
+    }
+
+    {
+        static const char *kRootsReq =
+            "{\"jsonrpc\":\"2.0\",\"id\":1000.0,\"method\":\"roots/list\"}\n";
+        mcp_server_t *s5 = make_server(ctx);
+        FILE *in = tmpfile();
+        CHECK(in != NULL);
+        FILE *out = tmpfile();
+        CHECK(out != NULL);
+        mcp_transport_t *t5 = mcp_stdio_transport_create(ctx, in, out);
+        CHECK(t5 != NULL);
+        mcp_client_t *c = mcp_client_create(ctx, t5);
+        CHECK(c != NULL);
+        mcp_client_set_roots_provider(ctx, c, test_roots_provider, NULL);
+        CHECK(mcp_transport_start(ctx, t5) == MCP_OK);
+        CHECK(fputs(kRootsReq, in) != EOF);
+        rewind(in);
+        mcp_status_t st = mcp_loop_run_with_client(ctx, s5, c, t5, NULL, NULL);
+        CHECK(st == MCP_ERR_IO || st == MCP_ERR_NOT_FOUND);
+        CHECK(mcp_transport_stop(ctx, t5) == MCP_OK);
+        rewind(out);
+        char buf[4096];
+        CHECK(fgets(buf, (int)sizeof(buf), out) != NULL);
+        mcp_message_t *resp = mcp_message_parse(ctx, buf, strlen(buf));
+        CHECK(resp != NULL);
+        CHECK(mcp_message_kind(ctx, resp) == MCP_MSG_RESPONSE);
+        const mcp_json_value_t *result = mcp_message_result(ctx, resp);
+        CHECK(result != NULL);
+        CHECK(mcp_json_type(ctx, result) == MCP_JSON_ARRAY);
+        CHECK(mcp_json_array_size(ctx, result) == 1);
+        mcp_message_destroy(ctx, resp);
+        mcp_client_destroy(ctx, c);
+        mcp_transport_destroy(ctx, t5);
+        mcp_server_destroy(ctx, s5);
+        fclose(in);
+        fclose(out);
     }
 
     mcp_context_destroy(ctx);

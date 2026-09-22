@@ -11,6 +11,7 @@
  */
 #include <string.h>
 
+#include "mcpkit/client/client.h"
 #include "mcpkit/core/context.h"
 #include "mcpkit/core/error.h"
 #include "mcpkit/core/shutdown.h"
@@ -37,6 +38,12 @@ typedef struct {
 static void dispatch_task(mcp_context_t *ctx, void *arg) {
     dispatch_job_t *job = (dispatch_job_t *)arg;
     job->status = mcp_server_dispatch(ctx, job->server, job->sess, job->msg, &job->resp);
+}
+
+static bool is_server_to_client_method(const char *method) {
+    return strcmp(method, "roots/list") == 0 ||
+           strcmp(method, "sampling/createMessage") == 0 ||
+           strcmp(method, "elicitation/create") == 0;
 }
 
 static mcp_status_t send_error(mcp_context_t *ctx, mcp_transport_t *t, int code,
@@ -92,8 +99,11 @@ static mcp_status_t dispatch_inline(mcp_context_t *ctx, mcp_server_t *server,
     return job.status;
 }
 
-mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server, mcp_transport_t *t,
-                          mcp_executor_t *ex_or_null, mcp_timer_t *timer_or_null) {
+/* Core loop body; client_or_null may be NULL (mcp_loop_run behaviour) or
+ * a live client used to route server-to-client requests. */
+static mcp_status_t loop_run_impl(mcp_context_t *ctx, mcp_server_t *server,
+                                  mcp_client_t *client, mcp_transport_t *t,
+                                  mcp_executor_t *ex_or_null, mcp_timer_t *timer_or_null) {
     if (ctx == NULL || server == NULL || t == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
@@ -104,9 +114,6 @@ mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server, mcp_transpor
     mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=serve_start transport=loop");
     mcp_status_t status = MCP_ERR_NOT_FOUND;
     for (;;) {
-        // Shutdown requested while idle or during the previous
-        // dispatch: stop before taking new work. The in-flight
-        // request (if any) already ran to completion above.
         if (mcp_shutdown_requested()) {
             mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=shutdown");
             status = MCP_ERR_CANCELLED;
@@ -119,8 +126,6 @@ mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server, mcp_transpor
                 break;
             }
         }
-        // Flush any pending server-originated notifications before taking
-        // new client work so the outbox never grows without bound.
         mcp_status_t st = MCP_OK;
         for (;;) {
             mcp_message_t *notify = NULL;
@@ -138,8 +143,6 @@ mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server, mcp_transpor
         if (st == MCP_ERR_IO) {
             break;
         }
-        // A recv timeout is an idle wakeup: exit only if shutdown was
-        // requested, otherwise keep the pre-existing break semantics.
         if (st == MCP_ERR_TIMEOUT) {
             status = mcp_shutdown_requested() ? MCP_ERR_CANCELLED : st;
             break;
@@ -168,8 +171,15 @@ mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server, mcp_transpor
             mcp_message_destroy(ctx, msg);
             continue;
         }
+        /* Route server-to-client requests to the client when available. */
+        const char *method = mcp_message_method(ctx, msg);
+        bool is_s2c = client != NULL && method != NULL && is_server_to_client_method(method);
         mcp_message_t *resp = NULL;
-        st = dispatch_inline(ctx, server, sess, msg, ex_or_null, &resp);
+        if (is_s2c) {
+            st = mcp_client_handle_server_request(ctx, client, msg, &resp);
+        } else {
+            st = dispatch_inline(ctx, server, sess, msg, ex_or_null, &resp);
+        }
         mcp_message_destroy(ctx, msg);
         if (st != MCP_OK) {
             status = st;
@@ -186,4 +196,16 @@ mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server, mcp_transpor
 done:
     mcp_server_destroy_session(ctx, server, sess);
     return status;
+}
+
+mcp_status_t mcp_loop_run(mcp_context_t *ctx, mcp_server_t *server, mcp_transport_t *t,
+                          mcp_executor_t *ex_or_null, mcp_timer_t *timer_or_null) {
+    return loop_run_impl(ctx, server, NULL, t, ex_or_null, timer_or_null);
+}
+
+mcp_status_t mcp_loop_run_with_client(mcp_context_t *ctx, mcp_server_t *server,
+                                      mcp_client_t *client, mcp_transport_t *t,
+                                      mcp_executor_t *ex_or_null,
+                                      mcp_timer_t *timer_or_null) {
+    return loop_run_impl(ctx, server, client, t, ex_or_null, timer_or_null);
 }
