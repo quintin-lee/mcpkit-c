@@ -9,6 +9,8 @@
  * - mcp_http_serve(): runs a synchronous HTTP serve loop. Sessions are
  *   loop-local (destroyed when the loop exits); at most
  *   MCP_HTTP_MAX_SESSIONS concurrent sessions are supported.
+ *   POST requests carrying "Expect: 100-continue" receive an interim
+ *   "HTTP/1.1 100 Continue" response before the final status.
  * - mcp_sse_wrap(): returns an owned SSE-framed string; caller frees
  *   with mcp_json_free_string(ctx, s).
  */

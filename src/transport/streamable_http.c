@@ -112,6 +112,18 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
     if (body == NULL || body_len == 0) {
         return send_bytes(ctx, io, 400, "Bad Request", NULL, NULL, 0, NULL, NULL);
     }
+    /* RFC 9110 10.1.5: in a real socket stream the client sends
+     * Expect: 100-continue *before* the body; our buffer-level model
+     * already has the body, so this is purely the protocol-level
+     * acknowledgement the client expects before the final response. */
+    const char *expect_hdr = mcp_http_header(ctx, req, "Expect");
+    if (expect_hdr != NULL && strncmp(expect_hdr, "100", 3) == 0
+        && (expect_hdr[3] == '-' || expect_hdr[3] == '\0')) {
+        const char *interim = "HTTP/1.1 100 Continue\r\n\r\n";
+        if (io->write(ctx, io->user, interim, strlen(interim)) != MCP_OK) {
+            return MCP_ERR_IO;
+        }
+    }
     mcp_message_t *msg = mcp_message_parse(ctx, body, body_len);
     if (msg == NULL) {
         return send_bytes(ctx, io, 400, "Bad Request", NULL, NULL, 0, NULL, NULL);

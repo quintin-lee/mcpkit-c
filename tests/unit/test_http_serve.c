@@ -214,6 +214,25 @@ int main(void) {
     /* NULL guards */
     CHECK(mcp_http_serve(ctx, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
 
+    /* (j) Expect: 100-continue → interim 100 response precedes the final 200 */
+    {
+        char exp_buf[4096];
+        int n = snprintf(exp_buf, sizeof(exp_buf),
+                         "POST /mcp HTTP/1.1\r\nContent-Length: %zu\r\n"
+                         "Content-Type: application/json\r\n"
+                         "Expect: 100-continue\r\n\r\n%s",
+                         strlen(kInitBody), kInitBody);
+        CHECK(n > 0 && (size_t)n < sizeof(exp_buf));
+        const char *s8[] = { exp_buf };
+        out = run_script(ctx, srv, s8, 1, &st);
+        CHECK(st == MCP_OK && out != NULL);
+        const char *c100 = strstr(out, "HTTP/1.1 100 Continue");
+        CHECK(c100 != NULL);
+        CHECK(strstr(out, "HTTP/1.1 200 OK") != NULL);
+        CHECK(strstr(out, "Mcp-Session-Id:") != NULL);
+        free(out);
+    }
+
     mcp_server_destroy(ctx, srv);
     mcp_context_destroy(ctx);
     printf("test_http_serve OK\n");
