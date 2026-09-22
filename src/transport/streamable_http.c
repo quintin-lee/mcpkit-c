@@ -104,9 +104,64 @@ static mcp_status_t send_bytes(mcp_context_t *ctx, mcp_http_io_t *io, int status
     return st;
 }
 
+/* Case-insensitive match of the first `len` chars of `s` against a
+ * lowercase-only pattern; mirrors the hand-rolled tolower approach used
+ * by mcp_http_request_wants_close() in http.c (strncasecmp is POSIX,
+ * unavailable under this project's C23 + -Werror baseline). */
+static bool ci_prefix_eq(const char *s, size_t len, const char *pattern) {
+    for (size_t i = 0; i < len; i++) {
+        char c = s[i];
+        if (c >= 'A' && c <= 'Z') {
+            c = (char)(c - 'A' + 'a');
+        }
+        if (c != pattern[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static mcp_status_t send_unauthorized(mcp_context_t *ctx, mcp_http_io_t *io) {
+    mcp_http_response_t *resp = mcp_http_response_new(ctx, 401, "Unauthorized");
+    if (resp == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_status_t st = mcp_http_response_set_header(ctx, resp, "WWW-Authenticate",
+                                                   "Bearer");
+    if (st == MCP_OK) {
+        st = mcp_http_response_set_body(ctx, resp, "", 0);
+    }
+    if (st == MCP_OK) {
+        st = mcp_http_response_set_header(ctx, resp, "Content-Length", "0");
+    }
+    const char *bytes = NULL;
+    if (st == MCP_OK) {
+        bytes = mcp_http_response_serialize(ctx, resp);
+        if (bytes == NULL) {
+            st = MCP_ERR_NOMEM;
+        }
+    }
+    if (st == MCP_OK) {
+        st = io->write(ctx, io->user, bytes, strlen(bytes));
+    }
+    mcp_http_response_destroy(ctx, resp);
+    return st;
+}
+
 static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
                                 http_session_table_t *table, mcp_http_io_t *io,
-                                mcp_http_request_t *req) {
+                                mcp_http_request_t *req,
+                                mcp_http_auth_fn auth_fn, void *auth_ud) {
+    if (auth_fn != NULL) {
+        const char *auth_hdr = mcp_http_header(ctx, req, "Authorization");
+        if (auth_hdr == NULL || !ci_prefix_eq(auth_hdr, 7, "bearer ")) {
+            return send_unauthorized(ctx, io);
+        }
+        const char *token = auth_hdr + 7;
+        if (!auth_fn(ctx, token, auth_ud)) {
+            return send_unauthorized(ctx, io);
+        }
+    }
     size_t body_len = 0;
     const char *body = mcp_http_request_body(ctx, req, &body_len);
     if (body == NULL || body_len == 0) {
@@ -221,10 +276,9 @@ static mcp_status_t handle_delete(mcp_context_t *ctx, mcp_server_t *server,
     return send_bytes(ctx, io, 200, "OK", NULL, NULL, 0, NULL, NULL);
 }
 
-mcp_status_t mcp_http_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_http_io_t *io) {
-    if (server == NULL || io == NULL || io->read == NULL || io->write == NULL) {
-        return MCP_ERR_INVALID_ARGUMENT;
-    }
+static mcp_status_t http_serve_impl(mcp_context_t *ctx, mcp_server_t *server,
+                                     mcp_http_io_t *io, mcp_http_auth_fn auth_fn,
+                                     void *auth_ud) {
     http_session_table_t table;
     memset(&table, 0, sizeof(table));
     table.next_id = 1;
@@ -308,7 +362,7 @@ mcp_status_t mcp_http_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_http_i
         mcp_http_method_t m = mcp_http_request_method(ctx, req);
         mcp_status_t st;
         if (m == MCP_HTTP_POST) {
-            st = handle_post(ctx, server, &table, io, req);
+            st = handle_post(ctx, server, &table, io, req, auth_fn, auth_ud);
         } else if (m == MCP_HTTP_GET) {
             st = handle_get(ctx, io, req);
         } else if (m == MCP_HTTP_DELETE) {
@@ -335,4 +389,20 @@ done:
     }
     h_free(ctx, carry);
     return status;
+}
+
+mcp_status_t mcp_http_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_http_io_t *io) {
+    if (server == NULL || io == NULL || io->read == NULL || io->write == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    return http_serve_impl(ctx, server, io, NULL, NULL);
+}
+
+mcp_status_t mcp_http_serve_with_auth(mcp_context_t *ctx, mcp_server_t *server,
+                                       mcp_http_io_t *io, mcp_http_auth_fn auth_fn,
+                                       void *auth_user_data) {
+    if (server == NULL || io == NULL || io->read == NULL || io->write == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    return http_serve_impl(ctx, server, io, auth_fn, auth_user_data);
 }
