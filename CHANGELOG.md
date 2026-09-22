@@ -20,6 +20,10 @@ Format follows Keep a Changelog. Versions follow SemVer.
   Both client and server handshakes are deferred to
   `mcp_transport_start()`; peer certificate verification is disabled
   by default (development / loopback use only).
+- `mcp_http_serve_with_auth()`: optional Bearer-token authentication for
+  Streamable HTTP POST traffic, via a host-supplied validation callback;
+  401 + `WWW-Authenticate: Bearer` on missing/invalid token.  `auth_fn==NULL`
+  preserves the existing `mcp_http_serve` behavior exactly.
 
 - `mcp_socket_serve`: multi-connection TCP accept-loop; each accepted
   connection is served on a threadpool worker.  Blocks until

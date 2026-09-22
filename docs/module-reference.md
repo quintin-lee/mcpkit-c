@@ -526,6 +526,13 @@ Session-management serve loop over `mcp_http_io_t` (opaque read/write callbacks)
 mcp_status_t mcp_http_serve(ctx, mcp_server_t *, mcp_http_io_t *io);
 /* Wraps a JSON-RPC body as an SSE-compatible event stream (owned string) */
 char       *mcp_sse_wrap(ctx, const char *json_text);
+/* Bearer-token auth gate: every POST must carry "Authorization: Bearer <tok>";
+   callback returns false or header missing/non-Bearer -> 401 + WWW-Authenticate.
+   auth_fn==NULL is identical to mcp_http_serve. GET/DELETE unaffected. */
+typedef bool (*mcp_http_auth_fn)(mcp_context_t *ctx,
+                                  const char *bearer_token, void *user_data);
+mcp_status_t mcp_http_serve_with_auth(ctx, mcp_server_t *, mcp_http_io_t *,
+                                       mcp_http_auth_fn auth_fn, void *auth_ud);
 ```
 Accepts `POST` (JSON-RPC body), `GET` (SSE stream or 405), `DELETE`
 (session teardown). Sessions are loop-local (up to 16, `sess-N` ids);
