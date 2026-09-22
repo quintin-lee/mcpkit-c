@@ -69,8 +69,23 @@ if(MCPKIT_BUILD_SOCKET)
     src/transport/socket.c
   )
 endif()
+if(MCPKIT_BUILD_TLS)
+  # OpenSSL is linked PRIVATE so the zero-dep default build (TLS=OFF)
+  # is unaffected.  The .pc / CMake config files expose no TLS symbols.
+  list(APPEND MCPKIT_CORE_SOURCES
+    src/transport/tls.c
+  )
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(OPENSSL REQUIRED openssl)
+  set(MCPKIT_TLS_LIBS ${OPENSSL_LIBRARIES})
+  set(MCPKIT_TLS_INC ${OPENSSL_INCLUDE_DIRS})
+endif()
 
 add_library(mcpkit_core STATIC ${MCPKIT_CORE_SOURCES})
+if(MCPKIT_BUILD_TLS)
+  target_link_libraries(mcpkit_core PRIVATE ${MCPKIT_TLS_LIBS})
+  target_include_directories(mcpkit_core PRIVATE ${MCPKIT_TLS_INC})
+endif()
 target_include_directories(mcpkit_core
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
