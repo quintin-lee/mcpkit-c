@@ -203,3 +203,23 @@ add_test(NAME test_advanced_methods COMMAND test_advanced_methods)
 add_executable(test_stdio_serve_with_client unit/test_stdio_serve_with_client.c)
 target_link_libraries(test_stdio_serve_with_client PRIVATE mcpkit_core)
 add_test(NAME test_stdio_serve_with_client COMMAND test_stdio_serve_with_client)
+
+if(MCPKIT_BUILD_TLS)
+  # Generate a self-signed cert in the build directory for the TLS test.
+  # The cert is written to the tests/ subdirectory of the build tree.
+  add_custom_target(tls_test_cert ALL
+    COMMAND ${CMAKE_COMMAND} -E env openssl req -x509 -newkey rsa:2048
+            -nodes
+            -keyout ${CMAKE_CURRENT_BINARY_DIR}/tls_test.key
+            -out    ${CMAKE_CURRENT_BINARY_DIR}/tls_test.crt
+            -days 1 -subj "/CN=localhost" 2>&1
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMENT "Generating self-signed cert for TLS test"
+  )
+  add_executable(test_tls_transport unit/test_tls_transport.c)
+  target_link_libraries(test_tls_transport PRIVATE mcpkit_core)
+  add_dependencies(test_tls_transport tls_test_cert)
+  add_test(NAME test_tls_transport COMMAND test_tls_transport
+           ${CMAKE_CURRENT_BINARY_DIR}/tls_test.crt
+           ${CMAKE_CURRENT_BINARY_DIR}/tls_test.key)
+endif()

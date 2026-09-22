@@ -260,23 +260,30 @@ static mcp_status_t tls_start(mcp_context_t *ctx, mcp_transport_t *t) {
     if (b == NULL || b->fd < 0) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
-    if (b->server_mode && b->sctx != NULL) {
-        /* Server mode: accept one TLS connection on the listening fd.
-         * After success, replace b->fd with the accepted conn fd and
-         * mark server_mode=false so a subsequent start() is a no-op. */
+    /* Handshake is deferred to start() for BOTH modes so that a
+     * single-threaded caller can create the server, create the client,
+     * then call start() on each (possibly from a thread).  After a
+     * successful handshake b->ssl is set and b->server_mode is false,
+     * so a second start() is a no-op. */
+    if (b->ssl == NULL && b->sctx != NULL) {
         SSL *ssl = NULL;
-        int cfd = tls_accept(b->fd, b->sctx, &ssl);
-        if (cfd < 0) {
-            return MCP_ERR_IO;
+        if (b->server_mode) {
+            int cfd = tls_accept(b->fd, b->sctx, &ssl);
+            if (cfd < 0) {
+                return MCP_ERR_IO;
+            }
+            int one = 1;
+            setsockopt(cfd, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof(one));
+            close(b->fd);
+            b->fd = cfd;
+        } else {
+            if (tls_connect(b->fd, b->sctx, &ssl) != 0) {
+                return MCP_ERR_IO;
+            }
         }
-        int one = 1;
-        setsockopt(cfd, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof(one));
-        close(b->fd);
-        b->fd = cfd;
         b->ssl = ssl;
         b->server_mode = false;
     }
-    /* Client mode: handshake already done in create(); no-op. */
     return MCP_OK;
 }
 
@@ -515,21 +522,11 @@ mcp_transport_t *mcp_tls_transport_create(mcp_context_t *ctx, const char *host,
             a->free_fn(b, a->userdata);
             return NULL;
         }
-        b->sctx = sctx;
-        /* Handshake deferred to start() (SSL_accept on the accepted conn). */
-    } else {
-        /* Client: handshake immediately. */
-        SSL *ssl = NULL;
-        if (tls_connect(fd, sctx, &ssl) != 0) {
-            SSL_CTX_free(sctx);
-            close(fd);
-            a->free_fn(b, a->userdata);
-            return NULL;
-        }
-        b->ssl = ssl;
-        b->sctx = sctx;
-        b->server_mode = false;
     }
+    b->sctx = sctx;
+    /* Handshake (SSL_accept or SSL_connect) is deferred to start() so
+     * that a single-threaded host can create both sides, then start
+     * each one (the server's start() typically runs in a thread). */
 
     mcp_transport_t *t = mcp_transport_create(ctx, &kTlsOps, b);
     if (t == NULL) {
