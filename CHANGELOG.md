@@ -64,6 +64,13 @@ Format follows Keep a Changelog. Versions follow SemVer.
   (`-32601` when no provider is set or it returns NULL).
   `notifications/roots/list_changed` is now consumed by `mcp_server_notify`
   (moved from the spec-known-unrouted L2 set to the notification table).
+- `mcp_stdio_serve_with_client` / `mcp_loop_run_with_client`: serve-loop
+  variants that route `roots/list`, `sampling/createMessage`, and
+  `elicitation/create` REQUEST messages to a host-supplied client; the
+  client's registered providers answer them and the response is sent
+  over the transport.  All other methods go through normal server
+  dispatch.  Client = NULL gives identical behaviour to the base
+  functions.
 
 ### Fixed
 

@@ -460,6 +460,7 @@ HTTP it appends to the request buffer.
 mcp_transport_t *mcp_stdio_transport_create(ctx, FILE *in, FILE *out);
 /* NULL in/out → uses stdin/stdout */
 int              mcp_stdio_serve(ctx, mcp_server_t *, mcp_transport_t *t);
+int              mcp_stdio_serve_with_client(ctx, mcp_server_t *, mcp_client_t *client_or_null, mcp_transport_t *t);
 ```
 Framing: one JSON-RPC message per line (`\n`-terminated, `\r` stripped).
 Oversized lines (> `MCP_PROTOCOL_MAX_MESSAGE_BYTES` = 4 MB) are discarded
@@ -600,6 +601,9 @@ Transport-agnostic event loop combining recv, timer, and executor:
 ```c
 int mcp_loop_run(ctx, mcp_server_t *srv, mcp_transport_t *t,
                  mcp_executor_t *ex_or_null, mcp_timer_t *timer_or_null);
+int mcp_loop_run_with_client(ctx, mcp_server_t *srv, mcp_client_t *client_or_null,
+                             mcp_transport_t *t,
+                             mcp_executor_t *ex_or_null, mcp_timer_t *timer_or_null);
 /* Returns MCP_ERR_NOT_FOUND on EOF; aborts on send/alloc failure */
 ```
 When `ex_or_null` is non-NULL, each dispatch job is submitted to the
@@ -608,6 +612,9 @@ session-safe). When `timer_or_null` is non-NULL, `poll` is called before
 every recv. The loop drains in-flight requests and returns
 `MCP_ERR_CANCELLED` once `mcp_shutdown_requested()` is set; a finite
 recv timeout keeps an idle loop responsive to shutdown.
+`mcp_loop_run_with_client` additionally routes `roots/list`,
+`sampling/createMessage`, and `elicitation/create` to the host-supplied
+client's providers; all other methods go through normal server dispatch.
 
 ---
 
