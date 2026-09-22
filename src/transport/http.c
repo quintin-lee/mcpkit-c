@@ -273,12 +273,32 @@ const char *mcp_http_header(mcp_context_t *ctx, const mcp_http_request_t *req, c
 }
 
 const char *mcp_http_request_body(mcp_context_t *ctx, const mcp_http_request_t *req,
-                                 size_t *len_out) {
+                                  size_t *len_out) {
     (void)ctx;
     if (len_out != NULL) {
         *len_out = req != NULL ? req->body_len : 0;
     }
     return req != NULL ? req->body : NULL;
+}
+
+bool mcp_http_request_wants_close(mcp_context_t *ctx,
+                                  const mcp_http_request_t *req) {
+    (void)ctx;
+    if (req == NULL) {
+        return false;
+    }
+    const char *v = mcp_http_header(ctx, req, "Connection");
+    if (v == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < 5; i++) {
+        if (tolower((unsigned char)v[i]) != "close"[i]) {
+            return false;
+        }
+    }
+    /* RFC 7230: Connection is a comma-separated list; must not
+     * partially match a longer token like "close-foo". */
+    return v[5] == '\0' || v[5] == ',';
 }
 
 mcp_http_response_t *mcp_http_response_new(mcp_context_t *ctx, int status, const char *reason) {

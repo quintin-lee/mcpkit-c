@@ -27,6 +27,7 @@
 #ifndef MCPKIT_TRANSPORT_HTTP_H
 #define MCPKIT_TRANSPORT_HTTP_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "mcpkit/core/error.h"
@@ -97,6 +98,21 @@ const char *mcp_http_request_target(mcp_context_t *ctx,
  */
 const char *mcp_http_header(mcp_context_t *ctx, const mcp_http_request_t *req,
                             const char *name);
+
+/**
+ * @brief Returns true when the request carries "Connection: close".
+ *
+ * HTTP/1.1 connections are keep-alive by default; a client that explicitly
+ * sends "Connection: close" signals it will close the TCP connection after
+ * the response.  The host should use this to decide whether to reuse the
+ * transport for the next request.  The check is case-insensitive.
+ *
+ * @param ctx Context; may be NULL.
+ * @param req Parsed request (must be non-NULL).
+ * @return true if "Connection: close" is present; false otherwise.
+ */
+bool mcp_http_request_wants_close(mcp_context_t *ctx,
+                                  const mcp_http_request_t *req);
 
 /**
  * @brief Returns the request body pointer and its length.

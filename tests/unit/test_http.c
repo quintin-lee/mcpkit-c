@@ -48,5 +48,31 @@ int main(void) {
     CHECK(mcp_http_response_set_header(NULL, NULL, "X", "y") == MCP_ERR_INVALID_ARGUMENT);
     mcp_http_request_destroy(NULL, NULL);
     mcp_http_response_destroy(NULL, NULL);
+    /* P1-1: Connection header detection */
+    {
+        const char *close_req =
+            "POST /mcp HTTP/1.1\r\nConnection: close\r\nContent-Length: 2\r\n\r\n{}";
+        mcp_http_request_t *rc = mcp_http_parse_request(NULL, close_req, strlen(close_req));
+        CHECK(rc != NULL);
+        CHECK(mcp_http_request_wants_close(NULL, rc) == true);
+        mcp_http_request_destroy(NULL, rc);
+    }
+    {
+        const char *ka_req =
+            "POST /mcp HTTP/1.1\r\nConnection: keep-alive\r\nContent-Length: 2\r\n\r\n{}";
+        mcp_http_request_t *rk = mcp_http_parse_request(NULL, ka_req, strlen(ka_req));
+        CHECK(rk != NULL);
+        CHECK(mcp_http_request_wants_close(NULL, rk) == false);
+        mcp_http_request_destroy(NULL, rk);
+    }
+    {
+        /* No Connection header → default keep-alive (wants_close = false). */
+        const char *no_conn =
+            "POST /mcp HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}";
+        mcp_http_request_t *rn = mcp_http_parse_request(NULL, no_conn, strlen(no_conn));
+        CHECK(rn != NULL);
+        CHECK(mcp_http_request_wants_close(NULL, rn) == false);
+        mcp_http_request_destroy(NULL, rn);
+    }
     return 0;
 }
