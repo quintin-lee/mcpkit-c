@@ -12,6 +12,7 @@
 #ifndef MCPKIT_SERVER_INTERNALS_H
 #define MCPKIT_SERVER_INTERNALS_H
 
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -99,11 +100,16 @@ struct mcp_server {
     // Advanced-method state (Phase 5): log floor consulted by dlogf on
     // dispatch routes, the resource-subscription uri set, and the
     // server-originated request id counter (starts 1.0, monotonic per-server).
-    mcp_log_level_t log_floor;
+    // log_floor is atomic so dlogf_srv can read it without a lock;
+    // subscribed_uris mutations are guarded by subscribed_lock.
+    atomic_int log_floor;
     char **subscribed_uris;
     size_t n_subscribed;
     size_t cap_subscribed;
     double next_server_id;
+    // Guards all reads/writes of subscribed_uris, n_subscribed, cap_subscribed
+    // from concurrent dispatch threads (route_advanced subscribe/unsubscribe).
+    pthread_mutex_t subscribed_lock;
 };
 
 struct mcp_queue {

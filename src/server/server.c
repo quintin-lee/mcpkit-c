@@ -61,7 +61,8 @@ mcp_server_t *mcp_server_create(mcp_context_t *ctx, const char *name, const char
     atomic_init(&srv->c_requests_error, 0);
     atomic_init(&srv->c_notifications_total, 0);
     atomic_init(&srv->c_tools_called, 0);
-    srv->log_floor = MCP_LOG_DEBUG;
+    atomic_init(&srv->log_floor, MCP_LOG_DEBUG);
+    pthread_mutex_init(&srv->subscribed_lock, NULL);
     srv->next_server_id = 1000.0;
     srv->name = srv_strdup(ctx, name);
     srv->version = srv_strdup(ctx, version);
@@ -142,6 +143,7 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     free_all_completions(ctx, srv);
     free_outbox(ctx, srv);
     free_subscribed(ctx, srv);
+    pthread_mutex_destroy(&srv->subscribed_lock);
     srv_free(ctx, srv->name);
     srv_free(ctx, srv->version);
     srv_free(ctx, srv);

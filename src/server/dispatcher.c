@@ -56,8 +56,8 @@ static void dlogf(mcp_context_t *ctx, mcp_log_level_t level, const char *fmt, ..
 // Serve-loop stations (loop.c/stdio.c) have no server and stay
 // logger-level-filtered only.
 static void dlogf_srv(mcp_context_t *ctx, mcp_server_t *srv, mcp_log_level_t level,
-                      const char *fmt, ...) {
-    if (level < srv->log_floor) {
+                       const char *fmt, ...) {
+    if (level < (mcp_log_level_t)atomic_load(&srv->log_floor)) {
         return;
     }
     // Forward to the plain variant to keep a single formatting path.
@@ -666,7 +666,7 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
         } else {
             return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "logging/setLevel: bad level");
         }
-        srv->log_floor = mapped;
+        atomic_store(&srv->log_floor, (int)mapped);
         mcp_json_value_t *result = mcp_json_object_new(ctx);
         if (result == NULL) {
             return NULL;
@@ -685,39 +685,45 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
             return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "missing uri");
         }
         bool is_sub = strcmp(method, "resources/subscribe") == 0;
-        if (is_sub) {
-            bool seen = false;
-            for (size_t i = 0; i < srv->n_subscribed; i++) {
-                if (strcmp(srv->subscribed_uris[i], uri) == 0) {
-                    seen = true;
-                    break;
+        pthread_mutex_lock(&srv->subscribed_lock);
+        {
+            if (is_sub) {
+                bool seen = false;
+                for (size_t i = 0; i < srv->n_subscribed; i++) {
+                    if (strcmp(srv->subscribed_uris[i], uri) == 0) {
+                        seen = true;
+                        break;
+                    }
                 }
-            }
-            if (!seen) {
-                if (srv->n_subscribed == srv->cap_subscribed) {
-                    size_t ncap = srv->cap_subscribed == 0 ? 4 : srv->cap_subscribed * 2;
-                    char **nu = srv_realloc(ctx, srv->subscribed_uris, ncap * sizeof(*nu));
-                    if (nu == NULL) {
+                if (!seen) {
+                    if (srv->n_subscribed == srv->cap_subscribed) {
+                        size_t ncap = srv->cap_subscribed == 0 ? 4 : srv->cap_subscribed * 2;
+                        char **nu = srv_realloc(ctx, srv->subscribed_uris, ncap * sizeof(*nu));
+                        if (nu == NULL) {
+                            pthread_mutex_unlock(&srv->subscribed_lock);
+                            return NULL;
+                        }
+                        srv->subscribed_uris = nu;
+                        srv->cap_subscribed = ncap;
+                    }
+                    char *copy = srv_strdup(ctx, uri);
+                    if (copy == NULL) {
+                        pthread_mutex_unlock(&srv->subscribed_lock);
                         return NULL;
                     }
-                    srv->subscribed_uris = nu;
-                    srv->cap_subscribed = ncap;
+                    srv->subscribed_uris[srv->n_subscribed++] = copy;
                 }
-                char *copy = srv_strdup(ctx, uri);
-                if (copy == NULL) {
-                    return NULL;
-                }
-                srv->subscribed_uris[srv->n_subscribed++] = copy;
-            }
-        } else {
-            for (size_t i = 0; i < srv->n_subscribed; i++) {
-                if (strcmp(srv->subscribed_uris[i], uri) == 0) {
-                    srv_free(ctx, srv->subscribed_uris[i]);
-                    srv->subscribed_uris[i] = srv->subscribed_uris[--srv->n_subscribed];
-                    break;
+            } else {
+                for (size_t i = 0; i < srv->n_subscribed; i++) {
+                    if (strcmp(srv->subscribed_uris[i], uri) == 0) {
+                        srv_free(ctx, srv->subscribed_uris[i]);
+                        srv->subscribed_uris[i] = srv->subscribed_uris[--srv->n_subscribed];
+                        break;
+                    }
                 }
             }
         }
+        pthread_mutex_unlock(&srv->subscribed_lock);
         mcp_json_value_t *result = mcp_json_object_new(ctx);
         if (result == NULL) {
             return NULL;
