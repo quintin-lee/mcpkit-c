@@ -28,6 +28,7 @@
 #include <unistd.h>
 
 #include "internals.h"
+#include "mcpkit/client/client.h"
 #include "mcpkit/core/context.h"
 #include "mcpkit/core/shutdown.h"
 #include "mcpkit/core/types.h"
@@ -347,7 +348,8 @@ static mcp_status_t send_error(mcp_context_t *ctx, mcp_transport_t *t, int code,
     return st;
 }
 
-mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_transport_t *t) {
+static mcp_status_t stdio_serve_impl(mcp_context_t *ctx, mcp_server_t *server,
+                                     mcp_client_t *client, mcp_transport_t *t) {
     if (server == NULL || t == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
@@ -358,17 +360,12 @@ mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_trans
     mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=serve_start transport=stdio");
     mcp_status_t status = MCP_OK;
     for (;;) {
-        // Shutdown requested while idle or during the previous
-        // dispatch: stop before taking new work. The in-flight
-        // request (if any) already ran to completion above.
         if (mcp_shutdown_requested()) {
             mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_INFO, "event=shutdown");
             status = MCP_ERR_CANCELLED;
             break;
         }
         mcp_status_t st = MCP_OK;
-        // Flush any pending server-originated notifications before taking
-        // new client work so the outbox never grows without bound.
         for (;;) {
             mcp_message_t *notify = NULL;
             if (mcp_server_outbox_pop(ctx, server, &notify) != MCP_OK) {
@@ -385,8 +382,6 @@ mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_trans
         if (st == MCP_ERR_IO) {
             break;
         }
-        // A recv timeout is an idle wakeup: exit only if shutdown was
-        // requested, otherwise keep the pre-existing break semantics.
         if (st == MCP_ERR_TIMEOUT) {
             status = mcp_shutdown_requested() ? MCP_ERR_CANCELLED : st;
             break;
@@ -415,8 +410,18 @@ mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_trans
             mcp_message_destroy(ctx, msg);
             continue;
         }
+        /* Route server-to-client requests to the client when available. */
+        const char *method = mcp_message_method(ctx, msg);
+        bool is_server_to_client = client != NULL && method != NULL &&
+            (strcmp(method, "roots/list") == 0 ||
+             strcmp(method, "sampling/createMessage") == 0 ||
+             strcmp(method, "elicitation/create") == 0);
         mcp_message_t *resp = NULL;
-        st = mcp_server_dispatch(ctx, server, sess, msg, &resp);
+        if (is_server_to_client) {
+            st = mcp_client_handle_server_request(ctx, client, msg, &resp);
+        } else {
+            st = mcp_server_dispatch(ctx, server, sess, msg, &resp);
+        }
         mcp_message_destroy(ctx, msg);
         if (st != MCP_OK) {
             status = st;
@@ -440,4 +445,13 @@ mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_trans
 done:
     mcp_server_destroy_session(ctx, server, sess);
     return status;
+}
+
+mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_transport_t *t) {
+    return stdio_serve_impl(ctx, server, NULL, t);
+}
+
+mcp_status_t mcp_stdio_serve_with_client(mcp_context_t *ctx, mcp_server_t *server,
+                                         mcp_client_t *client, mcp_transport_t *t) {
+    return stdio_serve_impl(ctx, server, client, t);
 }

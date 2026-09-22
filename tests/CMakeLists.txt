@@ -196,3 +196,7 @@ add_test(NAME test_notify_client COMMAND test_notify_client)
 add_executable(test_advanced_methods unit/test_advanced_methods.c)
 target_link_libraries(test_advanced_methods PRIVATE mcpkit_core)
 add_test(NAME test_advanced_methods COMMAND test_advanced_methods)
+
+add_executable(test_stdio_serve_with_client unit/test_stdio_serve_with_client.c)
+target_link_libraries(test_stdio_serve_with_client PRIVATE mcpkit_core)
+add_test(NAME test_stdio_serve_with_client COMMAND test_stdio_serve_with_client)

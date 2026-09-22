@@ -37,6 +37,7 @@
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_transport mcp_transport_t;
+typedef struct mcp_message mcp_message_t;
 
 typedef struct mcp_client mcp_client_t;
 

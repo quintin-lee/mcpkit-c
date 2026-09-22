@@ -29,6 +29,7 @@
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_transport mcp_transport_t;
 typedef struct mcp_server mcp_server_t;
+typedef struct mcp_client mcp_client_t;
 
 /**
  * @brief Creates a stdio transport over two FILE* handles.
@@ -64,5 +65,32 @@ mcp_transport_t *mcp_stdio_transport_create(mcp_context_t *ctx, FILE *in, FILE *
  *         MCP_ERR_CANCELLED on requested shutdown.
  */
 mcp_status_t mcp_stdio_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_transport_t *t);
+
+/**
+ * @brief Runs a synchronous serve loop that also routes server-originated
+ *        requests (roots/list, sampling/createMessage, elicitation/create)
+ *        to an optional client.
+ *
+ * Behaves identically to mcp_stdio_serve when client is NULL.  When
+ * client is non-NULL, incoming REQUEST messages whose method is one of
+ * the three server-to-client methods are routed to
+ * mcp_client_handle_server_request instead of mcp_server_dispatch; the
+ * response is serialized and sent back over the transport.  All other
+ * methods still go to mcp_server_dispatch.
+ *
+ * The client's provider callbacks (mcp_client_set_roots_provider, etc.)
+ * determine what is returned; if no provider is registered the client
+ * replies -32601.
+ *
+ * @param ctx Context; may be NULL.
+ * @param server Target server to dispatch to.
+ * @param client Optional client for server-originated requests; NULL
+ *               disables that routing (same as mcp_stdio_serve).
+ * @param t Transport created by mcp_stdio_transport_create.
+ * @return MCP_OK on clean EOF; MCP_ERR_IO on I/O failure;
+ *         MCP_ERR_CANCELLED on requested shutdown.
+ */
+mcp_status_t mcp_stdio_serve_with_client(mcp_context_t *ctx, mcp_server_t *server,
+                                         mcp_client_t *client, mcp_transport_t *t);
 
 #endif
