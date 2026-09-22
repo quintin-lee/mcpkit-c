@@ -14,6 +14,13 @@ Format follows Keep a Changelog. Versions follow SemVer.
   mcpkit-config.cmake) plus `pkg-config --exists mcpkit`.
 - `tests/fuzz/fuzz_run.sh`: reusable local/CI driver for the stdin
   fuzz harnesses; exit 0 means all harnesses ran without crashing.
+- `mcp_tls_transport_create`: OpenSSL-backed TLS transport adapter
+  (behind `MCPKIT_BUILD_TLS`, default OFF).  The default zero-dep build
+  is unchanged; when enabled, links OpenSSL PRIVATE to `mcpkit_core`.
+  Both client and server handshakes are deferred to
+  `mcp_transport_start()`; peer certificate verification is disabled
+  by default (development / loopback use only).
+
 - `mcp_socket_serve`: multi-connection TCP accept-loop; each accepted
   connection is served on a threadpool worker.  Blocks until
   `mcp_shutdown_requested()`; drains in-flight connections before

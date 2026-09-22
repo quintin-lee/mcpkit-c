@@ -485,6 +485,24 @@ Blocks until `mcp_shutdown_requested()`; drains `pool` before returning.
 `pool_or_null` = NULL runs each connection inline (sequential, no
 concurrency). Newline-framed, same 4 MB cap as stdio.
 
+### `tls.h`
+*(OpenSSL; built only when `MCPKIT_BUILD_TLS=ON`)*
+```c
+mcp_transport_t *mcp_tls_transport_create(ctx, const char *host_or_null,
+                                          uint16_t port, bool server_mode,
+                                          const char *cert_or_null,
+                                          const char *key_or_null);
+```
+Server: `port` = listen port, `cert`/`key` = PEM file paths.
+Client: `host_or_null` = "127.0.0.1" or IP, `port` = server port,
+`cert`/`key` = NULL (no peer cert verification by default).
+The TLS handshake is deferred to `mcp_transport_start()` for both
+modes (server runs `SSL_accept` on the accepted conn; client runs
+`SSL_connect`).  Call `start()` on both sides before using
+`send`/`recv`; a second `start()` is a no-op.
+Line framing, 4 MB cap, deadline semantics match `socket.h`.
+Link OpenSSL PRIVATE to `mcpkit_core` only when `MCPKIT_BUILD_TLS=ON`.
+
 ### `http.h`
 Buffer-level HTTP/1.1 parser/builder (no sockets).
 ```c
