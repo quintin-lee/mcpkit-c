@@ -29,6 +29,7 @@
 #include "mcpkit/logging/logger.h"
 #include "mcpkit/protocol/initialize.h"
 #include "mcpkit/protocol/message.h"
+#include "mcpkit/protocol/mrtr.h"
 #include "mcpkit/server/server.h"
 #include "mcpkit/server/session.h"
 
@@ -483,7 +484,23 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
         return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "tools/call: permission denied");
     }
     mcp_json_value_t *result = NULL;
-    mcp_status_t st = tool->handler(ctx, s, args, tool->user_data, &result);
+    mcp_status_t st;
+    if (tool->handler_v2 != NULL) {
+        /* V2 path: extract MRTR fields and populate call context */
+        mcp_tool_call_ctx_t call_ctx;
+        call_ctx.args            = args;
+        call_ctx.input_responses = mcp_json_object_get(ctx, params, "inputResponses");
+        const mcp_json_value_t *rs_val = mcp_json_object_get(ctx, params, "requestState");
+        const char *rs_str = NULL;
+        if (rs_val != NULL && mcp_json_type(ctx, rs_val) == MCP_JSON_STRING) {
+            mcp_json_string_value(ctx, rs_val, &rs_str);
+        }
+        call_ctx.request_state = rs_str;
+        st = tool->handler_v2(ctx, s, &call_ctx, tool->user_data, &result);
+    } else {
+        /* V1 path: unchanged */
+        st = tool->handler(ctx, s, args, tool->user_data, &result);
+    }
     atomic_fetch_add(&srv->c_tools_called, 1);
     if (st != MCP_OK) {
         dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=tool_error tool=%s status=%s", name,
@@ -493,9 +510,13 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
     if (result == NULL) {
         return err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "tools/call: empty result");
     }
-    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
-        mcp_json_destroy(ctx, result);
-        return NULL;
+    /* For InputRequiredResult, skip the "complete" decoration and pass
+     * the result through as-is so the client gets the full MRTR payload. */
+    if (!mcp_mrtr_is_input_required(ctx, result)) {
+        if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+            mcp_json_destroy(ctx, result);
+            return NULL;
+        }
     }
     mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
     if (resp == NULL) {

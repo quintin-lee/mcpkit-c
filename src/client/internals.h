@@ -4,7 +4,8 @@
  * Internal layout of the client handle: the bound context, transport,
  * the next JSON-RPC request id, and the negotiated protocol version.
  * Also holds the three host-injected response provider callbacks
- * (roots, sampling, elicitation).  NOT a public header.
+ * (roots, sampling, elicitation) and the MRTR elicitation callback.
+ * NOT a public header.
  */
 #ifndef MCPKIT_CLIENT_INTERNALS_H
 #define MCPKIT_CLIENT_INTERNALS_H
@@ -24,6 +25,9 @@ struct mcp_client {
     void *sample_ud;
     mcp_client_elicitation_fn elicitation_fn;
     void *elicitation_ud;
+    /* MRTR elicitation callback (NULL = no auto-retry on input_required). */
+    mcp_client_mrtr_elicit_fn mrtr_elicit_fn;
+    void *mrtr_elicit_ud;
 };
 
 #endif
