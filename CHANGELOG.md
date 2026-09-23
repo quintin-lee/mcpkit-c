@@ -40,12 +40,22 @@ Format follows Keep a Changelog. Versions follow SemVer.
     transaction authorization.
   - Fix in `src/transport/socket.c`: added carry buffer to `sock_recv` so that
     trailing pipelined bytes across newline boundaries are never dropped.
-- Protocol statelessness: `mcp_message_meta` accessor, `mcp_result_inject_result_type`
-  and `mcp_result_inject_meta` decorators, `mcp_server_set_list_cache` /
-  `mcp_server_set_response_meta` host config setters, `mcp_session_client_meta`
-  accessor, and `server/discover` RPC route.  All successful responses now carry
-  `resultType: "complete"`; list responses additionally carry `ttlMs` /
-  `cacheScope` when the host has configured `mcp_server_set_list_cache`.
+- Protocol statelessness (MCP 2026-07-28 spec):
+  - `mcp_message_meta` accessor, `mcp_result_inject_result_type` and
+    `mcp_result_inject_meta` decorators, `mcp_server_set_list_cache` /
+    `mcp_server_set_response_meta` host config setters, `mcp_session_client_meta`
+    accessor, and `server/discover` RPC route.
+  - All successful responses now carry `resultType: "complete"`; list responses
+    additionally carry `ttlMs` / `cacheScope` when configured.
+  - Dispatcher allows `server/discover` pre-flight probes and requests carrying
+    `_meta` to bypass the session uninitialized gate without requiring prior
+    handshake (SEP-2575).
+  - Streamable HTTP transport (`src/transport/streamable_http.c`) supports
+    stateless POST requests (with `_meta` or `server/discover`) without
+    requiring or returning `Mcp-Session-Id` header (SEP-2567).
+  - Standard error codes: `MCP_RPC_HEADER_MISMATCH` (-32020),
+    `MCP_RPC_MISSING_REQUIRED_CLIENT_CAPABILITY` (-32021),
+    `MCP_RPC_UNSUPPORTED_PROTOCOL_VERSION` (-32022).
 
 - `mcp_socket_serve`: multi-connection TCP accept-loop; each accepted
   connection is served on a threadpool worker.  Blocks until

@@ -191,48 +191,67 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
     const char *sid = mcp_http_header(ctx, req, "Mcp-Session-Id");
     const char *method = kind == MCP_MSG_REQUEST ? mcp_message_method(ctx, msg) : NULL;
     bool is_init = method != NULL && strcmp(method, "initialize") == 0;
+    bool is_discover = method != NULL && strcmp(method, "server/discover") == 0;
+    bool is_stateless = mcp_message_meta(ctx, msg) != NULL || is_discover;
     bool is_new = false;
     http_session_slot_t *slot = NULL;
+    mcp_session_t *sess = NULL;
+
     if (sid == NULL) {
-        if (!is_init) {
+        if (is_stateless) {
+            sess = mcp_server_create_session(ctx, server);
+            if (sess == NULL) {
+                mcp_message_destroy(ctx, msg);
+                return send_bytes(ctx, io, 500, "Internal Server Error", NULL, NULL, 0, NULL, NULL);
+            }
+        } else if (!is_init) {
             mcp_message_destroy(ctx, msg);
             return send_bytes(ctx, io, 400, "Bad Request", NULL, NULL, 0, NULL, NULL);
-        }
-        for (size_t i = 0; i < MCP_HTTP_MAX_SESSIONS; i++) {
-            if (!table->slots[i].used) {
-                slot = &table->slots[i];
-                break;
+        } else {
+            for (size_t i = 0; i < MCP_HTTP_MAX_SESSIONS; i++) {
+                if (!table->slots[i].used) {
+                    slot = &table->slots[i];
+                    break;
+                }
             }
+            if (slot == NULL) {
+                mcp_message_destroy(ctx, msg);
+                return send_bytes(ctx, io, 500, "Internal Server Error", NULL, NULL, 0, NULL,
+                                  NULL);
+            }
+            slot->sess = mcp_server_create_session(ctx, server);
+            if (slot->sess == NULL) {
+                mcp_message_destroy(ctx, msg);
+                return send_bytes(ctx, io, 500, "Internal Server Error", NULL, NULL, 0, NULL,
+                                  NULL);
+            }
+            snprintf(slot->id, sizeof(slot->id), "sess-%u", table->next_id++);
+            slot->used = true;
+            is_new = true;
+            sess = slot->sess;
         }
-        if (slot == NULL) {
-            mcp_message_destroy(ctx, msg);
-            return send_bytes(ctx, io, 500, "Internal Server Error", NULL, NULL, 0, NULL,
-                              NULL);
-        }
-        slot->sess = mcp_server_create_session(ctx, server);
-        if (slot->sess == NULL) {
-            mcp_message_destroy(ctx, msg);
-            return send_bytes(ctx, io, 500, "Internal Server Error", NULL, NULL, 0, NULL,
-                              NULL);
-        }
-        snprintf(slot->id, sizeof(slot->id), "sess-%u", table->next_id++);
-        slot->used = true;
-        is_new = true;
     } else {
         slot = table_find(table, sid);
         if (slot == NULL) {
             mcp_message_destroy(ctx, msg);
             return send_bytes(ctx, io, 404, "Not Found", NULL, NULL, 0, NULL, NULL);
         }
+        sess = slot->sess;
     }
     if (kind == MCP_MSG_NOTIFICATION) {
-        mcp_server_notify(ctx, server, slot->sess, msg);
+        mcp_server_notify(ctx, server, sess, msg);
         mcp_message_destroy(ctx, msg);
+        if (is_stateless) {
+            mcp_server_destroy_session(ctx, server, sess);
+        }
         return send_bytes(ctx, io, 202, "Accepted", NULL, NULL, 0, NULL, NULL);
     }
     mcp_message_t *resp = NULL;
-    mcp_status_t st = mcp_server_dispatch(ctx, server, slot->sess, msg, &resp);
+    mcp_status_t st = mcp_server_dispatch(ctx, server, sess, msg, &resp);
     mcp_message_destroy(ctx, msg);
+    if (is_stateless) {
+        mcp_server_destroy_session(ctx, server, sess);
+    }
     if (st != MCP_OK || resp == NULL) {
         return send_bytes(ctx, io, 500, "Internal Server Error", NULL, NULL, 0, NULL, NULL);
     }
@@ -242,7 +261,7 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
         return send_bytes(ctx, io, 500, "Internal Server Error", NULL, NULL, 0, NULL, NULL);
     }
     st = send_bytes(ctx, io, 200, "OK", "application/json", json, strlen(json),
-                    is_new ? "Mcp-Session-Id" : NULL, slot->id);
+                    is_new ? "Mcp-Session-Id" : NULL, slot ? slot->id : NULL);
     mcp_json_free_string(ctx, json);
     return st;
 }

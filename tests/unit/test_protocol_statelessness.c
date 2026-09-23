@@ -262,6 +262,44 @@ static void case_ping_result_type(mcp_context_t *ctx, mcp_server_t *srv, mcp_ses
     mcp_message_destroy(ctx, r);
 }
 
+/* case 9: server/discover and requests with _meta work on UNINITIALIZED session (MCP 2026-07-28 statelessness) */
+static void case_uninitialized_discover_and_stateless(mcp_context_t *ctx, mcp_server_t *srv) {
+    mcp_session_t *s_raw = mcp_server_create_session(ctx, srv);
+    CHECK(s_raw);
+
+    /* 1. server/discover probe succeeds without init */
+    mcp_message_t *r = dispatch_req(ctx, srv, s_raw, "d1", "server/discover");
+    CHECK(r);
+    CHECK(mcp_message_result(ctx, r) != NULL);
+    mcp_message_destroy(ctx, r);
+
+    /* 2. stateless request with _meta succeeds without init */
+    static const char kStatelessCall[] =
+        "{\"jsonrpc\":\"2.0\",\"id\":\"st1\",\"method\":\"tools/call\","
+        "\"params\":{\"name\":\"noop\",\"arguments\":{}},"
+        "\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"}}";
+    mcp_message_t *req = mcp_message_parse(ctx, kStatelessCall, strlen(kStatelessCall));
+    CHECK(req);
+    mcp_message_t *resp = NULL;
+    CHECK(mcp_server_dispatch(ctx, srv, s_raw, req, &resp) == MCP_OK);
+    mcp_message_destroy(ctx, req);
+    CHECK(resp);
+    CHECK(mcp_message_result(ctx, resp) != NULL);
+    mcp_message_destroy(ctx, resp);
+
+    /* 3. legacy request without _meta is rejected with 'session not initialized' */
+    mcp_message_t *leg = dispatch_req(ctx, srv, s_raw, "leg1", "tools/list");
+    CHECK(leg);
+    int err_code = 0;
+    CHECK(mcp_message_error_code(ctx, leg, &err_code) == MCP_OK);
+    CHECK(err_code == MCP_RPC_INVALID_REQUEST);
+    const char *err_txt = mcp_message_error_text(ctx, leg);
+    CHECK(err_txt != NULL && strstr(err_txt, "session not initialized") != NULL);
+    mcp_message_destroy(ctx, leg);
+
+    mcp_server_destroy_session(ctx, srv, s_raw);
+}
+
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
     CHECK(ctx);
@@ -281,6 +319,7 @@ int main(void) {
     case_response_meta_inject(ctx, srv, s);
     case_session_client_meta(ctx, srv, s);
     case_ping_result_type(ctx, srv, s);
+    case_uninitialized_discover_and_stateless(ctx, srv);
 
     mcp_server_destroy(ctx, srv);
     mcp_context_destroy(ctx);

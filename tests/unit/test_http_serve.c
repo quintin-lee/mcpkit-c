@@ -364,6 +364,39 @@ int main(void) {
         free(out);
     }
 
+    /* (q) MCP 2026-07-28 stateless HTTP: POST without Mcp-Session-Id succeeds
+           when request carries _meta or is server/discover, and does NOT emit
+           Mcp-Session-Id header */
+    {
+        /* 1. server/discover */
+        static const char kDiscoverBody[] =
+            "{\"jsonrpc\":\"2.0\",\"id\":\"disc1\",\"method\":\"server/discover\"}";
+        char buf1[4096];
+        char *req1 = make_post(kDiscoverBody, NULL, buf1, sizeof(buf1));
+        const char *reqs1[] = { req1 };
+        char *out1 = run_script(ctx, srv, reqs1, 1, &st);
+        CHECK(st == MCP_OK && out1 != NULL);
+        CHECK(strstr(out1, "HTTP/1.1 200 OK") != NULL);
+        CHECK(strstr(out1, "serverName") != NULL);
+        CHECK(strstr(out1, "Mcp-Session-Id:") == NULL);
+        free(out1);
+
+        /* 2. stateless tool call with _meta */
+        static const char kStatelessCallBody[] =
+            "{\"jsonrpc\":\"2.0\",\"id\":\"stcall\",\"method\":\"tools/call\","
+            "\"params\":{\"name\":\"echo\",\"arguments\":{\"text\":\"stateless-http\"}},"
+            "\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"}}";
+        char buf2[4096];
+        char *req2 = make_post(kStatelessCallBody, NULL, buf2, sizeof(buf2));
+        const char *reqs2[] = { req2 };
+        char *out2 = run_script(ctx, srv, reqs2, 1, &st);
+        CHECK(st == MCP_OK && out2 != NULL);
+        CHECK(strstr(out2, "HTTP/1.1 200 OK") != NULL);
+        CHECK(strstr(out2, "stateless-http") != NULL);
+        CHECK(strstr(out2, "Mcp-Session-Id:") == NULL);
+        free(out2);
+    }
+
     mcp_server_destroy(ctx, srv);
     mcp_context_destroy(ctx);
     printf("test_http_serve OK\n");

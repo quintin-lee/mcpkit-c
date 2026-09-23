@@ -1040,7 +1040,9 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
         *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "missing method");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
-    if (!session->initialized && strcmp(method, "initialize") != 0) {
+    bool is_stateless = (mcp_message_meta(ctx, req) != NULL);
+    bool is_discover = (strcmp(method, "server/discover") == 0);
+    if (!session->initialized && strcmp(method, "initialize") != 0 && !is_discover && !is_stateless) {
         dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=uninitialized method=%s", method);
         atomic_fetch_add(&srv->c_requests_error, 1);
         *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "session not initialized");
