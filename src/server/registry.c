@@ -36,6 +36,7 @@ mcp_tool_t *mcp_tool_new(mcp_context_t *ctx, const char *name, const char *descr
     }
     tool->schema = input_schema;
     tool->handler = handler;
+    tool->handler_v2 = NULL;
     tool->user_data = user_data;
     tool->vis = MCP_TOOL_VIS_BOTH;
     tool->required = 0;
@@ -50,6 +51,36 @@ void mcp_tool_destroy(mcp_context_t *ctx, mcp_tool_t *tool) {
     srv_free(ctx, tool->description);
     mcp_json_destroy(ctx, tool->schema);
     srv_free(ctx, tool);
+}
+
+mcp_tool_t *mcp_tool_new_v2(mcp_context_t *ctx, const char *name, const char *description,
+                             mcp_json_value_t *input_schema, mcp_tool_handler_v2_fn handler,
+                             void *user_data) {
+    if (name == NULL || handler == NULL) {
+        mcp_json_destroy(ctx, input_schema);
+        return NULL;
+    }
+    mcp_tool_t *tool = srv_malloc(ctx, sizeof(*tool));
+    if (tool == NULL) {
+        mcp_json_destroy(ctx, input_schema);
+        return NULL;
+    }
+    tool->name = srv_strdup(ctx, name);
+    tool->description = srv_strdup(ctx, description);
+    if (tool->name == NULL || (description != NULL && tool->description == NULL)) {
+        srv_free(ctx, tool->name);
+        srv_free(ctx, tool->description);
+        srv_free(ctx, tool);
+        mcp_json_destroy(ctx, input_schema);
+        return NULL;
+    }
+    tool->schema = input_schema;
+    tool->handler = NULL;
+    tool->handler_v2 = handler;
+    tool->user_data = user_data;
+    tool->vis = MCP_TOOL_VIS_BOTH;
+    tool->required = 0;
+    return tool;
 }
 
 mcp_status_t mcp_tool_set_visibility(mcp_context_t *ctx, mcp_tool_t *tool,

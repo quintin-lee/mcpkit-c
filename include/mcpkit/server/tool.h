@@ -27,7 +27,7 @@ typedef struct mcp_session mcp_session_t;
 typedef struct mcp_tool mcp_tool_t;
 
 /**
- * @brief Tool handler callback signature.
+ * @brief Tool handler callback signature (V1 — single-shot).
  *
  * @param ctx Context for allocation.
  * @param session Current session (borrowed; not owned).
@@ -42,6 +42,56 @@ typedef struct mcp_tool mcp_tool_t;
 typedef mcp_status_t (*mcp_tool_handler_fn)(mcp_context_t *ctx, mcp_session_t *session,
                                             const mcp_json_value_t *args, void *user_data,
                                             mcp_json_value_t **result_out);
+
+/**
+ * @brief Per-invocation context for V2 (MRTR-capable) tool handlers.
+ *
+ * Passed to `mcp_tool_handler_v2_fn` on every call, including subsequent
+ * round-trips after the handler previously returned an InputRequiredResult.
+ *
+ * On the first call both fields are NULL.  On a retry call:
+ *   - `input_responses` points to the client-supplied `inputResponses` array
+ *     (borrowed; valid for the duration of the handler call).
+ *   - `request_state` points to the `requestState` string the handler
+ *     embedded in the previous InputRequiredResult (borrowed; valid for the
+ *     duration of the handler call).
+ */
+typedef struct mcp_tool_call_ctx {
+    /** Borrowed pointer to the JSON `arguments` object. Same value as the
+     *  V1 `args` parameter.  Valid for the lifetime of the handler call. */
+    const mcp_json_value_t *args;
+
+    /** Borrowed JSON array from `params.inputResponses`; NULL on first
+     *  call or when the client sent no responses. */
+    const mcp_json_value_t *input_responses;
+
+    /** Borrowed string from `params.requestState`; NULL on first call. */
+    const char *request_state;
+} mcp_tool_call_ctx_t;
+
+/**
+ * @brief Tool handler callback signature (V2 — MRTR-capable).
+ *
+ * A V2 handler may either:
+ *   1. Return a regular result object (with `resultType: "complete"`, added
+ *      automatically by the dispatcher).
+ *   2. Return an `InputRequiredResult` built via
+ *      `mcp_mrtr_result_input_required_new()`. The dispatcher forwards it
+ *      to the client, which will re-issue the call with user responses.
+ *
+ * @param ctx      Context for allocation.
+ * @param session  Current session (borrowed; not owned).
+ * @param call_ctx Invocation context carrying args, inputResponses, and
+ *                 requestState (all borrowed).
+ * @param user_data Opaque pointer passed to mcp_tool_new_v2.
+ * @param result_out On MCP_OK, must be set to an owned JSON value (either
+ *                   a complete result or an InputRequiredResult).
+ * @return MCP_OK on success; any other MCP_ERR_* on handler failure.
+ */
+typedef mcp_status_t (*mcp_tool_handler_v2_fn)(mcp_context_t *ctx, mcp_session_t *session,
+                                                const mcp_tool_call_ctx_t *call_ctx,
+                                                void *user_data,
+                                                mcp_json_value_t **result_out);
 
 /**
  * @brief Creates a tool descriptor.
@@ -113,5 +163,27 @@ mcp_status_t mcp_tool_set_visibility(mcp_context_t *ctx, mcp_tool_t *tool,
  */
 mcp_status_t mcp_tool_require_perms(mcp_context_t *ctx, mcp_tool_t *tool,
                                     uint32_t perm_mask);
+
+/**
+ * @brief Creates an MRTR-capable (V2) tool descriptor.
+ *
+ * Identical to mcp_tool_new but accepts a `mcp_tool_handler_v2_fn` handler.
+ * V2 handlers receive a `mcp_tool_call_ctx_t` with `inputResponses` and
+ * `requestState` populated on retry calls.  They may return an
+ * `InputRequiredResult` to request more user input.
+ *
+ * @param ctx Context; may be NULL (default allocator).
+ * @param name Tool name; strdup'd internally; caller may free.
+ * @param description Optional description; strdup'd internally; may be NULL.
+ * @param input_schema Optional JSON Schema object; TAKEN on MCP_OK. May be NULL.
+ * @param handler V2 handler callback.
+ * @param user_data Opaque pointer forwarded to the handler.
+ * @return Owned mcp_tool_t, or NULL on OOM.
+ */
+mcp_tool_t *mcp_tool_new_v2(mcp_context_t *ctx, const char *name,
+                             const char *description,
+                             mcp_json_value_t *input_schema,
+                             mcp_tool_handler_v2_fn handler,
+                             void *user_data);
 
 #endif

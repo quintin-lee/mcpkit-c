@@ -138,7 +138,7 @@ int main(void) {
     CHECK(ctx != NULL);
 
     mcp_server_t *srv = make_server(ctx);
-    mcp_executor_t *pool = mcp_threadpool_create(ctx, 2);
+    mcp_executor_t *pool = mcp_threadpool_create(ctx, 4);
     CHECK(pool != NULL);
 
     /* Start the serve loop in a background thread. */

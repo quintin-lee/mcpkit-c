@@ -33,6 +33,7 @@
 
 #include "mcpkit/core/error.h"
 #include "mcpkit/json/value.h"
+#include "mcpkit/protocol/mrtr.h"
 
 
 typedef struct mcp_context mcp_context_t;
@@ -155,6 +156,77 @@ mcp_status_t mcp_client_list_tools(mcp_context_t *ctx, mcp_client_t *client,
 mcp_status_t mcp_client_call_tool(mcp_context_t *ctx, mcp_client_t *client,
                                   const char *name, mcp_json_value_t *args,
                                   mcp_json_value_t **result_out);
+
+/**
+ * @brief Host-injected callback invoked by `mcp_client_call_tool_mrtr` when
+ *        the server returns an `InputRequiredResult`.
+ *
+ * The callback must collect user input for every entry in `input_requests`
+ * and return an owned JSON array of `inputResponses` entries. Build each
+ * entry with `mcp_mrtr_input_response_new()`.
+ *
+ * @param ctx            Context; may be NULL.
+ * @param input_requests Borrowed JSON array from the server's
+ *                       `InputRequiredResult.inputRequests` field.
+ * @param request_state  Borrowed opaque string from the server's
+ *                       `InputRequiredResult.requestState` field; NULL if
+ *                       the server did not include one.
+ * @param user_data      Opaque pointer registered with
+ *                       `mcp_client_set_mrtr_elicit_handler`.
+ * @return Owned JSON array of `inputResponse` objects to send back, or
+ *         NULL to cancel the tool call (the retry loop returns
+ *         MCP_ERR_CANCELLED).
+ */
+typedef mcp_json_value_t *(*mcp_client_mrtr_elicit_fn)(
+    mcp_context_t *ctx,
+    const mcp_json_value_t *input_requests,
+    const char *request_state,
+    void *user_data);
+
+/**
+ * @brief Registers the MRTR elicitation callback on the client.
+ *
+ * When `mcp_client_call_tool_mrtr` encounters an `InputRequiredResult` it
+ * invokes this callback to collect user input before re-issuing the call.
+ * A NULL callback disables MRTR retry: the raw `InputRequiredResult` is
+ * returned as-is to the caller.
+ *
+ * @param ctx       Context; may be NULL.
+ * @param client    Target client; must not be NULL.
+ * @param fn        Elicitation callback, or NULL to clear.
+ * @param user_data Opaque pointer forwarded to fn on each call.
+ */
+void mcp_client_set_mrtr_elicit_handler(mcp_context_t *ctx, mcp_client_t *client,
+                                        mcp_client_mrtr_elicit_fn fn, void *user_data);
+
+/**
+ * @brief Sends `tools/call` and drives the MRTR retry loop automatically.
+ *
+ * If the server returns `resultType == "input_required"` and an MRTR
+ * elicitation handler is registered (via `mcp_client_set_mrtr_elicit_handler`),
+ * this function:
+ *   1. Invokes the elicitation callback with `inputRequests` + `requestState`.
+ *   2. Re-issues `tools/call` with `inputResponses` + `requestState`.
+ *   3. Repeats until a complete result or at most `MCP_MRTR_MAX_HOPS` retries.
+ *
+ * If no elicitation handler is registered the `InputRequiredResult` is
+ * returned to the caller unchanged (same behaviour as `mcp_client_call_tool`).
+ *
+ * @param ctx        Context; may be NULL.
+ * @param client     Target client; must not be NULL.
+ * @param name       Tool name; not owned.
+ * @param args       Optional arguments object; consumed on all paths.
+ * @param result_out Receives a caller-owned cloned result on MCP_OK.
+ * @return MCP_OK on success; MCP_ERR_CANCELLED if the elicitation callback
+ *         returned NULL (user cancelled); MCP_ERR_PROTOCOL if max hops
+ *         exceeded; other MCP_ERR_* codes on transport or protocol errors.
+ */
+mcp_status_t mcp_client_call_tool_mrtr(mcp_context_t *ctx, mcp_client_t *client,
+                                        const char *name, mcp_json_value_t *args,
+                                        mcp_json_value_t **result_out);
+
+/** @brief Maximum number of MRTR round-trips before giving up. */
+#define MCP_MRTR_MAX_HOPS 5
 
 /**
  * @brief Sends resources/read for the given URI.

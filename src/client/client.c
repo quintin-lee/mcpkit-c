@@ -17,6 +17,7 @@
 #include "mcpkit/json/value.h"
 #include "mcpkit/protocol/initialize.h"
 #include "mcpkit/protocol/message.h"
+#include "mcpkit/protocol/mrtr.h"
 #include "mcpkit/transport/transport.h"
 
 #include "internals.h"
@@ -44,6 +45,8 @@ mcp_client_t *mcp_client_create(mcp_context_t *ctx, mcp_transport_t *transport) 
     c->sample_ud = NULL;
     c->elicitation_fn = NULL;
     c->elicitation_ud = NULL;
+    c->mrtr_elicit_fn = NULL;
+    c->mrtr_elicit_ud = NULL;
     return c;
 }
 
@@ -316,6 +319,170 @@ mcp_status_t mcp_client_call_tool(mcp_context_t *ctx, mcp_client_t *client,
         return MCP_ERR_NOMEM;
     }
     return mcp_client_request(ctx, client, "tools/call", params, result_out);
+}
+
+void mcp_client_set_mrtr_elicit_handler(mcp_context_t *ctx, mcp_client_t *client,
+                                        mcp_client_mrtr_elicit_fn fn, void *user_data) {
+    (void)ctx;
+    if (client == NULL) return;
+    client->mrtr_elicit_fn = fn;
+    client->mrtr_elicit_ud = user_data;
+}
+
+mcp_status_t mcp_client_call_tool_mrtr(mcp_context_t *ctx, mcp_client_t *client,
+                                        const char *name, mcp_json_value_t *args,
+                                        mcp_json_value_t **result_out) {
+    if (client == NULL || name == NULL) {
+        mcp_json_destroy(ctx, args);
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    /* Pending inputResponses and requestState for the next hop (owned). */
+    mcp_json_value_t *pending_responses = NULL; /* owned JSON array  */
+    char *pending_state = NULL;                 /* owned string copy */
+
+    mcp_json_value_t *result = NULL;
+    mcp_status_t st = MCP_OK;
+
+    for (int hop = 0; hop <= MCP_MRTR_MAX_HOPS; hop++) {
+        /* Build params for this hop */
+        mcp_json_value_t *params = mcp_json_object_new(ctx);
+        mcp_json_value_t *nv = params != NULL ? mcp_json_string_new(ctx, name) : NULL;
+        if (params == NULL || nv == NULL) {
+            mcp_json_destroy(ctx, params);
+            mcp_json_destroy(ctx, args);
+            mcp_json_destroy(ctx, pending_responses);
+            if (pending_state != NULL) {
+                const mcp_allocator_t *a = ctx != NULL
+                    ? mcp_context_allocator(ctx) : mcp_default_allocator();
+                a->free_fn(pending_state, a->userdata);
+            }
+            return MCP_ERR_NOMEM;
+        }
+        if (mcp_json_object_set_take(ctx, params, "name", nv) != MCP_OK) {
+            mcp_json_destroy(ctx, params);
+            mcp_json_destroy(ctx, args);
+            mcp_json_destroy(ctx, pending_responses);
+            if (pending_state != NULL) {
+                const mcp_allocator_t *a = ctx != NULL
+                    ? mcp_context_allocator(ctx) : mcp_default_allocator();
+                a->free_fn(pending_state, a->userdata);
+            }
+            return MCP_ERR_NOMEM;
+        }
+        /* On first hop, attach the original args (caller-owned, consumed). */
+        if (hop == 0 && args != NULL) {
+            if (mcp_json_object_set_take(ctx, params, "arguments", args) != MCP_OK) {
+                mcp_json_destroy(ctx, params);
+                mcp_json_destroy(ctx, args);
+                mcp_json_destroy(ctx, pending_responses);
+                if (pending_state != NULL) {
+                    const mcp_allocator_t *a = ctx != NULL
+                        ? mcp_context_allocator(ctx) : mcp_default_allocator();
+                    a->free_fn(pending_state, a->userdata);
+                }
+                return MCP_ERR_NOMEM;
+            }
+            args = NULL; /* consumed */
+        }
+        /* On retry hops, attach inputResponses (owned by us, consumed). */
+        if (pending_responses != NULL) {
+            if (mcp_json_object_set_take(ctx, params, "inputResponses",
+                                         pending_responses) != MCP_OK) {
+                mcp_json_destroy(ctx, params);
+                mcp_json_destroy(ctx, pending_responses);
+                if (pending_state != NULL) {
+                    const mcp_allocator_t *a = ctx != NULL
+                        ? mcp_context_allocator(ctx) : mcp_default_allocator();
+                    a->free_fn(pending_state, a->userdata);
+                }
+                return MCP_ERR_NOMEM;
+            }
+            pending_responses = NULL; /* consumed */
+        }
+        /* On retry hops, attach requestState string. */
+        if (pending_state != NULL) {
+            mcp_json_value_t *sv = mcp_json_string_new(ctx, pending_state);
+            const mcp_allocator_t *a = ctx != NULL
+                ? mcp_context_allocator(ctx) : mcp_default_allocator();
+            a->free_fn(pending_state, a->userdata);
+            pending_state = NULL;
+            if (sv == NULL) {
+                mcp_json_destroy(ctx, params);
+                return MCP_ERR_NOMEM;
+            }
+            if (mcp_json_object_set_take(ctx, params, "requestState", sv) != MCP_OK) {
+                mcp_json_destroy(ctx, params);
+                return MCP_ERR_NOMEM;
+            }
+        }
+
+        result = NULL;
+        st = mcp_client_request(ctx, client, "tools/call", params, &result);
+        if (st != MCP_OK) {
+            /* params consumed by mcp_client_request */
+            break;
+        }
+
+        /* Check for InputRequiredResult */
+        if (!mcp_mrtr_is_input_required(ctx, result)) {
+            /* Done — complete result */
+            break;
+        }
+
+        /* No elicitation handler → return the InputRequiredResult as-is */
+        if (client->mrtr_elicit_fn == NULL) {
+            break;
+        }
+
+        if (hop == MCP_MRTR_MAX_HOPS) {
+            /* Too many hops */
+            mcp_json_destroy(ctx, result);
+            result = NULL;
+            st = MCP_ERR_PROTOCOL;
+            break;
+        }
+
+        /* Extract state for next hop */
+        const char *rs = mcp_mrtr_get_request_state(ctx, result);
+        if (rs != NULL) {
+            const mcp_allocator_t *a = ctx != NULL
+                ? mcp_context_allocator(ctx) : mcp_default_allocator();
+            pending_state = (char *)a->malloc_fn(strlen(rs) + 1, a->userdata);
+            if (pending_state == NULL) {
+                mcp_json_destroy(ctx, result);
+                result = NULL;
+                st = MCP_ERR_NOMEM;
+                break;
+            }
+            memcpy(pending_state, rs, strlen(rs) + 1);
+        }
+
+        const mcp_json_value_t *reqs = mcp_mrtr_get_input_requests(ctx, result);
+        pending_responses = client->mrtr_elicit_fn(ctx, reqs, pending_state,
+                                                   client->mrtr_elicit_ud);
+        mcp_json_destroy(ctx, result);
+        result = NULL;
+
+        if (pending_responses == NULL) {
+            /* User cancelled */
+            if (pending_state != NULL) {
+                const mcp_allocator_t *a = ctx != NULL
+                    ? mcp_context_allocator(ctx) : mcp_default_allocator();
+                a->free_fn(pending_state, a->userdata);
+                pending_state = NULL;
+            }
+            st = MCP_ERR_CANCELLED;
+            break;
+        }
+    }
+
+    if (result_out != NULL) {
+        *result_out = result;
+    } else {
+        mcp_json_destroy(ctx, result);
+    }
+    return st;
 }
 
 mcp_status_t mcp_client_read_resource(mcp_context_t *ctx, mcp_client_t *client,

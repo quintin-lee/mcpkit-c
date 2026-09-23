@@ -37,7 +37,8 @@ struct mcp_tool {
     char *name;
     char *description;
     mcp_json_value_t *schema;
-    mcp_tool_handler_fn handler;
+    mcp_tool_handler_fn handler;     /* V1; NULL when handler_v2 is set */
+    mcp_tool_handler_v2_fn handler_v2; /* V2 (MRTR); NULL for V1 tools */
     void *user_data;
     mcp_tool_visibility_t vis;
     uint32_t required;

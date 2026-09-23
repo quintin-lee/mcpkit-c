@@ -41,6 +41,7 @@ set(MCPKIT_CORE_SOURCES
   src/protocol/message.c
   src/protocol/initialize.c
   src/protocol/validate.c
+  src/protocol/mrtr.c
   src/server/server.c
   src/server/registry.c
   src/server/session.c
