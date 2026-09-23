@@ -274,6 +274,74 @@ mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
                                  mcp_json_value_t **result_out);
 
 /**
+ * @brief Sends tasks/get to query task status.
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param task_id Task ID string; not owned.
+ * @param result_out Receives a caller-owned cloned result on MCP_OK; may be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_tasks_get(mcp_context_t *ctx, mcp_client_t *client,
+                                  const char *task_id, mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends tasks/update to submit input responses to an interactive task.
+ *
+ * input_responses is consumed on all paths.
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param task_id Task ID string; not owned.
+ * @param input_responses Optional input responses array or object; consumed on all paths.
+ * @param result_out Receives a caller-owned cloned result on MCP_OK; may be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_tasks_update(mcp_context_t *ctx, mcp_client_t *client,
+                                     const char *task_id, mcp_json_value_t *input_responses,
+                                     mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends tasks/cancel to request task cancellation.
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param task_id Task ID string; not owned.
+ * @param result_out Receives a caller-owned cloned result on MCP_OK; may be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_tasks_cancel(mcp_context_t *ctx, mcp_client_t *client,
+                                     const char *task_id, mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends skills/list to discover skills available on the server.
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param cursor Optional pagination cursor; not owned, may be NULL.
+ * @param result_out Receives a caller-owned cloned result on MCP_OK; may be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_skills_list(mcp_context_t *ctx, mcp_client_t *client,
+                                    const char *cursor, mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends skills/get to retrieve a skill and its manifest.
+ *
+ * If name_or_uri contains "://", it is sent as the "uri" parameter;
+ * otherwise it is sent as the "name" parameter.
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param name_or_uri Skill name or URI; not owned.
+ * @param result_out Receives a caller-owned cloned result on MCP_OK; may be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_skills_get(mcp_context_t *ctx, mcp_client_t *client,
+                                   const char *name_or_uri, mcp_json_value_t **result_out);
+
+
+/**
  * @brief Sends subscriptions/listen to open a subscription stream with the server.
  *
  * Emits the JSON-RPC request `subscriptions/listen` and expects the server's initial

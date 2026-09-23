@@ -575,6 +575,125 @@ mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
     return mcp_client_request(ctx, client, "completion/complete", params, result_out);
 }
 
+mcp_status_t mcp_client_tasks_get(mcp_context_t *ctx, mcp_client_t *client,
+                                  const char *task_id, mcp_json_value_t **result_out) {
+    if (client == NULL || task_id == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_value_t *tv = params != NULL ? mcp_json_string_new(ctx, task_id) : NULL;
+    if (params == NULL || tv == NULL) {
+        if (params != NULL) {
+            mcp_json_destroy(ctx, params);
+        }
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set_take(ctx, params, "taskId", tv) != MCP_OK) {
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    return mcp_client_request(ctx, client, "tasks/get", params, result_out);
+}
+
+mcp_status_t mcp_client_tasks_update(mcp_context_t *ctx, mcp_client_t *client,
+                                     const char *task_id, mcp_json_value_t *input_responses,
+                                     mcp_json_value_t **result_out) {
+    if (client == NULL || task_id == NULL) {
+        if (input_responses != NULL) {
+            mcp_json_destroy(ctx, input_responses);
+        }
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_value_t *tv = params != NULL ? mcp_json_string_new(ctx, task_id) : NULL;
+    if (params == NULL || tv == NULL) {
+        if (params != NULL) {
+            mcp_json_destroy(ctx, params);
+        }
+        if (input_responses != NULL) {
+            mcp_json_destroy(ctx, input_responses);
+        }
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set_take(ctx, params, "taskId", tv) != MCP_OK) {
+        mcp_json_destroy(ctx, params);
+        if (input_responses != NULL) {
+            mcp_json_destroy(ctx, input_responses);
+        }
+        return MCP_ERR_NOMEM;
+    }
+    if (input_responses != NULL &&
+        mcp_json_object_set_take(ctx, params, "inputResponses", input_responses) != MCP_OK) {
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    return mcp_client_request(ctx, client, "tasks/update", params, result_out);
+}
+
+mcp_status_t mcp_client_tasks_cancel(mcp_context_t *ctx, mcp_client_t *client,
+                                     const char *task_id, mcp_json_value_t **result_out) {
+    if (client == NULL || task_id == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_value_t *tv = params != NULL ? mcp_json_string_new(ctx, task_id) : NULL;
+    if (params == NULL || tv == NULL) {
+        if (params != NULL) {
+            mcp_json_destroy(ctx, params);
+        }
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set_take(ctx, params, "taskId", tv) != MCP_OK) {
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    return mcp_client_request(ctx, client, "tasks/cancel", params, result_out);
+}
+
+mcp_status_t mcp_client_skills_list(mcp_context_t *ctx, mcp_client_t *client,
+                                    const char *cursor, mcp_json_value_t **result_out) {
+    if (client == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = NULL;
+    if (cursor != NULL) {
+        params = mcp_json_object_new(ctx);
+        mcp_json_value_t *cv = params != NULL ? mcp_json_string_new(ctx, cursor) : NULL;
+        if (params == NULL || cv == NULL) {
+            if (params != NULL) {
+                mcp_json_destroy(ctx, params);
+            }
+            return MCP_ERR_NOMEM;
+        }
+        if (mcp_json_object_set_take(ctx, params, "cursor", cv) != MCP_OK) {
+            mcp_json_destroy(ctx, params);
+            return MCP_ERR_NOMEM;
+        }
+    }
+    return mcp_client_request(ctx, client, "skills/list", params, result_out);
+}
+
+mcp_status_t mcp_client_skills_get(mcp_context_t *ctx, mcp_client_t *client,
+                                   const char *name_or_uri, mcp_json_value_t **result_out) {
+    if (client == NULL || name_or_uri == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_value_t *val = params != NULL ? mcp_json_string_new(ctx, name_or_uri) : NULL;
+    if (params == NULL || val == NULL) {
+        if (params != NULL) {
+            mcp_json_destroy(ctx, params);
+        }
+        return MCP_ERR_NOMEM;
+    }
+    const char *key = (strstr(name_or_uri, "://") != NULL) ? "uri" : "name";
+    if (mcp_json_object_set_take(ctx, params, key, val) != MCP_OK) {
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    return mcp_client_request(ctx, client, "skills/get", params, result_out);
+}
+
 mcp_status_t mcp_client_subscriptions_listen(mcp_context_t *ctx, mcp_client_t *client,
                                              mcp_json_value_t *notifications_filter,
                                              mcp_message_t **ack_out) {

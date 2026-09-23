@@ -225,6 +225,90 @@ int main(void) {
     CHECK(strstr(fake2.sent, "\"method\":\"notifications/cancelled\"") != NULL);
     CHECK(strstr(fake2.sent, "sub-test-1") != NULL);
 
+    // Test Tasks & Skills client helper invalid arguments
+    CHECK(mcp_client_tasks_get(ctx, NULL, "task-abc", NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_tasks_get(ctx, c2, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_tasks_update(ctx, NULL, "task-abc", NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_tasks_update(ctx, c2, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_tasks_cancel(ctx, NULL, "task-abc", NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_tasks_cancel(ctx, c2, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_skills_list(ctx, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_skills_get(ctx, NULL, "skill", NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_skills_get(ctx, c2, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+
+    static const char *kTasksSkillsResponses[] = {
+        "{\"jsonrpc\":\"2.0\",\"id\":11,\"result\":{\"taskId\":\"task-abc\",\"status\":\"working\"}}",
+        "{\"jsonrpc\":\"2.0\",\"id\":12,\"result\":{\"taskId\":\"task-abc\",\"status\":\"completed\"}}",
+        "{\"jsonrpc\":\"2.0\",\"id\":13,\"result\":{\"taskId\":\"task-abc\",\"status\":\"cancelled\"}}",
+        "{\"jsonrpc\":\"2.0\",\"id\":14,\"result\":{\"skills\":[{\"name\":\"code-search\",\"uri\":\"skills://code-search\",\"description\":\"search code\"}]}}",
+        "{\"jsonrpc\":\"2.0\",\"id\":15,\"result\":{\"name\":\"code-search\",\"uri\":\"skills://code-search\"}}",
+        "{\"jsonrpc\":\"2.0\",\"id\":16,\"result\":{\"name\":\"code-search\",\"uri\":\"skills://code-search\"}}"
+    };
+    fake2.script = kTasksSkillsResponses;
+    fake2.nscript = 6;
+    fake2.cursor = 0;
+
+    // 1. tasks/get
+    mcp_json_value_t *tget_res = NULL;
+    CHECK(mcp_client_tasks_get(ctx, c2, "task-abc", &tget_res) == MCP_OK);
+    CHECK(tget_res != NULL);
+    const char *task_id_val = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, tget_res, "taskId"), &task_id_val) == MCP_OK);
+    CHECK(strcmp(task_id_val, "task-abc") == 0);
+    mcp_json_destroy(ctx, tget_res);
+    CHECK(strstr(fake2.sent, "\"method\":\"tasks/get\"") != NULL);
+    CHECK(strstr(fake2.sent, "\"taskId\":\"task-abc\"") != NULL);
+
+    // 2. tasks/update
+    mcp_json_value_t *in_resp = mcp_json_array_new(ctx);
+    CHECK(in_resp != NULL);
+    mcp_json_value_t *tupd_res = NULL;
+    CHECK(mcp_client_tasks_update(ctx, c2, "task-abc", in_resp, &tupd_res) == MCP_OK);
+    CHECK(tupd_res != NULL);
+    const char *status_val = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, tupd_res, "status"), &status_val) == MCP_OK);
+    CHECK(strcmp(status_val, "completed") == 0);
+    mcp_json_destroy(ctx, tupd_res);
+    CHECK(strstr(fake2.sent, "\"method\":\"tasks/update\"") != NULL);
+    CHECK(strstr(fake2.sent, "\"inputResponses\":[]") != NULL);
+
+    // 3. tasks/cancel
+    mcp_json_value_t *tcan_res = NULL;
+    CHECK(mcp_client_tasks_cancel(ctx, c2, "task-abc", &tcan_res) == MCP_OK);
+    CHECK(tcan_res != NULL);
+    status_val = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, tcan_res, "status"), &status_val) == MCP_OK);
+    CHECK(strcmp(status_val, "cancelled") == 0);
+    mcp_json_destroy(ctx, tcan_res);
+    CHECK(strstr(fake2.sent, "\"method\":\"tasks/cancel\"") != NULL);
+
+    // 4. skills/list (with cursor)
+    mcp_json_value_t *slist_res = NULL;
+    CHECK(mcp_client_skills_list(ctx, c2, "cursor-1", &slist_res) == MCP_OK);
+    CHECK(slist_res != NULL);
+    const mcp_json_value_t *skills_arr = mcp_json_object_get(ctx, slist_res, "skills");
+    CHECK(skills_arr != NULL && mcp_json_array_size(ctx, skills_arr) == 1);
+    mcp_json_destroy(ctx, slist_res);
+    CHECK(strstr(fake2.sent, "\"method\":\"skills/list\"") != NULL);
+    CHECK(strstr(fake2.sent, "\"cursor\":\"cursor-1\"") != NULL);
+
+    // 5. skills/get (by name)
+    mcp_json_value_t *sget_res1 = NULL;
+    CHECK(mcp_client_skills_get(ctx, c2, "code-search", &sget_res1) == MCP_OK);
+    CHECK(sget_res1 != NULL);
+    mcp_json_destroy(ctx, sget_res1);
+    CHECK(strstr(fake2.sent, "\"method\":\"skills/get\"") != NULL);
+    CHECK(strstr(fake2.sent, "\"name\":\"code-search\"") != NULL);
+
+    // 6. skills/get (by URI)
+    mcp_json_value_t *sget_res2 = NULL;
+    CHECK(mcp_client_skills_get(ctx, c2, "skills://code-search", &sget_res2) == MCP_OK);
+    CHECK(sget_res2 != NULL);
+    mcp_json_destroy(ctx, sget_res2);
+    CHECK(strstr(fake2.sent, "\"method\":\"skills/get\"") != NULL);
+    CHECK(strstr(fake2.sent, "\"uri\":\"skills://code-search\"") != NULL);
+
+
     mcp_client_destroy(ctx, c2);
     mcp_transport_destroy(ctx, t2);
     mcp_client_destroy(ctx, NULL);
