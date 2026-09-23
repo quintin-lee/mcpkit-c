@@ -21,6 +21,9 @@ static void check_explicit_rows_round_trip(void)
     CHECK(mcp_rpc_code_to_status(MCP_RPC_METHOD_NOT_FOUND) == MCP_ERR_NOT_FOUND);
     CHECK(mcp_rpc_code_to_status(MCP_RPC_INVALID_REQUEST) == MCP_ERR_PROTOCOL);
     CHECK(mcp_rpc_code_to_status(MCP_RPC_PARSE_ERROR) == MCP_ERR_PROTOCOL);
+    CHECK(mcp_rpc_code_to_status(MCP_RPC_HEADER_MISMATCH) == MCP_ERR_PROTOCOL);
+    CHECK(mcp_rpc_code_to_status(MCP_RPC_MISSING_REQUIRED_CLIENT_CAPABILITY) == MCP_ERR_UNSUPPORTED);
+    CHECK(mcp_rpc_code_to_status(MCP_RPC_UNSUPPORTED_PROTOCOL_VERSION) == MCP_ERR_UNSUPPORTED);
     CHECK(mcp_rpc_code_to_status(0) == MCP_OK);
     CHECK(mcp_status_to_rpc_code(MCP_OK) == 0);
 }

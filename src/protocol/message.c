@@ -522,7 +522,11 @@ mcp_status_t mcp_rpc_code_to_status(int code) {
             return MCP_ERR_NOT_FOUND;
         case MCP_RPC_INVALID_REQUEST:
         case MCP_RPC_PARSE_ERROR:
+        case MCP_RPC_HEADER_MISMATCH:
             return MCP_ERR_PROTOCOL;
+        case MCP_RPC_MISSING_REQUIRED_CLIENT_CAPABILITY:
+        case MCP_RPC_UNSUPPORTED_PROTOCOL_VERSION:
+            return MCP_ERR_UNSUPPORTED;
         default:
             return MCP_ERR_PROTOCOL;
     }

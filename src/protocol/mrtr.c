@@ -85,7 +85,9 @@ mcp_json_value_t *mcp_mrtr_elicit_request_new(mcp_context_t *ctx,
 mcp_json_value_t *mcp_mrtr_result_input_required_new(mcp_context_t *ctx,
                                                       mcp_json_value_t *input_requests,
                                                       const char *request_state) {
-    if (input_requests == NULL) {
+    /* Per MCP 2026-07-28 spec: at least one of inputRequests or requestState
+     * MUST be present. */
+    if (input_requests == NULL && request_state == NULL) {
         return NULL;
     }
 
@@ -101,13 +103,15 @@ mcp_json_value_t *mcp_mrtr_result_input_required_new(mcp_context_t *ctx,
         return NULL;
     }
 
-    /* "inputRequests": [...] (takes ownership) */
-    if (mcp_json_object_set_take(ctx, obj, "inputRequests", input_requests) != MCP_OK) {
-        mcp_json_destroy(ctx, obj);
-        return NULL;
+    /* "inputRequests": [...] or {...} (optional if request_state is present, takes ownership) */
+    if (input_requests != NULL) {
+        if (mcp_json_object_set_take(ctx, obj, "inputRequests", input_requests) != MCP_OK) {
+            mcp_json_destroy(ctx, obj);
+            return NULL;
+        }
     }
 
-    /* "requestState": "..." (optional, strdup'd) */
+    /* "requestState": "..." (optional if input_requests is present, strdup'd) */
     if (request_state != NULL) {
         if (!set_str(ctx, obj, "requestState", request_state, NULL)) {
             return NULL;

@@ -132,6 +132,26 @@ static void test_input_required_no_state(void) {
     mcp_json_destroy(NULL, result);
 }
 
+static void test_input_required_state_only(void) {
+    printf("  test_input_required_state_only\n");
+
+    /* State only (load shedding or checkpointing, no inputRequests) */
+    mcp_json_value_t *result =
+        mcp_mrtr_result_input_required_new(NULL, NULL, "checkpoint_123");
+    CHECK(result != NULL);
+    if (result == NULL) return;
+
+    CHECK(mcp_mrtr_is_input_required(NULL, result));
+    const char *rs = mcp_mrtr_get_request_state(NULL, result);
+    CHECK(rs != NULL && strcmp(rs, "checkpoint_123") == 0);
+    CHECK(mcp_mrtr_get_input_requests(NULL, result) == NULL);
+
+    mcp_json_destroy(NULL, result);
+
+    /* Both NULL must fail */
+    CHECK(mcp_mrtr_result_input_required_new(NULL, NULL, NULL) == NULL);
+}
+
 static void test_is_input_required_negative(void) {
     printf("  test_is_input_required_negative\n");
 
@@ -714,6 +734,7 @@ int main(void) {
     test_elicit_request_with_schema();
     test_input_required_new();
     test_input_required_no_state();
+    test_input_required_state_only();
     test_is_input_required_negative();
     test_input_response_new();
 

@@ -102,14 +102,14 @@ mcp_json_value_t *mcp_mrtr_elicit_request_new(mcp_context_t *ctx,
  * ```
  *
  * @param ctx            Context; may be NULL.
- * @param input_requests Owned JSON array of elicitation-request objects
- *                       (from `mcp_mrtr_elicit_request_new`); TAKEN on
- *                       success.  On OOM it is destroyed.
+ * @param input_requests Owned JSON array or object of elicitation-request entries;
+ *                       TAKEN on success. On OOM it is destroyed.
+ *                       May be NULL if request_state is non-NULL.
  * @param request_state  Opaque server state string; strdup'd internally;
- *                       caller still owns the original.  May be NULL
- *                       (field is omitted).
+ *                       caller still owns the original. May be NULL if
+ *                       input_requests is non-NULL.
  * @return Owned JSON object ready to be stored in `*result_out`, or NULL
- *         on OOM.
+ *         on OOM or if BOTH input_requests and request_state are NULL.
  */
 mcp_json_value_t *mcp_mrtr_result_input_required_new(mcp_context_t *ctx,
                                                       mcp_json_value_t *input_requests,
