@@ -17,6 +17,9 @@
 #include "mcpkit/mcpkit.h"
 #include "mcpkit/protocol/mrtr.h"
 
+/* Server HMAC secret key for tamper-proofing requestState tokens */
+static const uint8_t k_server_secret[] = "mrtr-server-secret-key-2026-demo";
+
 static mcp_status_t transfer_handler(mcp_context_t *ctx, mcp_session_t *session,
                                      const mcp_tool_call_ctx_t *call_ctx, void *user_data,
                                      mcp_json_value_t **result_out) {
@@ -63,12 +66,28 @@ static mcp_status_t transfer_handler(mcp_context_t *ctx, mcp_session_t *session,
             return MCP_ERR_NOMEM;
         }
 
-        /* Encode state token to resume transaction in the next hop */
-        char state_buf[256];
-        snprintf(state_buf, sizeof(state_buf), "tx:to=%s:amount=%.2f", to, amount);
+        /* Encode state token to resume transaction in the next hop.
+         * We pack a JSON state object protected with HMAC-SHA256 and a 2-minute TTL (120000ms). */
+        mcp_json_value_t *state_payload = mcp_json_object_new(ctx);
+        if (state_payload == NULL) {
+            mcp_json_destroy(ctx, reqs_array);
+            return MCP_ERR_NOMEM;
+        }
+        mcp_json_object_set(ctx, state_payload, "to", mcp_json_string_new(ctx, to));
+        mcp_json_object_set(ctx, state_payload, "amount", mcp_json_number_new(ctx, amount));
+
+        char *state_token = NULL;
+        mcp_status_t st = mcp_mrtr_state_pack(ctx, state_payload, k_server_secret,
+                                              sizeof(k_server_secret) - 1, 120000, &state_token);
+        mcp_json_destroy(ctx, state_payload);
+        if (st != MCP_OK || state_token == NULL) {
+            mcp_json_destroy(ctx, reqs_array);
+            return MCP_ERR_NOMEM;
+        }
 
         mcp_json_value_t *ir =
-            mcp_mrtr_result_input_required_new(ctx, reqs_array, state_buf);
+            mcp_mrtr_result_input_required_new(ctx, reqs_array, state_token);
+        mcp_mrtr_state_free(ctx, state_token);
         if (ir == NULL) {
             return MCP_ERR_NOMEM;
         }
@@ -77,7 +96,28 @@ static mcp_status_t transfer_handler(mcp_context_t *ctx, mcp_session_t *session,
         return MCP_OK;
     }
 
-    /* Subsequent hop: inspect user response from input_responses */
+    /* Subsequent hop: unpack and verify the tamper-proof requestState */
+    mcp_json_value_t *resumed_state = NULL;
+    mcp_status_t unpack_st = mcp_mrtr_state_unpack(ctx, call_ctx->request_state,
+                                                   k_server_secret, sizeof(k_server_secret) - 1,
+                                                   &resumed_state);
+    if (unpack_st == MCP_ERR_TIMEOUT) {
+        mcp_json_value_t *res = mcp_json_object_new(ctx);
+        if (res == NULL) return MCP_ERR_NOMEM;
+        mcp_json_object_set(ctx, res, "status", mcp_json_string_new(ctx, "error_session_expired"));
+        *result_out = res;
+        return MCP_OK;
+    } else if (unpack_st == MCP_ERR_PERMISSION) {
+        mcp_json_value_t *res = mcp_json_object_new(ctx);
+        if (res == NULL) return MCP_ERR_NOMEM;
+        mcp_json_object_set(ctx, res, "status", mcp_json_string_new(ctx, "error_state_tampered"));
+        *result_out = res;
+        return MCP_OK;
+    } else if (unpack_st != MCP_OK || resumed_state == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    /* Inspect user response from input_responses */
     const char *action_str = NULL;
     const char *code_str = NULL;
 
@@ -102,6 +142,7 @@ static mcp_status_t transfer_handler(mcp_context_t *ctx, mcp_session_t *session,
 
     /* Handle rejection or cancellation */
     if (action_str != NULL && strcmp(action_str, "accept") != 0) {
+        mcp_json_destroy(ctx, resumed_state);
         mcp_json_value_t *res = mcp_json_object_new(ctx);
         if (res == NULL) return MCP_ERR_NOMEM;
         mcp_json_object_set(ctx, res, "status", mcp_json_string_new(ctx, "cancelled_by_user"));
@@ -111,12 +152,14 @@ static mcp_status_t transfer_handler(mcp_context_t *ctx, mcp_session_t *session,
 
     /* In a real server, verify 2FA code here */
     mcp_json_value_t *res = mcp_json_object_new(ctx);
-    if (res == NULL) return MCP_ERR_NOMEM;
+    if (res == NULL) {
+        mcp_json_destroy(ctx, resumed_state);
+        return MCP_ERR_NOMEM;
+    }
     mcp_json_object_set(ctx, res, "status", mcp_json_string_new(ctx, "transfer_complete"));
     mcp_json_object_set(ctx, res, "verified_code",
                         mcp_json_string_new(ctx, code_str ? code_str : ""));
-    mcp_json_object_set(ctx, res, "state",
-                        mcp_json_string_new(ctx, call_ctx->request_state));
+    mcp_json_object_set(ctx, res, "state", resumed_state);
 
     *result_out = res;
     return MCP_OK;

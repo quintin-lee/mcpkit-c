@@ -725,6 +725,201 @@ static void test_mrtr_no_handler_passthrough(void) {
 }
 
 /* -------------------------------------------------------------------------
+ * Part 4: Secure requestState token engine (Phase 2)
+ * ---------------------------------------------------------------------- */
+
+static void test_state_pack_unpack_raw_signed(void) {
+    printf("  test_state_pack_unpack_raw_signed\n");
+    const uint8_t key[] = "super-secret-server-key-2026";
+    const char payload[] = "session:42;step:1;user:alice";
+    char *token = NULL;
+
+    mcp_status_t st = mcp_mrtr_state_pack_raw(NULL, payload, strlen(payload),
+                                              key, sizeof(key) - 1, 60000, &token);
+    CHECK(st == MCP_OK);
+    CHECK(token != NULL);
+
+    void *out_data = NULL;
+    size_t out_len = 0;
+    st = mcp_mrtr_state_unpack_raw(NULL, token, key, sizeof(key) - 1,
+                                   &out_data, &out_len);
+    CHECK(st == MCP_OK);
+    CHECK(out_data != NULL);
+    CHECK(out_len == strlen(payload));
+    CHECK(memcmp(out_data, payload, out_len) == 0);
+
+    mcp_mrtr_state_free(NULL, token);
+    mcp_mrtr_state_free(NULL, (char *)out_data);
+}
+
+static void test_state_pack_unpack_json_signed(void) {
+    printf("  test_state_pack_unpack_json_signed\n");
+    const uint8_t key[] = "mcp-encryption-key-xyz";
+
+    mcp_json_value_t *state_in = mcp_json_object_new(NULL);
+    CHECK(state_in != NULL);
+    CHECK(mcp_json_object_set(NULL, state_in, "order_id", mcp_json_number_new(NULL, 1001.0)) == MCP_OK);
+    CHECK(mcp_json_object_set(NULL, state_in, "approved", mcp_json_bool_new(NULL, true)) == MCP_OK);
+
+    char *token = NULL;
+    mcp_status_t st = mcp_mrtr_state_pack(NULL, state_in, key, sizeof(key) - 1, 30000, &token);
+    CHECK(st == MCP_OK);
+    CHECK(token != NULL);
+    mcp_json_destroy(NULL, state_in);
+
+    mcp_json_value_t *state_out = NULL;
+    st = mcp_mrtr_state_unpack(NULL, token, key, sizeof(key) - 1, &state_out);
+    CHECK(st == MCP_OK);
+    CHECK(state_out != NULL);
+
+    const mcp_json_value_t *ov = mcp_json_object_get(NULL, state_out, "order_id");
+    CHECK(ov != NULL);
+    double num = 0;
+    CHECK(mcp_json_number_value(NULL, ov, &num) == MCP_OK);
+    CHECK(num == 1001.0);
+
+    const mcp_json_value_t *bv = mcp_json_object_get(NULL, state_out, "approved");
+    CHECK(bv != NULL);
+    bool b = false;
+    CHECK(mcp_json_bool_value(NULL, bv, &b) == MCP_OK);
+    CHECK(b == true);
+
+    mcp_mrtr_state_free(NULL, token);
+    mcp_json_destroy(NULL, state_out);
+}
+
+static void test_state_tamper_detection(void) {
+    printf("  test_state_tamper_detection\n");
+    const uint8_t key[] = "correct-key-123";
+    const uint8_t wrong_key[] = "wrong-key-456";
+    const char data[] = "amount=100;dest=bob";
+    char *token = NULL;
+
+    CHECK(mcp_mrtr_state_pack_raw(NULL, data, strlen(data), key, sizeof(key) - 1, 10000, &token) == MCP_OK);
+    CHECK(token != NULL);
+
+    /* 1. Unpack with wrong key must fail with MCP_ERR_PERMISSION */
+    void *out = NULL;
+    size_t out_len = 0;
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, token, wrong_key, sizeof(wrong_key) - 1, &out, &out_len) == MCP_ERR_PERMISSION);
+    CHECK(out == NULL);
+
+    /* 2. Unpack with NULL key when token is signed must fail with MCP_ERR_PERMISSION */
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, token, NULL, 0, &out, &out_len) == MCP_ERR_PERMISSION);
+
+    /* 3. Tamper with a single byte in the token (e.g. payload or signature) */
+    char *tampered = strdup(token);
+    CHECK(tampered != NULL);
+    /* Change the first character */
+    tampered[0] = (tampered[0] == 'A') ? 'B' : 'A';
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, tampered, key, sizeof(key) - 1, &out, &out_len) == MCP_ERR_PERMISSION);
+
+    /* Change the last character (in signature) */
+    strcpy(tampered, token);
+    size_t len = strlen(tampered);
+    tampered[len - 1] = (tampered[len - 1] == 'A') ? 'B' : 'A';
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, tampered, key, sizeof(key) - 1, &out, &out_len) == MCP_ERR_PERMISSION);
+
+    free(tampered);
+    mcp_mrtr_state_free(NULL, token);
+}
+
+static void test_state_ttl_expiration(void) {
+    printf("  test_state_ttl_expiration\n");
+    const uint8_t key[] = "ttl-key";
+    const char data[] = "sensitive-state";
+    char *token = NULL;
+    uint64_t issued_at = 1000000;
+    uint64_t ttl = 5000;
+
+    CHECK(mcp_mrtr_state_pack_raw_ex(NULL, data, strlen(data), key, sizeof(key) - 1,
+                                     issued_at, ttl, &token) == MCP_OK);
+    CHECK(token != NULL);
+
+    void *out = NULL;
+    size_t out_len = 0;
+
+    /* Before expiry: now = 1002000 -> OK */
+    CHECK(mcp_mrtr_state_unpack_raw_ex(NULL, token, key, sizeof(key) - 1,
+                                       1002000, &out, &out_len) == MCP_OK);
+    CHECK(out != NULL);
+    mcp_mrtr_state_free(NULL, (char *)out);
+
+    /* Exactly on boundary: now = 1005000 -> OK */
+    out = NULL;
+    CHECK(mcp_mrtr_state_unpack_raw_ex(NULL, token, key, sizeof(key) - 1,
+                                       1005000, &out, &out_len) == MCP_OK);
+    CHECK(out != NULL);
+    mcp_mrtr_state_free(NULL, (char *)out);
+
+    /* 1 ms past expiry: now = 1005001 -> MCP_ERR_TIMEOUT */
+    out = NULL;
+    CHECK(mcp_mrtr_state_unpack_raw_ex(NULL, token, key, sizeof(key) - 1,
+                                       1005001, &out, &out_len) == MCP_ERR_TIMEOUT);
+    CHECK(out == NULL);
+
+    /* Unreasonable future skew (> 10s into future): now = 980000 -> MCP_ERR_INVALID_ARGUMENT */
+    CHECK(mcp_mrtr_state_unpack_raw_ex(NULL, token, key, sizeof(key) - 1,
+                                       980000, &out, &out_len) == MCP_ERR_INVALID_ARGUMENT);
+
+    mcp_mrtr_state_free(NULL, token);
+
+    /* Zero TTL means no expiration */
+    char *no_expire_token = NULL;
+    CHECK(mcp_mrtr_state_pack_raw_ex(NULL, data, strlen(data), key, sizeof(key) - 1,
+                                     issued_at, 0, &no_expire_token) == MCP_OK);
+    out = NULL;
+    CHECK(mcp_mrtr_state_unpack_raw_ex(NULL, no_expire_token, key, sizeof(key) - 1,
+                                       999999999, &out, &out_len) == MCP_OK);
+    CHECK(out != NULL);
+    mcp_mrtr_state_free(NULL, (char *)out);
+    mcp_mrtr_state_free(NULL, no_expire_token);
+}
+
+static void test_state_unsigned_mode(void) {
+    printf("  test_state_unsigned_mode\n");
+    const char data[] = "public-unauthenticated-state";
+    char *token = NULL;
+
+    CHECK(mcp_mrtr_state_pack_raw(NULL, data, strlen(data), NULL, 0, 10000, &token) == MCP_OK);
+    CHECK(token != NULL);
+
+    /* Token must end with .unsigned */
+    const char *dot = strrchr(token, '.');
+    CHECK(dot != NULL);
+    CHECK(strcmp(dot, ".unsigned") == 0);
+
+    /* Unpack with key=NULL must succeed */
+    void *out = NULL;
+    size_t out_len = 0;
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, token, NULL, 0, &out, &out_len) == MCP_OK);
+    CHECK(out != NULL);
+    CHECK(out_len == strlen(data));
+    CHECK(memcmp(out, data, out_len) == 0);
+    mcp_mrtr_state_free(NULL, (char *)out);
+
+    /* Unpack with key!=NULL on an unsigned token must fail with MCP_ERR_PERMISSION */
+    const uint8_t key[] = "some-key";
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, token, key, sizeof(key) - 1, &out, &out_len) == MCP_ERR_PERMISSION);
+
+    mcp_mrtr_state_free(NULL, token);
+}
+
+static void test_state_malformed_token(void) {
+    printf("  test_state_malformed_token\n");
+    void *out = NULL;
+    size_t out_len = 0;
+
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, NULL, NULL, 0, &out, &out_len) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, "nodots", NULL, 0, &out, &out_len) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, "a.b.c", NULL, 0, &out, &out_len) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, "a.b.c.d.e", NULL, 0, &out, &out_len) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, "a.notanumber.5000.unsigned", NULL, 0, &out, &out_len) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, "a.1000.notanumber.unsigned", NULL, 0, &out, &out_len) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_mrtr_state_unpack_raw(NULL, "invalid!base64*.1000.0.unsigned", NULL, 0, &out, &out_len) == MCP_ERR_INVALID_ARGUMENT);
+}
+
+/* -------------------------------------------------------------------------
  * main
  * ---------------------------------------------------------------------- */
 
@@ -748,6 +943,15 @@ int main(void) {
     test_mrtr_client_cancel();
     test_mrtr_no_handler_passthrough();
 
+    printf("=== test_mrtr: Part 4 — Secure requestState token engine ===\n");
+    test_state_pack_unpack_raw_signed();
+    test_state_pack_unpack_json_signed();
+    test_state_tamper_detection();
+    test_state_ttl_expiration();
+    test_state_unsigned_mode();
+    test_state_malformed_token();
+
     printf("test_mrtr OK\n");
     return 0;
 }
+

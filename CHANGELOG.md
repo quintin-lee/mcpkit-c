@@ -36,8 +36,13 @@ Format follows Keep a Changelog. Versions follow SemVer.
   - Client-side auto-retry engine: `mcp_client_call_tool_mrtr()` drives up to
     5 round-trips automatically via host-injected `mcp_client_mrtr_elicit_fn`
     callback registered with `mcp_client_set_mrtr_elicit_handler()`.
+  - Server-side secure `requestState` engine (Phase 2): `mcp_mrtr_state_pack()`,
+    `mcp_mrtr_state_unpack()`, `mcp_mrtr_state_pack_raw()`, `mcp_mrtr_state_unpack_raw()`,
+    and `mcp_mrtr_state_free()`. Provides zero-dependency C99 HMAC-SHA256 tamper-proofing,
+    URL-safe Base64 token packing, and TTL expiration enforcement for distributed or
+    stateless server resumption.
   - Example server `examples/mrtr-server` demonstrating interactive 2FA
-    transaction authorization.
+    transaction authorization with secure HMAC-SHA256 signed `requestState` tokens.
   - Fix in `src/transport/socket.c`: added carry buffer to `sock_recv` so that
     trailing pipelined bytes across newline boundaries are never dropped.
 - Protocol statelessness (MCP 2026-07-28 spec):

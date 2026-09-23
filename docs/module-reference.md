@@ -308,6 +308,22 @@ const mcp_json_value_t *mcp_mrtr_get_input_requests(ctx, const mcp_json_value_t 
 /* Client-side builder */
 mcp_json_value_t *mcp_mrtr_input_response_new(ctx, mcp_elicit_action_t action,
                                               mcp_json_value_t *data);
+
+/* Server-side requestState packing & verification (Phase 2):
+   Tamper-proof HMAC-SHA256 signature + TTL expiration check. */
+mcp_status_t mcp_mrtr_state_pack(ctx, const mcp_json_value_t *state,
+                                 const uint8_t *key, size_t key_len,
+                                 uint64_t ttl_ms, char **state_out);
+mcp_status_t mcp_mrtr_state_unpack(ctx, const char *state_str,
+                                   const uint8_t *key, size_t key_len,
+                                   mcp_json_value_t **state_out);
+mcp_status_t mcp_mrtr_state_pack_raw(ctx, const void *data, size_t data_len,
+                                     const uint8_t *key, size_t key_len,
+                                     uint64_t ttl_ms, char **state_out);
+mcp_status_t mcp_mrtr_state_unpack_raw(ctx, const char *state_str,
+                                       const uint8_t *key, size_t key_len,
+                                       void **data_out, size_t *data_len_out);
+void         mcp_mrtr_state_free(ctx, char *state);
 ```
 
 ---

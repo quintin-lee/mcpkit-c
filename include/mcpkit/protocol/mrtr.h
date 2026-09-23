@@ -31,6 +31,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "mcpkit/core/error.h"
 #include "mcpkit/json/value.h"
@@ -168,5 +169,139 @@ const mcp_json_value_t *mcp_mrtr_get_input_requests(mcp_context_t *ctx,
 mcp_json_value_t *mcp_mrtr_input_response_new(mcp_context_t *ctx,
                                                mcp_elicit_action_t action,
                                                mcp_json_value_t *data);
+
+/* -------------------------------------------------------------------------
+ * Server-side: requestState packing & verification (Phase 2)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * @brief Free a string or buffer allocated by mcp_mrtr_state_pack / unpack.
+ *
+ * @param ctx   Context; may be NULL.
+ * @param state String or buffer to free; NULL-safe.
+ */
+void mcp_mrtr_state_free(mcp_context_t *ctx, char *state);
+
+/**
+ * @brief Pack arbitrary binary data into a tamper-proof, opaque `requestState` string
+ *        with an explicit issue timestamp.
+ *
+ * Token format:
+ *   `<base64url(payload)>.<issued_at_ms>.<ttl_ms>.<base64url(hmac)>`
+ * or if key is NULL / key_len == 0:
+ *   `<base64url(payload)>.<issued_at_ms>.<ttl_ms>.unsigned`
+ *
+ * The HMAC-SHA256 signature covers `<base64url(payload)>.<issued_at_ms>.<ttl_ms>`,
+ * preventing tampering with payload, timestamp, or expiration window.
+ *
+ * @param ctx          Context; may be NULL.
+ * @param data         Binary payload to pack; may be NULL if data_len == 0.
+ * @param data_len     Length of data in bytes.
+ * @param key          HMAC secret key; NULL or key_len==0 produces an unsigned token.
+ * @param key_len      Length of HMAC key in bytes.
+ * @param issued_at_ms Explicit issue timestamp in milliseconds (e.g. wall-clock epoch ms).
+ * @param ttl_ms       Time-to-live in milliseconds (0 = no expiration).
+ * @param state_out    Receives a newly allocated NUL-terminated token string.
+ *                     Caller frees with mcp_mrtr_state_free() or mcp_json_free_string().
+ * @return MCP_OK on success, MCP_ERR_NOMEM on OOM, MCP_ERR_INVALID_ARGUMENT on bad arguments.
+ */
+mcp_status_t mcp_mrtr_state_pack_raw_ex(mcp_context_t *ctx,
+                                        const void *data,
+                                        size_t data_len,
+                                        const uint8_t *key,
+                                        size_t key_len,
+                                        uint64_t issued_at_ms,
+                                        uint64_t ttl_ms,
+                                        char **state_out);
+
+/**
+ * @brief Pack arbitrary binary data into a tamper-proof, opaque `requestState` string
+ *        using the current wall-clock time as the issue timestamp.
+ */
+mcp_status_t mcp_mrtr_state_pack_raw(mcp_context_t *ctx,
+                                     const void *data,
+                                     size_t data_len,
+                                     const uint8_t *key,
+                                     size_t key_len,
+                                     uint64_t ttl_ms,
+                                     char **state_out);
+
+/**
+ * @brief Unpack and verify a raw binary `requestState` token with an explicit current time.
+ *
+ * @param ctx          Context; may be NULL.
+ * @param state_str    Opaque token string received from client.
+ * @param key          HMAC secret key; must match key used when packing.
+ * @param key_len      Length of HMAC key in bytes.
+ * @param now_ms       Explicit current timestamp in milliseconds for TTL comparison.
+ * @param data_out     Receives newly allocated payload buffer; caller frees with mcp_mrtr_state_free().
+ * @param data_len_out Receives length of unpacked data in bytes.
+ * @return MCP_OK on success;
+ *         MCP_ERR_TIMEOUT if ttl_ms has expired;
+ *         MCP_ERR_PERMISSION if HMAC verification failed or signature presence mismatch;
+ *         MCP_ERR_INVALID_ARGUMENT on malformed token syntax or clock skew;
+ *         MCP_ERR_NOMEM on allocation failure.
+ */
+mcp_status_t mcp_mrtr_state_unpack_raw_ex(mcp_context_t *ctx,
+                                          const char *state_str,
+                                          const uint8_t *key,
+                                          size_t key_len,
+                                          uint64_t now_ms,
+                                          void **data_out,
+                                          size_t *data_len_out);
+
+/**
+ * @brief Unpack and verify a raw binary `requestState` token using current wall-clock time.
+ */
+mcp_status_t mcp_mrtr_state_unpack_raw(mcp_context_t *ctx,
+                                       const char *state_str,
+                                       const uint8_t *key,
+                                       size_t key_len,
+                                       void **data_out,
+                                       size_t *data_len_out);
+
+/**
+ * @brief Pack a JSON value into a tamper-proof, opaque `requestState` string.
+ *
+ * Serializes `state` as JSON, then packs it via mcp_mrtr_state_pack_raw.
+ *
+ * @param ctx       Context; may be NULL.
+ * @param state     Borrowed JSON value to serialize and pack.
+ * @param key       HMAC secret key; NULL or key_len==0 produces an unsigned token.
+ * @param key_len   Length of HMAC key in bytes.
+ * @param ttl_ms    Time-to-live in milliseconds (0 = no expiration).
+ * @param state_out Receives newly allocated NUL-terminated token string.
+ *                  Caller frees with mcp_mrtr_state_free() or mcp_json_free_string().
+ * @return MCP_OK on success, MCP_ERR_NOMEM on OOM, MCP_ERR_INVALID_ARGUMENT on bad arguments.
+ */
+mcp_status_t mcp_mrtr_state_pack(mcp_context_t *ctx,
+                                 const mcp_json_value_t *state,
+                                 const uint8_t *key,
+                                 size_t key_len,
+                                 uint64_t ttl_ms,
+                                 char **state_out);
+
+/**
+ * @brief Unpack and verify a JSON `requestState` token.
+ *
+ * Verifies HMAC and TTL, then parses payload into an owned JSON value.
+ *
+ * @param ctx       Context; may be NULL.
+ * @param state_str Opaque token string received from client.
+ * @param key       HMAC secret key; NULL or key_len==0 for unsigned tokens.
+ * @param key_len   Length of HMAC key in bytes.
+ * @param state_out Receives newly allocated, owned JSON value.
+ *                  Caller releases with mcp_json_destroy(ctx, *state_out).
+ * @return MCP_OK on success;
+ *         MCP_ERR_TIMEOUT if ttl_ms has expired;
+ *         MCP_ERR_PERMISSION if HMAC verification failed;
+ *         MCP_ERR_INVALID_ARGUMENT on malformed token or invalid JSON;
+ *         MCP_ERR_NOMEM on allocation failure.
+ */
+mcp_status_t mcp_mrtr_state_unpack(mcp_context_t *ctx,
+                                   const char *state_str,
+                                   const uint8_t *key,
+                                   size_t key_len,
+                                   mcp_json_value_t **state_out);
 
 #endif /* MCPKIT_PROTOCOL_MRTR_H */
