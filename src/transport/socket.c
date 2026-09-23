@@ -45,6 +45,9 @@
 typedef struct {
     int fd;
     bool server_mode;
+    char *carry;
+    size_t carry_len;
+    size_t carry_cap;
 } socket_backend_t;
 
 static const mcp_allocator_t *alloc_of(mcp_context_t *ctx) {
@@ -215,17 +218,45 @@ static mcp_status_t sock_recv(mcp_context_t *ctx, mcp_transport_t *t, char **lin
         return MCP_ERR_INVALID_ARGUMENT;
     }
     const mcp_allocator_t *a = alloc_of(ctx);
-    size_t cap = 256;
-    size_t len = 0;
-    char *buf = a->malloc_fn(cap, a->userdata);
-    if (buf == NULL) {
-        return MCP_ERR_NOMEM;
-    }
     uint64_t read_ms = 0, write_ms = 0;
     mcp_transport_get_timeout(ctx, t, &read_ms, &write_ms);
     (void)write_ms;
     uint64_t deadline = read_ms == 0 ? 0 : now_ms() + read_ms;
+
     for (;;) {
+        /* Check if carry buffer already contains a newline */
+        if (b->carry != NULL && b->carry_len > 0) {
+            char *nl = memchr(b->carry, '\n', b->carry_len);
+            if (nl != NULL) {
+                size_t line_len = (size_t)(nl - b->carry);
+                size_t copy_len = line_len;
+                if (copy_len > 0 && b->carry[copy_len - 1] == '\r') {
+                    copy_len--;
+                }
+                char *line = a->malloc_fn(copy_len + 1, a->userdata);
+                if (line == NULL) {
+                    *line_out = NULL;
+                    return MCP_ERR_NOMEM;
+                }
+                memcpy(line, b->carry, copy_len);
+                line[copy_len] = '\0';
+
+                size_t rem = b->carry_len - (line_len + 1);
+                if (rem > 0) {
+                    memmove(b->carry, nl + 1, rem);
+                }
+                b->carry_len = rem;
+                *line_out = line;
+                return MCP_OK;
+            }
+        }
+
+        /* Check max message size before reading more */
+        if (b->carry_len >= MCP_PROTOCOL_MAX_MESSAGE_BYTES) {
+            *line_out = NULL;
+            return MCP_ERR_PROTOCOL;
+        }
+
         if (deadline != 0) {
             mcp_status_t ws = wait_until(b->fd, POLLIN, deadline);
             if (ws != MCP_OK) {
@@ -233,60 +264,59 @@ static mcp_status_t sock_recv(mcp_context_t *ctx, mcp_transport_t *t, char **lin
                     mcp_logger_logf(mcp_context_logger(ctx), MCP_LOG_DEBUG,
                                     "event=recv_timeout transport=socket");
                 }
-                a->free_fn(buf, a->userdata);
                 *line_out = NULL;
                 return ws;
             }
         }
+
         char chunk[SOCK_LINE_CAP];
         ssize_t n = read(b->fd, chunk, sizeof(chunk));
         if (n < 0) {
             if (errno == EINTR) {
                 continue;
             }
-            a->free_fn(buf, a->userdata);
+            *line_out = NULL;
             return MCP_ERR_IO;
         }
         if (n == 0) {
-            if (len == 0) {
-                a->free_fn(buf, a->userdata);
+            /* EOF */
+            if (b->carry_len == 0) {
                 *line_out = NULL;
                 return MCP_ERR_IO;
             }
-            buf[len] = '\0';
-            *line_out = buf;
+            /* Return remainder as the final line */
+            size_t copy_len = b->carry_len;
+            if (copy_len > 0 && b->carry[copy_len - 1] == '\r') {
+                copy_len--;
+            }
+            char *line = a->malloc_fn(copy_len + 1, a->userdata);
+            if (line == NULL) {
+                *line_out = NULL;
+                return MCP_ERR_NOMEM;
+            }
+            memcpy(line, b->carry, copy_len);
+            line[copy_len] = '\0';
+            b->carry_len = 0;
+            *line_out = line;
             return MCP_OK;
         }
-        for (ssize_t i = 0; i < n; i++) {
-            char c = chunk[i];
-            if (c == '\n') {
-                if (len > 0 && buf[len - 1] == '\r') {
-                    len--;
-                }
-                buf[len] = '\0';
-                *line_out = buf;
-                return MCP_OK;
+
+        /* Append chunk to carry buffer */
+        if (b->carry_len + (size_t)n > b->carry_cap) {
+            size_t new_cap = b->carry_cap == 0 ? 512 : b->carry_cap * 2;
+            while (new_cap < b->carry_len + (size_t)n) {
+                new_cap *= 2;
             }
-            if (c == '\r') {
-                continue;
+            char *new_buf = a->realloc_fn(b->carry, new_cap, a->userdata);
+            if (new_buf == NULL) {
+                *line_out = NULL;
+                return MCP_ERR_NOMEM;
             }
-            if (len + 1 >= cap) {
-                if (cap >= MCP_PROTOCOL_MAX_MESSAGE_BYTES) {
-                    a->free_fn(buf, a->userdata);
-                    *line_out = NULL;
-                    return MCP_ERR_PROTOCOL;
-                }
-                size_t ncap = cap * 2;
-                char *nbuf = a->realloc_fn(buf, ncap, a->userdata);
-                if (nbuf == NULL) {
-                    a->free_fn(buf, a->userdata);
-                    return MCP_ERR_NOMEM;
-                }
-                buf = nbuf;
-                cap = ncap;
-            }
-            buf[len++] = c;
+            b->carry = new_buf;
+            b->carry_cap = new_cap;
         }
+        memcpy(b->carry + b->carry_len, chunk, (size_t)n);
+        b->carry_len += (size_t)n;
     }
 }
 
@@ -299,6 +329,10 @@ static mcp_status_t sock_stop(mcp_context_t *ctx, mcp_transport_t *t) {
     if (b != NULL) {
         if (b->fd >= 0) {
             close(b->fd);
+        }
+        if (b->carry != NULL) {
+            a->free_fn(b->carry, a->userdata);
+            b->carry = NULL;
         }
         a->free_fn(b, a->userdata);
     }
@@ -323,6 +357,9 @@ static mcp_transport_t *socket_transport_from_fd(mcp_context_t *ctx, int fd) {
     }
     b->fd = fd;
     b->server_mode = false; // already connected; sock_start is a no-op
+    b->carry = NULL;
+    b->carry_len = 0;
+    b->carry_cap = 0;
     mcp_transport_t *t = mcp_transport_create(ctx, &kSocketOps, b);
     if (t == NULL) {
         a->free_fn(b, a->userdata);
@@ -507,6 +544,9 @@ mcp_transport_t *mcp_socket_transport_create(mcp_context_t *ctx, const char *hos
     }
     b->fd = fd;
     b->server_mode = server_mode;
+    b->carry = NULL;
+    b->carry_len = 0;
+    b->carry_cap = 0;
     mcp_transport_t *t = mcp_transport_create(ctx, &kSocketOps, b);
     if (t == NULL) {
         close(fd);
