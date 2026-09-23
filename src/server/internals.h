@@ -70,6 +70,16 @@ struct mcp_session {
     // Deep clone of the "_meta" field carried in the initialize request.
     // NULL if the client did not send one. Destroyed with the session.
     mcp_json_value_t *client_meta;
+    // Active subscription state (Phase 2, SEP-2575 subscriptions/listen)
+    bool subscription_active;
+    mcp_id_type_t sub_id_type;
+    char *sub_id_str;
+    double sub_id_num;
+    bool sub_tools_list_changed;
+    bool sub_prompts_list_changed;
+    bool sub_resources_list_changed;
+    char **sub_resource_uris;
+    size_t n_sub_resource_uris;
 };
 
 struct mcp_server {

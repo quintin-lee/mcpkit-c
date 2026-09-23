@@ -430,6 +430,60 @@ int main(void) {
     CHECK(mcp_message_result(ctx, r) != NULL);
     mcp_message_destroy(ctx, r);
 
+    // Phase 2: subscriptions/listen (SEP-2575)
+    // 1. Missing params -> -32602
+    r = dispatch_new(ctx, srv, s, "sub0", "subscriptions/listen", NULL);
+    CHECK(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
+    mcp_message_destroy(ctx, r);
+
+    // 2. Valid subscription request with filter -> notifications/subscriptions/acknowledged
+    p = mcp_json_object_new(ctx);
+    mcp_json_value_t *notifs = mcp_json_object_new(ctx);
+    CHECK(mcp_json_object_set(ctx, notifs, "toolsListChanged", mcp_json_bool_new(ctx, true)) == MCP_OK);
+    mcp_json_value_t *uris = mcp_json_array_new(ctx);
+    CHECK(mcp_json_array_append(ctx, uris, mcp_json_string_new(ctx, "file:///project/config.json")) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, notifs, "resourceSubscriptions", uris) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "notifications", notifs) == MCP_OK);
+    r = dispatch_new(ctx, srv, s, "sub1", "subscriptions/listen", p);
+    CHECK(r != NULL);
+    CHECK(mcp_message_kind(ctx, r) == MCP_MSG_NOTIFICATION);
+    CHECK(strcmp(mcp_message_method(ctx, r), "notifications/subscriptions/acknowledged") == 0);
+    const mcp_json_value_t *ack_params = mcp_message_params(ctx, r);
+    CHECK(ack_params != NULL);
+    const mcp_json_value_t *ack_meta = mcp_json_object_get(ctx, ack_params, "_meta");
+    CHECK(ack_meta != NULL);
+    const mcp_json_value_t *sub_id_v = mcp_json_object_get(ctx, ack_meta, "io.modelcontextprotocol/subscriptionId");
+    CHECK(sub_id_v != NULL);
+    const char *sub_id_str = NULL;
+    CHECK(mcp_json_string_value(ctx, sub_id_v, &sub_id_str) == MCP_OK);
+    CHECK(strcmp(sub_id_str, "sub1") == 0);
+    const mcp_json_value_t *ack_notifs = mcp_json_object_get(ctx, ack_params, "notifications");
+    CHECK(ack_notifs != NULL);
+    const mcp_json_value_t *tlc_v = mcp_json_object_get(ctx, ack_notifs, "toolsListChanged");
+    bool tlc = false;
+    CHECK(tlc_v != NULL && mcp_json_bool_value(ctx, tlc_v, &tlc) == MCP_OK && tlc == true);
+    mcp_message_destroy(ctx, r);
+
+    // 3. Numeric id in subscriptions/listen request
+    p = mcp_json_object_new(ctx);
+    notifs = mcp_json_object_new(ctx);
+    CHECK(mcp_json_object_set(ctx, notifs, "promptsListChanged", mcp_json_bool_new(ctx, true)) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, p, "notifications", notifs) == MCP_OK);
+    mcp_message_t *num_req = mcp_request_new_number_id(ctx, 42.0, "subscriptions/listen", p);
+    CHECK(num_req != NULL);
+    mcp_message_t *num_r = NULL;
+    CHECK(mcp_server_dispatch(ctx, srv, s, num_req, &num_r) == MCP_OK && num_r != NULL);
+    mcp_message_destroy(ctx, num_req);
+    ack_params = mcp_message_params(ctx, num_r);
+    CHECK(ack_params != NULL);
+    ack_meta = mcp_json_object_get(ctx, ack_params, "_meta");
+    CHECK(ack_meta != NULL);
+    sub_id_v = mcp_json_object_get(ctx, ack_meta, "io.modelcontextprotocol/subscriptionId");
+    CHECK(sub_id_v != NULL);
+    double sub_id_num = 0;
+    CHECK(mcp_json_number_value(ctx, sub_id_v, &sub_id_num) == MCP_OK && sub_id_num == 42.0);
+    mcp_message_destroy(ctx, num_r);
+
     teardown(ctx, srv);
     return 0;
 }

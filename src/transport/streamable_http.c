@@ -148,6 +148,139 @@ static mcp_status_t send_unauthorized(mcp_context_t *ctx, mcp_http_io_t *io) {
     return st;
 }
 
+static mcp_status_t send_rpc_error(mcp_context_t *ctx, mcp_http_io_t *io,
+                                   const mcp_message_t *req, int code,
+                                   const char *message) {
+    mcp_message_t *err_msg = mcp_response_err_new(ctx, req, code, message, NULL);
+    if (err_msg == NULL) {
+        return send_bytes(ctx, io, 400, "Bad Request", NULL, NULL, 0, NULL, NULL);
+    }
+    char *json = mcp_message_serialize(ctx, err_msg);
+    mcp_message_destroy(ctx, err_msg);
+    if (json == NULL) {
+        return send_bytes(ctx, io, 400, "Bad Request", NULL, NULL, 0, NULL, NULL);
+    }
+    mcp_status_t st = send_bytes(ctx, io, 400, "Bad Request", "application/json",
+                                 json, strlen(json), NULL, NULL);
+    mcp_json_free_string(ctx, json);
+    return st;
+}
+
+static bool is_supported_protocol_version(const char *ver) {
+    if (ver == NULL) {
+        return false;
+    }
+    static const char *const k_supported_versions[] = {
+        "2026-07-28",
+        "2025-11-25",
+        "2025-06-18",
+        "2024-11-05",
+    };
+    for (size_t i = 0; i < sizeof(k_supported_versions) / sizeof(k_supported_versions[0]); i++) {
+        if (strcmp(ver, k_supported_versions[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static mcp_status_t validate_http_metadata(mcp_context_t *ctx, mcp_http_request_t *req,
+                                           const mcp_message_t *msg, mcp_http_io_t *io,
+                                           bool *rejected) {
+    *rejected = false;
+    const char *proto_hdr = mcp_http_header(ctx, req, "MCP-Protocol-Version");
+    const char *method_hdr = mcp_http_header(ctx, req, "Mcp-Method");
+    const char *name_hdr = mcp_http_header(ctx, req, "Mcp-Name");
+
+    if (proto_hdr != NULL) {
+        if (!is_supported_protocol_version(proto_hdr)) {
+            *rejected = true;
+            return send_rpc_error(ctx, io, msg, MCP_RPC_UNSUPPORTED_PROTOCOL_VERSION,
+                                  "unsupported protocol version");
+        }
+    }
+
+    const mcp_json_value_t *meta = mcp_message_meta(ctx, msg);
+    const char *meta_ver = NULL;
+    if (meta != NULL) {
+        const mcp_json_value_t *pv = mcp_json_object_get(ctx, meta, "io.modelcontextprotocol/protocolVersion");
+        if (pv == NULL) {
+            pv = mcp_json_object_get(ctx, meta, "protocolVersion");
+        }
+        if (pv != NULL) {
+            mcp_json_string_value(ctx, pv, &meta_ver);
+        }
+    }
+
+    if (proto_hdr != NULL && meta_ver != NULL) {
+        if (strcmp(proto_hdr, meta_ver) != 0) {
+            *rejected = true;
+            return send_rpc_error(ctx, io, msg, MCP_RPC_HEADER_MISMATCH,
+                                  "MCP-Protocol-Version header does not match _meta");
+        }
+    }
+
+    bool is_2026 = (proto_hdr != NULL && strcmp(proto_hdr, "2026-07-28") == 0);
+    const char *msg_method = mcp_message_method(ctx, msg);
+    mcp_msg_kind_t kind = mcp_message_kind(ctx, msg);
+
+    if (is_2026 && kind == MCP_MSG_REQUEST) {
+        if (method_hdr == NULL) {
+            *rejected = true;
+            return send_rpc_error(ctx, io, msg, MCP_RPC_HEADER_MISMATCH,
+                                  "missing required Mcp-Method header");
+        }
+    }
+
+    if (method_hdr != NULL && msg_method != NULL) {
+        if (strcmp(method_hdr, msg_method) != 0) {
+            *rejected = true;
+            return send_rpc_error(ctx, io, msg, MCP_RPC_HEADER_MISMATCH,
+                                  "Mcp-Method header does not match request method");
+        }
+    }
+
+    bool needs_name = (msg_method != NULL &&
+                       (strcmp(msg_method, "tools/call") == 0 ||
+                        strcmp(msg_method, "prompts/get") == 0 ||
+                        strcmp(msg_method, "resources/read") == 0));
+
+    if (is_2026 && needs_name && name_hdr == NULL) {
+        *rejected = true;
+        return send_rpc_error(ctx, io, msg, MCP_RPC_HEADER_MISMATCH,
+                              "missing required Mcp-Name header");
+    }
+
+    if (name_hdr != NULL && msg_method != NULL) {
+        const mcp_json_value_t *params = mcp_message_params(ctx, msg);
+        if (strcmp(msg_method, "tools/call") == 0 || strcmp(msg_method, "prompts/get") == 0) {
+            const mcp_json_value_t *nv = params != NULL ? mcp_json_object_get(ctx, params, "name") : NULL;
+            const char *pname = NULL;
+            if (nv != NULL) {
+                mcp_json_string_value(ctx, nv, &pname);
+            }
+            if (pname == NULL || strcmp(name_hdr, pname) != 0) {
+                *rejected = true;
+                return send_rpc_error(ctx, io, msg, MCP_RPC_HEADER_MISMATCH,
+                                      "Mcp-Name header does not match params.name");
+            }
+        } else if (strcmp(msg_method, "resources/read") == 0) {
+            const mcp_json_value_t *uv = params != NULL ? mcp_json_object_get(ctx, params, "uri") : NULL;
+            const char *puri = NULL;
+            if (uv != NULL) {
+                mcp_json_string_value(ctx, uv, &puri);
+            }
+            if (puri == NULL || strcmp(name_hdr, puri) != 0) {
+                *rejected = true;
+                return send_rpc_error(ctx, io, msg, MCP_RPC_HEADER_MISMATCH,
+                                      "Mcp-Name header does not match params.uri");
+            }
+        }
+    }
+
+    return MCP_OK;
+}
+
 static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
                                 http_session_table_t *table, mcp_http_io_t *io,
                                 mcp_http_request_t *req,
@@ -187,6 +320,12 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
     if (kind != MCP_MSG_REQUEST && kind != MCP_MSG_NOTIFICATION) {
         mcp_message_destroy(ctx, msg);
         return send_bytes(ctx, io, 400, "Bad Request", NULL, NULL, 0, NULL, NULL);
+    }
+    bool rejected = false;
+    mcp_status_t val_st = validate_http_metadata(ctx, req, msg, io, &rejected);
+    if (rejected) {
+        mcp_message_destroy(ctx, msg);
+        return val_st;
     }
     const char *sid = mcp_http_header(ctx, req, "Mcp-Session-Id");
     const char *method = kind == MCP_MSG_REQUEST ? mcp_message_method(ctx, msg) : NULL;

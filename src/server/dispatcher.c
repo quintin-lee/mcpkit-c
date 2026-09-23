@@ -606,7 +606,7 @@ static mcp_message_t *route_resources_read(mcp_context_t *ctx, mcp_server_t *srv
         mcp_json_destroy(ctx, result);
         return NULL;
     }
-    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+    if (decorate_result(ctx, srv, result, true) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -943,7 +943,7 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
             mcp_json_destroy(ctx, result);
             return NULL;
         }
-        if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+        if (decorate_result(ctx, srv, result, true) != MCP_OK) {
             mcp_json_destroy(ctx, result);
             return NULL;
         }
@@ -954,6 +954,141 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
         return resp;
     }
     return NULL;
+}
+
+static mcp_message_t *route_subscriptions_listen(mcp_context_t *ctx, mcp_server_t *srv,
+                                                 mcp_session_t *s, const mcp_message_t *req) {
+    (void)srv;
+    const mcp_json_value_t *params = mcp_message_params(ctx, req);
+    if (params == NULL || mcp_json_type(ctx, params) != MCP_JSON_OBJECT) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "subscriptions/listen requires params object");
+    }
+
+    const mcp_json_value_t *notifs = mcp_json_object_get(ctx, params, "notifications");
+    if (notifs != NULL && mcp_json_type(ctx, notifs) != MCP_JSON_OBJECT) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "notifications must be an object");
+    }
+
+    if (s != NULL) {
+        s->subscription_active = false;
+        if (s->sub_id_str != NULL) {
+            srv_free(ctx, s->sub_id_str);
+            s->sub_id_str = NULL;
+        }
+        if (s->sub_resource_uris != NULL) {
+            for (size_t i = 0; i < s->n_sub_resource_uris; i++) {
+                srv_free(ctx, s->sub_resource_uris[i]);
+            }
+            srv_free(ctx, s->sub_resource_uris);
+            s->sub_resource_uris = NULL;
+            s->n_sub_resource_uris = 0;
+        }
+        s->sub_tools_list_changed = false;
+        s->sub_prompts_list_changed = false;
+        s->sub_resources_list_changed = false;
+
+        s->sub_id_type = mcp_message_id_type(ctx, req);
+        if (s->sub_id_type == MCP_ID_STRING) {
+            const char *id_str = mcp_message_id_string(ctx, req);
+            s->sub_id_str = srv_strdup(ctx, id_str ? id_str : "");
+        } else if (s->sub_id_type == MCP_ID_NUMBER) {
+            mcp_message_id_number(ctx, req, &s->sub_id_num);
+        }
+
+        if (notifs != NULL) {
+            const mcp_json_value_t *tlc = mcp_json_object_get(ctx, notifs, "toolsListChanged");
+            if (tlc != NULL) {
+                bool b = false;
+                if (mcp_json_bool_value(ctx, tlc, &b) == MCP_OK) {
+                    s->sub_tools_list_changed = b;
+                }
+            }
+            const mcp_json_value_t *plc = mcp_json_object_get(ctx, notifs, "promptsListChanged");
+            if (plc != NULL) {
+                bool b = false;
+                if (mcp_json_bool_value(ctx, plc, &b) == MCP_OK) {
+                    s->sub_prompts_list_changed = b;
+                }
+            }
+            const mcp_json_value_t *rlc = mcp_json_object_get(ctx, notifs, "resourcesListChanged");
+            if (rlc != NULL) {
+                bool b = false;
+                if (mcp_json_bool_value(ctx, rlc, &b) == MCP_OK) {
+                    s->sub_resources_list_changed = b;
+                }
+            }
+            const mcp_json_value_t *ru = mcp_json_object_get(ctx, notifs, "resourceSubscriptions");
+            if (ru != NULL && mcp_json_type(ctx, ru) == MCP_JSON_ARRAY) {
+                size_t n = mcp_json_array_size(ctx, ru);
+                if (n > 0) {
+                    s->sub_resource_uris = srv_malloc(ctx, n * sizeof(char *));
+                    if (s->sub_resource_uris != NULL) {
+                        for (size_t i = 0; i < n; i++) {
+                            const mcp_json_value_t *item = mcp_json_array_get(ctx, ru, i);
+                            const char *uri_str = NULL;
+                            if (item != NULL && mcp_json_string_value(ctx, item, &uri_str) == MCP_OK && uri_str != NULL) {
+                                s->sub_resource_uris[s->n_sub_resource_uris++] = srv_strdup(ctx, uri_str);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        s->subscription_active = true;
+    }
+
+    mcp_json_value_t *params_out = mcp_json_object_new(ctx);
+    mcp_json_value_t *meta_out = mcp_json_object_new(ctx);
+    if (params_out == NULL || meta_out == NULL) {
+        mcp_json_destroy(ctx, params_out);
+        mcp_json_destroy(ctx, meta_out);
+        return NULL;
+    }
+
+    mcp_id_type_t idt = mcp_message_id_type(ctx, req);
+    mcp_json_value_t *sub_id_val = NULL;
+    if (idt == MCP_ID_STRING) {
+        sub_id_val = mcp_json_string_new(ctx, mcp_message_id_string(ctx, req));
+    } else if (idt == MCP_ID_NUMBER) {
+        double d = 0;
+        mcp_message_id_number(ctx, req, &d);
+        sub_id_val = mcp_json_number_new(ctx, d);
+    } else {
+        sub_id_val = mcp_json_null_new(ctx);
+    }
+
+    if (sub_id_val == NULL ||
+        mcp_json_object_set_take(ctx, meta_out, "io.modelcontextprotocol/subscriptionId", sub_id_val) != MCP_OK) {
+        mcp_json_destroy(ctx, sub_id_val);
+        mcp_json_destroy(ctx, meta_out);
+        mcp_json_destroy(ctx, params_out);
+        return NULL;
+    }
+    if (mcp_json_object_set_take(ctx, params_out, "_meta", meta_out) != MCP_OK) {
+        mcp_json_destroy(ctx, meta_out);
+        mcp_json_destroy(ctx, params_out);
+        return NULL;
+    }
+
+    mcp_json_value_t *notifs_out = NULL;
+    if (notifs != NULL) {
+        notifs_out = mcp_json_clone(ctx, notifs);
+    } else {
+        notifs_out = mcp_json_object_new(ctx);
+    }
+    if (notifs_out == NULL ||
+        mcp_json_object_set_take(ctx, params_out, "notifications", notifs_out) != MCP_OK) {
+        mcp_json_destroy(ctx, notifs_out);
+        mcp_json_destroy(ctx, params_out);
+        return NULL;
+    }
+
+    mcp_message_t *ack = mcp_notification_new(ctx, "notifications/subscriptions/acknowledged", params_out);
+    if (ack == NULL) {
+        mcp_json_destroy(ctx, params_out);
+        return NULL;
+    }
+    return ack;
 }
 
 static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s,
@@ -1009,6 +1144,9 @@ static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_s
     if (strcmp(method, k_mcp_server_methods[15]) == 0) {
         return route_server_discover(ctx, srv, req);
     }
+    if (strcmp(method, k_mcp_server_methods[16]) == 0) {
+        return route_subscriptions_listen(ctx, srv, s, req);
+    }
     dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=unknown_method method=%s", method);
     // No counter or trace here: dispatch counts error responses and
     // fires END centrally after route_request returns; doing it here
@@ -1040,7 +1178,26 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
         *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "missing method");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
-    bool is_stateless = (mcp_message_meta(ctx, req) != NULL);
+    const mcp_json_value_t *req_meta = mcp_message_meta(ctx, req);
+    if (req_meta != NULL) {
+        const mcp_json_value_t *lv = mcp_json_object_get(ctx, req_meta, "io.modelcontextprotocol/logLevel");
+        if (lv == NULL) {
+            lv = mcp_json_object_get(ctx, req_meta, "logLevel");
+        }
+        const char *lvl = NULL;
+        if (lv != NULL && mcp_json_string_value(ctx, lv, &lvl) == MCP_OK && lvl != NULL) {
+            if (strcmp(lvl, "debug") == 0) {
+                atomic_store(&srv->log_floor, (int)MCP_LOG_DEBUG);
+            } else if (strcmp(lvl, "info") == 0 || strcmp(lvl, "notice") == 0) {
+                atomic_store(&srv->log_floor, (int)MCP_LOG_INFO);
+            } else if (strcmp(lvl, "warning") == 0 || strcmp(lvl, "warn") == 0) {
+                atomic_store(&srv->log_floor, (int)MCP_LOG_WARN);
+            } else if (strcmp(lvl, "error") == 0) {
+                atomic_store(&srv->log_floor, (int)MCP_LOG_ERROR);
+            }
+        }
+    }
+    bool is_stateless = (req_meta != NULL);
     bool is_discover = (strcmp(method, "server/discover") == 0);
     if (!session->initialized && strcmp(method, "initialize") != 0 && !is_discover && !is_stateless) {
         dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=uninitialized method=%s", method);
@@ -1100,6 +1257,8 @@ mcp_status_t mcp_server_notify(mcp_context_t *ctx, mcp_server_t *srv, mcp_sessio
     }
     if (strcmp(method, "notifications/initialized") == 0) {
         session->initialized = true;
+    } else if (strcmp(method, "notifications/cancelled") == 0) {
+        session->subscription_active = false;
     }
     bool advanced = false;
     for (int i = 0; i < (int)MCP_SERVER_NOTIFICATION_COUNT; i++) {

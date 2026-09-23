@@ -486,21 +486,24 @@ A malformed `cursor` fails with `MCP_ERR_INVALID_PARAMS`.
 
  `logging/setLevel` (`debug`/`info`/`notice`/`warning`/`error`, `warn`
  accepted as an alias) sets the per-server log floor that gates the
- dispatcher's `dlogf_srv` sites; `resources/subscribe` /
+ dispatcher's `dlogf_srv` sites; requests carrying `_meta["io.modelcontextprotocol/logLevel"]`
+ also dynamically update the log floor. `resources/subscribe` /
  `resources/unsubscribe` maintain a per-server deduplicated subscription set
- (idempotent); `resources/templates/list` answers an honest empty
- `{templates: []}`. Advanced notifications (`notifications/cancelled`,
- `notifications/progress`, the four `*_list_changed`,
- `notifications/resources/updated`, `logging/message`) are consumed by
-
- `mcp_server_notify` (counter bump + DEBUG log, no response).
+ (idempotent); `resources/templates/list` and `resources/read` are decorated
+ with `ttlMs` and `cacheScope` as CacheableResults (SEP-2549 / SEP-2575).
+ `subscriptions/listen` opens a notification stream with registered filters
+ (`toolsListChanged`, `promptsListChanged`, `resourcesListChanged`,
+ `resourceSubscriptions`) and returns `notifications/subscriptions/acknowledged`
+ carrying `_meta["io.modelcontextprotocol/subscriptionId"]` (SEP-2575).
+ Advanced notifications (`notifications/cancelled`, `notifications/progress`,
+ the four `*_list_changed`, `notifications/resources/updated`, `logging/message`,
+ `notifications/subscriptions/acknowledged`) are consumed by `mcp_server_notify`
+ (counter bump + DEBUG log, no response).
 
  `server/discover` returns a full capability object: `serverName`,
  `serverVersion`, `protocolVersion`, `toolsCount`, `resourcesCount`,
  `promptsCount`, `listTtlMs`/`listCacheScope` (only when configured),
  `supportsStateless`/`supportsMeta` (both `true`), and `resultType: "complete"`.
-`mcp_server_notify` (counter + DEBUG log, no response) rather than being
-routed as requests.
 
 ---
 
@@ -620,7 +623,10 @@ mcp_status_t mcp_http_serve_with_auth(ctx, mcp_server_t *, mcp_http_io_t *,
 ```
 Accepts `POST` (JSON-RPC body), `GET` (SSE stream or 405), `DELETE`
 (session teardown). Sessions are loop-local (up to 16, `sess-N` ids);
-destroyed when the loop exits.
+destroyed when the loop exits. Validates `MCP-Protocol-Version`,
+`Mcp-Method`, and `Mcp-Name` header mirroring on POST requests per
+SEP-2243, rejecting mismatches with HTTP 400 and standard JSON-RPC errors
+(`MCP_RPC_HEADER_MISMATCH` -32020 / `MCP_RPC_UNSUPPORTED_PROTOCOL_VERSION` -32022).
 
 ---
 

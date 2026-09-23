@@ -35,6 +35,13 @@ void session_free(mcp_context_t *ctx, mcp_session_t *s) {
     mcp_json_destroy(ctx, s->client_meta);
     srv_free(ctx, s->client_name);
     srv_free(ctx, s->client_version);
+    srv_free(ctx, s->sub_id_str);
+    if (s->sub_resource_uris != NULL) {
+        for (size_t i = 0; i < s->n_sub_resource_uris; i++) {
+            srv_free(ctx, s->sub_resource_uris[i]);
+        }
+        srv_free(ctx, s->sub_resource_uris);
+    }
     srv_free(ctx, s);
 }
 

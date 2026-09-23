@@ -150,6 +150,19 @@ static char *make_post(const char *body, const char *sid, char *buf, size_t cap)
     return buf;
 }
 
+static char *make_post_hdr(const char *body, const char *extra_hdrs, char *buf, size_t cap) {
+    const char *sep = "\r\n";
+    if (extra_hdrs != NULL && strstr(extra_hdrs, "\r\n\r\n") != NULL) {
+        sep = "";
+    }
+    int n = snprintf(buf, cap,
+                     "POST /mcp HTTP/1.1\r\nContent-Length: %zu\r\n"
+                     "Content-Type: application/json\r\n%s%s%s",
+                     strlen(body), extra_hdrs ? extra_hdrs : "", sep, body);
+    CHECK(n > 0 && (size_t)n < cap);
+    return buf;
+}
+
 static void check_status_line(const char *resp, const char *expect) {
     CHECK(strncmp(resp, expect, strlen(expect)) == 0);
 }
@@ -395,6 +408,101 @@ int main(void) {
         CHECK(strstr(out2, "stateless-http") != NULL);
         CHECK(strstr(out2, "Mcp-Session-Id:") == NULL);
         free(out2);
+    }
+
+    /* (r) MCP 2026-07-28 Streamable HTTP header validation (SEP-2243) */
+    {
+        /* (r1) Unsupported MCP-Protocol-Version -> 400 + -32022 */
+        static const char kCall1[] =
+            "{\"jsonrpc\":\"2.0\",\"id\":\"v1\",\"method\":\"tools/call\","
+            "\"params\":{\"name\":\"echo\",\"arguments\":{\"text\":\"v1\"}}}";
+        char buf[4096];
+        char *req = make_post_hdr(kCall1,
+                                 "MCP-Protocol-Version: 9999-99-99\r\nMcp-Method: tools/call\r\nMcp-Name: echo\r\n\r\n",
+                                 buf, sizeof(buf));
+        const char *reqs1[] = { req };
+        out = run_script(ctx, srv, reqs1, 1, &st);
+        CHECK(st == MCP_OK && out != NULL);
+        check_status_line(out, "HTTP/1.1 400 Bad Request");
+        CHECK(strstr(out, "-32022") != NULL);
+        free(out);
+
+        /* (r2) Mismatched MCP-Protocol-Version vs _meta -> 400 + -32020 */
+        static const char kCall2[] =
+            "{\"jsonrpc\":\"2.0\",\"id\":\"v2\",\"method\":\"tools/call\","
+            "\"params\":{\"name\":\"echo\",\"arguments\":{\"text\":\"v2\"}},"
+            "\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2025-06-18\"}}";
+        req = make_post_hdr(kCall2,
+                            "MCP-Protocol-Version: 2026-07-28\r\nMcp-Method: tools/call\r\nMcp-Name: echo\r\n\r\n",
+                            buf, sizeof(buf));
+        const char *reqs2[] = { req };
+        out = run_script(ctx, srv, reqs2, 1, &st);
+        CHECK(st == MCP_OK && out != NULL);
+        check_status_line(out, "HTTP/1.1 400 Bad Request");
+        CHECK(strstr(out, "-32020") != NULL);
+        free(out);
+
+        /* (r3) MCP-Protocol-Version: 2026-07-28 missing Mcp-Method header -> 400 + -32020 */
+        static const char kCall3[] =
+            "{\"jsonrpc\":\"2.0\",\"id\":\"v3\",\"method\":\"tools/call\","
+            "\"params\":{\"name\":\"echo\",\"arguments\":{\"text\":\"v3\"}}}";
+        req = make_post_hdr(kCall3,
+                            "MCP-Protocol-Version: 2026-07-28\r\nMcp-Name: echo\r\n\r\n",
+                            buf, sizeof(buf));
+        const char *reqs3[] = { req };
+        out = run_script(ctx, srv, reqs3, 1, &st);
+        CHECK(st == MCP_OK && out != NULL);
+        check_status_line(out, "HTTP/1.1 400 Bad Request");
+        CHECK(strstr(out, "-32020") != NULL);
+        free(out);
+
+        /* (r4) Mcp-Method does not match request method -> 400 + -32020 */
+        req = make_post_hdr(kCall3,
+                            "MCP-Protocol-Version: 2026-07-28\r\nMcp-Method: prompts/get\r\nMcp-Name: echo\r\n\r\n",
+                            buf, sizeof(buf));
+        const char *reqs4[] = { req };
+        out = run_script(ctx, srv, reqs4, 1, &st);
+        CHECK(st == MCP_OK && out != NULL);
+        check_status_line(out, "HTTP/1.1 400 Bad Request");
+        CHECK(strstr(out, "-32020") != NULL);
+        free(out);
+
+        /* (r5) MCP-Protocol-Version: 2026-07-28 on tools/call missing Mcp-Name header -> 400 + -32020 */
+        req = make_post_hdr(kCall3,
+                            "MCP-Protocol-Version: 2026-07-28\r\nMcp-Method: tools/call\r\n\r\n",
+                            buf, sizeof(buf));
+        const char *reqs5[] = { req };
+        out = run_script(ctx, srv, reqs5, 1, &st);
+        CHECK(st == MCP_OK && out != NULL);
+        check_status_line(out, "HTTP/1.1 400 Bad Request");
+        CHECK(strstr(out, "-32020") != NULL);
+        free(out);
+
+        /* (r6) Mcp-Name does not match params.name -> 400 + -32020 */
+        req = make_post_hdr(kCall3,
+                            "MCP-Protocol-Version: 2026-07-28\r\nMcp-Method: tools/call\r\nMcp-Name: other_tool\r\n\r\n",
+                            buf, sizeof(buf));
+        const char *reqs6[] = { req };
+        out = run_script(ctx, srv, reqs6, 1, &st);
+        CHECK(st == MCP_OK && out != NULL);
+        check_status_line(out, "HTTP/1.1 400 Bad Request");
+        CHECK(strstr(out, "-32020") != NULL);
+        free(out);
+
+        /* (r7) Valid 2026-07-28 request with matching headers -> 200 OK */
+        static const char kCall7[] =
+            "{\"jsonrpc\":\"2.0\",\"id\":\"v7\",\"method\":\"tools/call\","
+            "\"params\":{\"name\":\"echo\",\"arguments\":{\"text\":\"hi 2026\"}},"
+            "\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"}}";
+        req = make_post_hdr(kCall7,
+                            "MCP-Protocol-Version: 2026-07-28\r\nMcp-Method: tools/call\r\nMcp-Name: echo\r\n\r\n",
+                            buf, sizeof(buf));
+        const char *reqs7[] = { req };
+        out = run_script(ctx, srv, reqs7, 1, &st);
+        CHECK(st == MCP_OK && out != NULL);
+        check_status_line(out, "HTTP/1.1 200 OK");
+        CHECK(strstr(out, "hi 2026") != NULL);
+        free(out);
     }
 
     mcp_server_destroy(ctx, srv);

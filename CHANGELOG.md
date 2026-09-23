@@ -58,6 +58,23 @@ Format follows Keep a Changelog. Versions follow SemVer.
   - Streamable HTTP transport (`src/transport/streamable_http.c`) supports
     stateless POST requests (with `_meta` or `server/discover`) without
     requiring or returning `Mcp-Session-Id` header (SEP-2567).
+  - Streamable HTTP Header Mirror Validation (SEP-2243): incoming HTTP POST
+    requests are validated against `MCP-Protocol-Version`, `Mcp-Method`, and
+    `Mcp-Name`. Missing required headers or mismatches return standard
+    JSON-RPC error responses with HTTP 400 (`MCP_RPC_HEADER_MISMATCH` -32020 or
+    `MCP_RPC_UNSUPPORTED_PROTOCOL_VERSION` -32022).
+  - Subscriptions Stream (`subscriptions/listen`) Protocol (SEP-2575):
+    added `subscriptions/listen` method and `notifications/subscriptions/acknowledged`
+    notification to method tables and dispatcher. Registers event filters
+    (`toolsListChanged`, `promptsListChanged`, `resourcesListChanged`,
+    `resourceSubscriptions`) and returns subscription acknowledgment carrying
+    the subscription ID under `_meta["io.modelcontextprotocol/subscriptionId"]`.
+    Tracks subscription cancellations via `notifications/cancelled`.
+  - CacheableResult for Resources & Request-level Log Level (SEP-2549, SEP-2575, SEP-2577):
+    `resources/read` and `resources/templates/list` results are decorated with
+    `ttlMs` and `cacheScope` when list cache is configured. Requests carrying
+    `_meta["io.modelcontextprotocol/logLevel"]` dynamically adjust the server
+    log floor for that request.
   - Standard error codes: `MCP_RPC_HEADER_MISMATCH` (-32020),
     `MCP_RPC_MISSING_REQUIRED_CLIENT_CAPABILITY` (-32021),
     `MCP_RPC_UNSUPPORTED_PROTOCOL_VERSION` (-32022).

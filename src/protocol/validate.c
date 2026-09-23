@@ -293,7 +293,8 @@ mcp_status_t mcp_validate_params(mcp_context_t *ctx, const mcp_message_t *msg,
         }
         if (strcmp(method, "initialize") == 0 || strcmp(method, "tools/call") == 0 ||
             strcmp(method, "resources/read") == 0 || strcmp(method, "prompts/get") == 0 ||
-            strcmp(method, "completion/complete") == 0) {
+            strcmp(method, "completion/complete") == 0 ||
+            strcmp(method, "subscriptions/listen") == 0) {
             goto invalid;
         }
         set_code(rpc_code_out, 0);
@@ -333,6 +334,11 @@ mcp_status_t mcp_validate_params(mcp_context_t *ctx, const mcp_message_t *msg,
     } else if (strcmp(method, "resources/subscribe") == 0 ||
                strcmp(method, "resources/unsubscribe") == 0) {
         if (require_string_param(ctx, params, "uri") != MCP_OK) {
+            goto invalid;
+        }
+    } else if (strcmp(method, "subscriptions/listen") == 0) {
+        const mcp_json_value_t *notifs = mcp_json_object_get(ctx, params, "notifications");
+        if (notifs != NULL && mcp_json_type(ctx, notifs) != MCP_JSON_OBJECT) {
             goto invalid;
         }
     }

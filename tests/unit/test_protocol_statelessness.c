@@ -22,6 +22,19 @@ static mcp_status_t noop_handler(mcp_context_t *ctx, mcp_session_t *s,
     return *out != NULL ? MCP_OK : MCP_ERR_NOMEM;
 }
 
+static mcp_status_t sample_read(mcp_context_t *ctx, mcp_session_t *s,
+                                const char *uri, void *ud, mcp_json_value_t **out) {
+    (void)s;
+    (void)ud;
+    mcp_json_value_t *arr = mcp_json_array_new(ctx);
+    mcp_json_value_t *item = mcp_json_object_new(ctx);
+    mcp_json_object_set_take(ctx, item, "uri", mcp_json_string_new(ctx, uri));
+    mcp_json_object_set_take(ctx, item, "text", mcp_json_string_new(ctx, "content"));
+    mcp_json_array_append(ctx, arr, item);
+    *out = arr;
+    return MCP_OK;
+}
+
 /* init_session: dispatch initialize + notify so subsequent requests pass the gate. */
 static void init_session(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s) {
     mcp_json_value_t *ip = mcp_initialize_params_new(ctx, "cli", "1");
@@ -178,6 +191,27 @@ static void case_list_cache_inject(mcp_context_t *ctx, mcp_server_t *srv, mcp_se
           strcmp(cs_s, "session") == 0);
     mcp_message_destroy(ctx, r);
 
+    /* Test resources/templates/list has cache metadata */
+    r = dispatch_req(ctx, srv, s, "rtl1", "resources/templates/list");
+    res = mcp_message_result(ctx, r);
+    CHECK(res);
+    CHECK(mcp_json_object_has(ctx, res, "ttlMs"));
+    CHECK(mcp_json_object_has(ctx, res, "cacheScope"));
+    mcp_message_destroy(ctx, r);
+
+    /* Test resources/read has cache metadata */
+    mcp_json_value_t *read_p = mcp_json_object_new(ctx);
+    mcp_json_object_set_take(ctx, read_p, "uri", mcp_json_string_new(ctx, "file:///res.txt"));
+    mcp_message_t *rr_req = mcp_request_new_string_id(ctx, "rr1", "resources/read", read_p);
+    mcp_message_t *rr_resp = NULL;
+    CHECK(mcp_server_dispatch(ctx, srv, s, rr_req, &rr_resp) == MCP_OK && rr_resp != NULL);
+    mcp_message_destroy(ctx, rr_req);
+    const mcp_json_value_t *rr_res = mcp_message_result(ctx, rr_resp);
+    CHECK(rr_res != NULL);
+    CHECK(mcp_json_object_has(ctx, rr_res, "ttlMs"));
+    CHECK(mcp_json_object_has(ctx, rr_res, "cacheScope"));
+    mcp_message_destroy(ctx, rr_resp);
+
     /* Clear: ttlMs/cacheScope omitted again */
     CHECK(mcp_server_set_list_cache(ctx, srv, 0, NULL) == MCP_OK);
     r = dispatch_req(ctx, srv, s, "tl3", "tools/list");
@@ -300,6 +334,31 @@ static void case_uninitialized_discover_and_stateless(mcp_context_t *ctx, mcp_se
     mcp_server_destroy_session(ctx, srv, s_raw);
 }
 
+static void case_request_log_level(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s) {
+    init_session(ctx, srv, s);
+    static const char kDebugReq[] =
+        "{\"jsonrpc\":\"2.0\",\"id\":\"lvl1\",\"method\":\"tools/call\","
+        "\"params\":{\"name\":\"noop\",\"arguments\":{}},"
+        "\"_meta\":{\"io.modelcontextprotocol/logLevel\":\"debug\"}}";
+    mcp_message_t *req = mcp_message_parse(ctx, kDebugReq, strlen(kDebugReq));
+    CHECK(req);
+    mcp_message_t *resp = NULL;
+    CHECK(mcp_server_dispatch(ctx, srv, s, req, &resp) == MCP_OK && resp != NULL);
+    mcp_message_destroy(ctx, req);
+    mcp_message_destroy(ctx, resp);
+
+    static const char kWarnReq[] =
+        "{\"jsonrpc\":\"2.0\",\"id\":\"lvl2\",\"method\":\"tools/call\","
+        "\"params\":{\"name\":\"noop\",\"arguments\":{}},"
+        "\"_meta\":{\"io.modelcontextprotocol/logLevel\":\"warn\"}}";
+    req = mcp_message_parse(ctx, kWarnReq, strlen(kWarnReq));
+    CHECK(req);
+    resp = NULL;
+    CHECK(mcp_server_dispatch(ctx, srv, s, req, &resp) == MCP_OK && resp != NULL);
+    mcp_message_destroy(ctx, req);
+    mcp_message_destroy(ctx, resp);
+}
+
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
     CHECK(ctx);
@@ -308,6 +367,9 @@ int main(void) {
     mcp_tool_t *tool = mcp_tool_new(ctx, "noop", "no-op", NULL, noop_handler, NULL);
     CHECK(tool);
     CHECK(mcp_server_add_tool(ctx, srv, tool) == MCP_OK);
+    mcp_resource_t *res = mcp_resource_new(ctx, "file:///res.txt", "res", "text/plain", sample_read, NULL);
+    CHECK(res);
+    CHECK(mcp_server_add_resource(ctx, srv, res) == MCP_OK);
     mcp_session_t *s = mcp_server_create_session(ctx, srv);
     CHECK(s);
 
@@ -320,6 +382,7 @@ int main(void) {
     case_session_client_meta(ctx, srv, s);
     case_ping_result_type(ctx, srv, s);
     case_uninitialized_discover_and_stateless(ctx, srv);
+    case_request_log_level(ctx, srv, s);
 
     mcp_server_destroy(ctx, srv);
     mcp_context_destroy(ctx);
