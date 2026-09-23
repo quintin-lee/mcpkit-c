@@ -276,6 +276,44 @@ mcp_status_t mcp_server_notify_client(mcp_context_t *ctx, mcp_server_t *server,
                                       const char *method, mcp_json_value_t *params);
 
 /**
+ * @brief Enqueues a notification targeted at a specific session.
+ *
+ * If the session has an active subscription, filters against its registered notification
+ * filters and injects `_meta.io.modelcontextprotocol/subscriptionId`. If the notification
+ * does not match the filter, it is dropped silently (params is destroyed) and MCP_OK is returned.
+ * If the session does not have an active subscription, enqueues as a standard notification.
+ *
+ * Ownership: Server TAKES ownership of `params` on MCP_OK (even if filtered out).
+ *
+ * @param ctx      Context; may be NULL.
+ * @param server   Target server.
+ * @param session  Target session (may be NULL for broadcast / default).
+ * @param method   Notification method string.
+ * @param params   Owned params value; server takes ownership on MCP_OK. May be NULL.
+ * @return MCP_OK on success; MCP_ERR_* on failure.
+ */
+mcp_status_t mcp_server_session_notify(mcp_context_t *ctx, mcp_server_t *server,
+                                       mcp_session_t *session, const char *method,
+                                       mcp_json_value_t *params);
+
+/**
+ * @brief Closes an active subscription stream gracefully on a session.
+ *
+ * Builds the final JSON-RPC completion response (`resultType: complete` with `subscriptionId`),
+ * resets the session's subscription, and either returns the response via `*resp_out` (if non-NULL)
+ * or enqueues it into `server->outbox` (if `resp_out == NULL`).
+ *
+ * @param ctx       Context; may be NULL.
+ * @param server    Target server.
+ * @param session   Target session.
+ * @param resp_out  Optional; receives the completion response, or NULL to enqueue to outbox.
+ * @return MCP_OK on success; MCP_ERR_NOT_FOUND or MCP_ERR_INVALID_ARGUMENT if no active subscription.
+ */
+mcp_status_t mcp_server_session_close_subscription(mcp_context_t *ctx, mcp_server_t *server,
+                                                   mcp_session_t *session,
+                                                   mcp_message_t **resp_out);
+
+/**
  * @brief Pops and destroys one outbox entry, returning it to the caller.
  *
  * Serve loops call this in a drain loop (while it returns MCP_OK) to

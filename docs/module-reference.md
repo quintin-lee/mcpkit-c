@@ -203,6 +203,10 @@ mcp_message_t *mcp_request_new_string_id(ctx, const char *id, const char *method
                                          mcp_json_value_t *params);
 mcp_message_t *mcp_response_ok_new(ctx, const mcp_message_t *req,
                                    mcp_json_value_t *result);
+mcp_message_t *mcp_response_ok_string_id_new(ctx, const char *id,
+                                            mcp_json_value_t *result);
+mcp_message_t *mcp_response_ok_number_id_new(ctx, double id,
+                                            mcp_json_value_t *result);
 mcp_message_t *mcp_response_err_new(ctx, const mcp_message_t *req_or_null,
                                     int code, const char *message,
                                     mcp_json_value_t *data);
@@ -253,9 +257,10 @@ mcp_json_value_t *mcp_initialize_params_new_v(ctx, const char *protocol_version,
 /* returns the result JSON; caller destroys */
 int              mcp_initialize_params_validate(ctx, const mcp_json_value_t *params);
 /* negotiate returns the chosen version string (strdup, caller frees) */
-const char      *mcp_protocol_negotiate(const char *client_version);
-#define MCP_PROTOCOL_VERSION_LATEST "2025-06-18"
-#define MCP_PROTOCOL_VERSION_2024   "2024-11-05"
+#define MCP_PROTOCOL_VERSION_2026_07_28 "2026-07-28"
+#define MCP_PROTOCOL_VERSION_2025_11_25 "2025-11-25"
+#define MCP_PROTOCOL_VERSION_LATEST     "2025-06-18"
+#define MCP_PROTOCOL_VERSION_2024       "2024-11-05"
 mcp_message_t    *mcp_initialized_notification_new(ctx);
 ```
 
@@ -354,6 +359,10 @@ int           mcp_server_notify(ctx, s, session, mcp_message_t *notif);
    params on OK, caller retains on error. */
 int           mcp_server_notify_client(ctx, s, const char *method,
                                        mcp_json_value_t *params);
+int           mcp_server_session_notify(ctx, s, session, const char *method,
+                                        mcp_json_value_t *params);
+int           mcp_server_session_close_subscription(ctx, s, session,
+                                                    mcp_message_t **resp_out);
 /* Pop one pending push (LIFO); caller owns and destroys the message.
    MCP_ERR_NOT_FOUND with *out = NULL when empty. */
 int           mcp_server_outbox_pop(ctx, s, mcp_message_t **out);
@@ -461,6 +470,12 @@ int  mcp_session_grant(ctx, mcp_session_t *, uint32_t perm_mask);
 int  mcp_session_revoke(ctx, mcp_session_t *, uint32_t perm_mask);
 bool mcp_session_grants(ctx, const mcp_session_t *, uint32_t perm_mask);
 /* nonzero if any bit in mask is granted */
+
+/* Subscriptions (SEP-2575) */
+bool mcp_session_has_active_subscription(ctx, const mcp_session_t *);
+bool mcp_session_is_subscribed_to_notification(ctx, const mcp_session_t *, const char *method, const mcp_json_value_t *params);
+int  mcp_session_build_notification(ctx, const mcp_session_t *, const char *method, mcp_json_value_t *params, mcp_message_t **out);
+int  mcp_session_build_subscription_closure(ctx, mcp_session_t *, mcp_message_t **resp_out);
 ```
 
 ### `dispatcher.h`
@@ -599,6 +614,11 @@ mcp_http_method_t   mcp_http_request_method(ctx, const mcp_http_request_t *);
 const char         *mcp_http_request_target(ctx, const mcp_http_request_t *);
 const char         *mcp_http_header(ctx, const mcp_http_request_t *, const char *name);
 const char         *mcp_http_request_body(ctx, const mcp_http_request_t *, size_t *len_out);
+mcp_http_request_t *mcp_http_request_new(ctx, mcp_http_method_t method, const char *target);
+int                 mcp_http_request_set_header(ctx, mcp_http_request_t *req, const char *name, const char *value);
+int                 mcp_http_request_set_body(ctx, mcp_http_request_t *req, const char *body, size_t len);
+const char         *mcp_http_request_serialize(ctx, mcp_http_request_t *req);
+int                 mcp_http_request_set_mcp_metadata(ctx, mcp_http_request_t *req, const char *proto_ver, const char *method, const char *name);
 
 mcp_http_response_t *mcp_http_response_new(ctx, int status, const char *reason);
 int                  mcp_http_response_set_header(ctx, resp, const char *name, const char *value);
@@ -671,6 +691,11 @@ int          mcp_client_read_resource(ctx, c, const char *uri,
 int          mcp_client_get_prompt(ctx, c, const char *name,
                                    mcp_json_value_t *args,
                                    mcp_json_value_t **result_out);
+
+/* Subscriptions (SEP-2575) */
+int          mcp_client_subscriptions_listen(ctx, c, mcp_json_value_t *filter, mcp_message_t **ack_out);
+int          mcp_client_cancel_subscription(ctx, c, const char *subscription_id);
+int          mcp_client_recv_message(ctx, c, mcp_message_t **msg_out);
 
 /* Low-level request: any method; result_out may be NULL.
    mcp_status_t: OK on success (result_out set), MCP_ERR_PROTOCOL on

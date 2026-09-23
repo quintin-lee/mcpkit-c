@@ -177,6 +177,54 @@ int main(void) {
     const mcp_json_value_t *carr = mcp_json_object_get(ctx, cre, "completions");
     CHECK(carr != NULL && mcp_json_array_size(ctx, carr) == 0);
     mcp_json_destroy(ctx, cre);
+
+    // Test subscriptions/listen, recv_message, and cancel_subscription
+    CHECK(mcp_client_subscriptions_listen(ctx, NULL, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_cancel_subscription(ctx, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_recv_message(ctx, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+
+    static const char *kSubAck[] = {
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/subscriptions/acknowledged\",\"params\":{\"notifications\":{\"toolsListChanged\":true},\"_meta\":{\"io.modelcontextprotocol/subscriptionId\":\"sub-test-1\"}}}"
+    };
+    fake2.script = kSubAck;
+    fake2.nscript = 1;
+    fake2.cursor = 0;
+    mcp_json_value_t *sub_filter = mcp_json_object_new(ctx);
+    CHECK(mcp_json_object_set(ctx, sub_filter, "toolsListChanged", mcp_json_bool_new(ctx, true)) == MCP_OK);
+    mcp_message_t *ack_msg = NULL;
+    CHECK(mcp_client_subscriptions_listen(ctx, c2, sub_filter, &ack_msg) == MCP_OK);
+    CHECK(ack_msg != NULL);
+    CHECK(mcp_message_kind(ctx, ack_msg) == MCP_MSG_NOTIFICATION);
+    CHECK(strcmp(mcp_message_method(ctx, ack_msg), "notifications/subscriptions/acknowledged") == 0);
+    const mcp_json_value_t *ack_p = mcp_message_params(ctx, ack_msg);
+    CHECK(ack_p != NULL);
+    const mcp_json_value_t *meta = mcp_json_object_get(ctx, ack_p, "_meta");
+    CHECK(meta != NULL);
+    const mcp_json_value_t *sub_id_v = mcp_json_object_get(ctx, meta, "io.modelcontextprotocol/subscriptionId");
+    CHECK(sub_id_v != NULL);
+    const char *sub_id_str = NULL;
+    CHECK(mcp_json_string_value(ctx, sub_id_v, &sub_id_str) == MCP_OK && strcmp(sub_id_str, "sub-test-1") == 0);
+    mcp_message_destroy(ctx, ack_msg);
+    CHECK(strstr(fake2.sent, "\"method\":\"subscriptions/listen\"") != NULL);
+
+    // Test receiving notification on subscription stream
+    static const char *kNotifStream[] = {
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/subscriptionId\":\"sub-test-1\"}}}"
+    };
+    fake2.script = kNotifStream;
+    fake2.nscript = 1;
+    fake2.cursor = 0;
+    mcp_message_t *stream_msg = NULL;
+    CHECK(mcp_client_recv_message(ctx, c2, &stream_msg) == MCP_OK);
+    CHECK(stream_msg != NULL);
+    CHECK(strcmp(mcp_message_method(ctx, stream_msg), "notifications/tools/list_changed") == 0);
+    mcp_message_destroy(ctx, stream_msg);
+
+    // Test cancelling subscription
+    CHECK(mcp_client_cancel_subscription(ctx, c2, "sub-test-1") == MCP_OK);
+    CHECK(strstr(fake2.sent, "\"method\":\"notifications/cancelled\"") != NULL);
+    CHECK(strstr(fake2.sent, "sub-test-1") != NULL);
+
     mcp_client_destroy(ctx, c2);
     mcp_transport_destroy(ctx, t2);
     mcp_client_destroy(ctx, NULL);

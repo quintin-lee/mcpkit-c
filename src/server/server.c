@@ -340,10 +340,71 @@ mcp_status_t mcp_server_set_tracer(mcp_context_t *ctx, mcp_server_t *srv,
     return MCP_OK;
 }
 
+mcp_status_t mcp_server_session_notify(mcp_context_t *ctx, mcp_server_t *srv,
+                                       mcp_session_t *session, const char *method,
+                                       mcp_json_value_t *params) {
+    if (srv == NULL || method == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_message_t *notif = NULL;
+    mcp_status_t st = mcp_session_build_notification(ctx, session, method, params, &notif);
+    if (st != MCP_OK) {
+        return st;
+    }
+    if (notif == NULL) {
+        /* Filtered out cleanly */
+        return MCP_OK;
+    }
+    if (srv->n_outbox == srv->cap_outbox) {
+        size_t ncap = srv->cap_outbox == 0 ? 4 : srv->cap_outbox * 2;
+        mcp_message_t **narr = srv_realloc(ctx, srv->outbox, ncap * sizeof(*narr));
+        if (narr == NULL) {
+            mcp_message_destroy(ctx, notif);
+            return MCP_ERR_NOMEM;
+        }
+        srv->outbox = narr;
+        srv->cap_outbox = ncap;
+    }
+    srv->outbox[srv->n_outbox++] = notif;
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_session_close_subscription(mcp_context_t *ctx, mcp_server_t *srv,
+                                                   mcp_session_t *session,
+                                                   mcp_message_t **resp_out) {
+    if (srv == NULL || session == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_message_t *resp = NULL;
+    mcp_status_t st = mcp_session_build_subscription_closure(ctx, session, &resp);
+    if (st != MCP_OK) {
+        return st;
+    }
+    if (resp_out != NULL) {
+        *resp_out = resp;
+        return MCP_OK;
+    }
+    if (srv->n_outbox == srv->cap_outbox) {
+        size_t ncap = srv->cap_outbox == 0 ? 4 : srv->cap_outbox * 2;
+        mcp_message_t **narr = srv_realloc(ctx, srv->outbox, ncap * sizeof(*narr));
+        if (narr == NULL) {
+            mcp_message_destroy(ctx, resp);
+            return MCP_ERR_NOMEM;
+        }
+        srv->outbox = narr;
+        srv->cap_outbox = ncap;
+    }
+    srv->outbox[srv->n_outbox++] = resp;
+    return MCP_OK;
+}
+
 mcp_status_t mcp_server_notify_client(mcp_context_t *ctx, mcp_server_t *srv,
                                       const char *method, mcp_json_value_t *params) {
     if (srv == NULL || method == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (srv->n_sessions == 1 && srv->sessions[0]->subscription_active) {
+        return mcp_server_session_notify(ctx, srv, srv->sessions[0], method, params);
     }
     // Server takes params on success only; the builder retains them on
     // failure, so the caller's value is never leaked on the error path.

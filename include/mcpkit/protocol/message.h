@@ -273,6 +273,28 @@ mcp_message_t *mcp_response_ok_new(mcp_context_t *ctx, const mcp_message_t *req,
                                     mcp_json_value_t *result);
 
 /**
+ * @brief Creates a JSON-RPC 2.0 success response with an explicit string id.
+ *
+ * @param ctx     Context.
+ * @param id      String id (must be non-NULL).
+ * @param result  Result value; ownership transfers to the response on success.
+ * @return Caller-owned message, or NULL on allocation failure.
+ */
+mcp_message_t *mcp_response_ok_string_id_new(mcp_context_t *ctx, const char *id,
+                                             mcp_json_value_t *result);
+
+/**
+ * @brief Creates a JSON-RPC 2.0 success response with an explicit numeric id.
+ *
+ * @param ctx     Context.
+ * @param id      Numeric id.
+ * @param result  Result value; ownership transfers to the response on success.
+ * @return Caller-owned message, or NULL on allocation failure.
+ */
+mcp_message_t *mcp_response_ok_number_id_new(mcp_context_t *ctx, double id,
+                                             mcp_json_value_t *result);
+
+/**
  * @brief Creates a JSON-RPC 2.0 error response.
  *
  * @param ctx         Context.

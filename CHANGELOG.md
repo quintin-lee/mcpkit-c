@@ -70,6 +70,27 @@ Format follows Keep a Changelog. Versions follow SemVer.
     `resourceSubscriptions`) and returns subscription acknowledgment carrying
     the subscription ID under `_meta["io.modelcontextprotocol/subscriptionId"]`.
     Tracks subscription cancellations via `notifications/cancelled`.
+  - Subscription Notification Delivery & Filter Enforcement (SEP-2575):
+    added `mcp_session_has_active_subscription()`, `mcp_session_is_subscribed_to_notification()`,
+    `mcp_session_build_notification()`, and `mcp_server_session_notify()` to filter
+    and automatically attach `_meta["io.modelcontextprotocol/subscriptionId"]` on
+    streams with active subscriptions. `mcp_server_notify_client()` transparently
+    routes through active session filters.
+  - Graceful Closure for Subscriptions (SEP-2575):
+    added `mcp_session_build_subscription_closure()` and `mcp_server_session_close_subscription()`
+    to emit the final JSON-RPC response completing the original `subscriptions/listen` request
+    (`resultType: complete` and `io.modelcontextprotocol/subscriptionId`).
+    Added `mcp_response_ok_string_id_new()` and `mcp_response_ok_number_id_new()` builders
+    in `mcpkit/protocol/message.h`.
+  - Client-Side Subscriptions & Message Stream APIs:
+    added `mcp_client_subscriptions_listen()`, `mcp_client_cancel_subscription()`, and
+    `mcp_client_recv_message()` in `mcpkit/client/client.h`.
+  - Client-Side Streamable HTTP Header Mirroring (SEP-2243):
+    added `mcp_http_request_new()`, `mcp_http_request_set_header()`,
+    `mcp_http_request_set_body()`, `mcp_http_request_serialize()`, and
+    `mcp_http_request_set_mcp_metadata()` in `mcpkit/transport/http.h`.
+    Added `MCP_PROTOCOL_VERSION_2026_07_28` and `MCP_PROTOCOL_VERSION_2025_11_25` constants
+    in `mcpkit/protocol/initialize.h`.
   - CacheableResult for Resources & Request-level Log Level (SEP-2549, SEP-2575, SEP-2577):
     `resources/read` and `resources/templates/list` results are decorated with
     `ttlMs` and `cacheScope` when list cache is configured. Requests carrying

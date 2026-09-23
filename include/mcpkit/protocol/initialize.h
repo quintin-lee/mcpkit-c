@@ -26,6 +26,8 @@ typedef struct mcp_message mcp_message_t;
  * Used as the default when a client does not specify a version in
  * initialize.
  */
+#define MCP_PROTOCOL_VERSION_2026_07_28 "2026-07-28"
+#define MCP_PROTOCOL_VERSION_2025_11_25 "2025-11-25"
 #define MCP_PROTOCOL_VERSION_LATEST "2025-06-18"
 
 /**

@@ -503,6 +503,26 @@ int main(void) {
         check_status_line(out, "HTTP/1.1 200 OK");
         CHECK(strstr(out, "hi 2026") != NULL);
         free(out);
+
+        /* (r8) Client-side HTTP request builder + set_mcp_metadata serialization roundtrip */
+        mcp_http_request_t *hreq = mcp_http_request_new(ctx, MCP_HTTP_POST, "/mcp");
+        CHECK(hreq != NULL);
+        CHECK(mcp_http_request_set_header(ctx, hreq, "Content-Type", "application/json") == MCP_OK);
+        CHECK(mcp_http_request_set_mcp_metadata(ctx, hreq, MCP_PROTOCOL_VERSION_2026_07_28, "tools/call", "echo") == MCP_OK);
+        CHECK(mcp_http_request_set_body(ctx, hreq, kCall7, strlen(kCall7)) == MCP_OK);
+        const char *serialized = mcp_http_request_serialize(ctx, hreq);
+        CHECK(serialized != NULL);
+        CHECK(strstr(serialized, "POST /mcp HTTP/1.1\r\n") != NULL);
+        CHECK(strstr(serialized, "MCP-Protocol-Version: 2026-07-28\r\n") != NULL);
+        CHECK(strstr(serialized, "Mcp-Method: tools/call\r\n") != NULL);
+        CHECK(strstr(serialized, "Mcp-Name: echo\r\n") != NULL);
+        const char *reqs8[] = { serialized };
+        out = run_script(ctx, srv, reqs8, 1, &st);
+        CHECK(st == MCP_OK && out != NULL);
+        check_status_line(out, "HTTP/1.1 200 OK");
+        CHECK(strstr(out, "hi 2026") != NULL);
+        free(out);
+        mcp_http_request_destroy(ctx, hreq);
     }
 
     mcp_server_destroy(ctx, srv);

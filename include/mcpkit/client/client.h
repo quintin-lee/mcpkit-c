@@ -274,6 +274,44 @@ mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
                                  mcp_json_value_t **result_out);
 
 /**
+ * @brief Sends subscriptions/listen to open a subscription stream with the server.
+ *
+ * Emits the JSON-RPC request `subscriptions/listen` and expects the server's initial
+ * acknowledgment notification (`notifications/subscriptions/acknowledged`).
+ *
+ * @param ctx                   Context; may be NULL.
+ * @param client                Target client.
+ * @param notifications_filter  Filter object (e.g. {"toolsListChanged": true}); consumed on all paths. May be NULL.
+ * @param ack_out               Optional; on MCP_OK receives the caller-owned acknowledgment message.
+ * @return MCP_OK on success; MCP_ERR_* on protocol or transport error.
+ */
+mcp_status_t mcp_client_subscriptions_listen(mcp_context_t *ctx, mcp_client_t *client,
+                                             mcp_json_value_t *notifications_filter,
+                                             mcp_message_t **ack_out);
+
+/**
+ * @brief Cancels an active subscription stream by sending notifications/cancelled.
+ *
+ * @param ctx              Context; may be NULL.
+ * @param client           Target client.
+ * @param subscription_id  Optional subscription ID string; if non-NULL, attached in _meta.
+ * @return MCP_OK on success; MCP_ERR_* on transport error.
+ */
+mcp_status_t mcp_client_cancel_subscription(mcp_context_t *ctx, mcp_client_t *client,
+                                            const char *subscription_id);
+
+/**
+ * @brief Receives the next message from the transport (notification or response).
+ *
+ * @param ctx       Context; may be NULL.
+ * @param client    Target client.
+ * @param msg_out   Receives the caller-owned parsed message on MCP_OK.
+ * @return MCP_OK on success; MCP_ERR_* on transport or parse error.
+ */
+mcp_status_t mcp_client_recv_message(mcp_context_t *ctx, mcp_client_t *client,
+                                     mcp_message_t **msg_out);
+
+/**
  * @brief Host-injected callback that responds to a roots/list request
  *        sent by the server to the client.
  *

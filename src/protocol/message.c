@@ -392,6 +392,51 @@ mcp_message_t *mcp_response_ok_new(mcp_context_t *ctx, const mcp_message_t *req,
     return finish_with(ctx, dom, "result", result);
 }
 
+mcp_message_t *mcp_response_ok_string_id_new(mcp_context_t *ctx, const char *id,
+                                             mcp_json_value_t *result) {
+    if (id == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *dom = new_envelope(ctx);
+    mcp_json_value_t *idv = dom != NULL ? mcp_json_string_new(ctx, id) : NULL;
+    if (dom == NULL || idv == NULL) {
+        if (idv != NULL) {
+            mcp_json_destroy(ctx, idv);
+        }
+        if (dom != NULL) {
+            mcp_json_destroy(ctx, dom);
+        }
+        return NULL;
+    }
+    if (mcp_json_object_set(ctx, dom, "id", idv) != MCP_OK) {
+        mcp_json_destroy(ctx, idv);
+        mcp_json_destroy(ctx, dom);
+        return NULL;
+    }
+    return finish_with(ctx, dom, "result", result);
+}
+
+mcp_message_t *mcp_response_ok_number_id_new(mcp_context_t *ctx, double id,
+                                             mcp_json_value_t *result) {
+    mcp_json_value_t *dom = new_envelope(ctx);
+    mcp_json_value_t *idv = dom != NULL ? mcp_json_number_new(ctx, id) : NULL;
+    if (dom == NULL || idv == NULL) {
+        if (idv != NULL) {
+            mcp_json_destroy(ctx, idv);
+        }
+        if (dom != NULL) {
+            mcp_json_destroy(ctx, dom);
+        }
+        return NULL;
+    }
+    if (mcp_json_object_set(ctx, dom, "id", idv) != MCP_OK) {
+        mcp_json_destroy(ctx, idv);
+        mcp_json_destroy(ctx, dom);
+        return NULL;
+    }
+    return finish_with(ctx, dom, "result", result);
+}
+
 mcp_message_t *mcp_response_err_new(mcp_context_t *ctx, const mcp_message_t *req_or_null,
                                     int code, const char *message, mcp_json_value_t *data) {
     if (message == NULL) {

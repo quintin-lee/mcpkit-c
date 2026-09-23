@@ -101,6 +101,24 @@ int main(void) {
     mcp_json_free_string(ctx, s);
     mcp_message_destroy(ctx, perr);
 
+    // 7. response_ok with explicit string / number id
+    mcp_json_value_t *r_str = mcp_json_string_new(ctx, "sub_done");
+    mcp_message_t *ok_str = mcp_response_ok_string_id_new(ctx, "sub-99", r_str);
+    CHECK(ok_str != NULL);
+    CHECK(mcp_message_kind(ctx, ok_str) == MCP_MSG_RESPONSE);
+    CHECK(mcp_message_id_type(ctx, ok_str) == MCP_ID_STRING);
+    CHECK(strcmp(mcp_message_id_string(ctx, ok_str), "sub-99") == 0);
+    mcp_message_destroy(ctx, ok_str);
+
+    mcp_json_value_t *r_num = mcp_json_string_new(ctx, "sub_num_done");
+    mcp_message_t *ok_num = mcp_response_ok_number_id_new(ctx, 99.0, r_num);
+    CHECK(ok_num != NULL);
+    CHECK(mcp_message_kind(ctx, ok_num) == MCP_MSG_RESPONSE);
+    CHECK(mcp_message_id_type(ctx, ok_num) == MCP_ID_NUMBER);
+    double got_d = 0;
+    CHECK(mcp_message_id_number(ctx, ok_num, &got_d) == MCP_OK && got_d == 99.0);
+    mcp_message_destroy(ctx, ok_num);
+
     // 8. status<->code mapping roundtrip
     CHECK(mcp_status_to_rpc_code(MCP_ERR_INVALID_ARGUMENT) == -32602);
     CHECK(mcp_status_to_rpc_code(MCP_ERR_NOT_FOUND) == -32601);

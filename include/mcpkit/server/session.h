@@ -22,6 +22,7 @@
 typedef struct mcp_json_value mcp_json_value_t;
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_session mcp_session_t;
+typedef struct mcp_message mcp_message_t;
 
 /**
  * @brief Checks whether the session has completed initialization.
@@ -109,5 +110,68 @@ bool mcp_session_grants(mcp_context_t *ctx, const mcp_session_t *session,
  */
 const mcp_json_value_t *mcp_session_client_meta(mcp_context_t *ctx,
                                                  const mcp_session_t *session);
+
+/**
+ * @brief Checks whether the session has an active subscription stream.
+ *
+ * @param ctx     Context; may be NULL.
+ * @param session Session to check; NULL returns false.
+ * @return true if an active subscription stream is open, false otherwise.
+ */
+bool mcp_session_has_active_subscription(mcp_context_t *ctx, const mcp_session_t *session);
+
+/**
+ * @brief Checks whether a notification matches the session's active subscription filter.
+ *
+ * If the session has NO active subscription, returns true (unfiltered).
+ * If the session HAS an active subscription, checks against:
+ *   - toolsListChanged for "notifications/tools/list_changed"
+ *   - promptsListChanged for "notifications/prompts/list_changed"
+ *   - resourcesListChanged for "notifications/resources/list_changed"
+ *   - resourceSubscriptions for "notifications/resources/updated" (matches uri in params)
+ *   - other notification methods return true.
+ *
+ * @param ctx      Context; may be NULL.
+ * @param session  Session to check.
+ * @param method   Notification method string (non-NULL).
+ * @param params   Notification params JSON object (borrowed, may be NULL).
+ * @return true if the notification should be delivered to this session; false if filtered out.
+ */
+bool mcp_session_is_subscribed_to_notification(mcp_context_t *ctx, const mcp_session_t *session,
+                                              const char *method, const mcp_json_value_t *params);
+
+/**
+ * @brief Builds a notification message for a session, automatically applying subscription
+ *        filtering and injecting `_meta["io.modelcontextprotocol/subscriptionId"]` if active.
+ *
+ * Ownership: On MCP_OK, if `*notif_out != NULL`, `params` ownership was transferred to `*notif_out`.
+ *            If `*notif_out == NULL` (because the notification was filtered out), `params` was destroyed.
+ *            On error, the caller retains ownership of `params` (unless already consumed).
+ *
+ * @param ctx        Context; may be NULL.
+ * @param session    Target session; may be NULL (treated as no active subscription).
+ * @param method     Notification method string (non-NULL).
+ * @param params     Owned params object; may be NULL.
+ * @param notif_out  Receives the built notification message, or NULL if filtered out.
+ * @return MCP_OK on success (with *notif_out set or NULL); MCP_ERR_* on error.
+ */
+mcp_status_t mcp_session_build_notification(mcp_context_t *ctx, const mcp_session_t *session,
+                                            const char *method, mcp_json_value_t *params,
+                                            mcp_message_t **notif_out);
+
+/**
+ * @brief Builds a graceful closure response for an active subscription stream.
+ *
+ * Emits the JSON-RPC response completing the original `subscriptions/listen` request:
+ * {"jsonrpc":"2.0","id":<sub_id>,"result":{"resultType":"complete","_meta":{"io.modelcontextprotocol/subscriptionId":<sub_id>}}}
+ * Resets the session's active subscription state.
+ *
+ * @param ctx       Context; may be NULL.
+ * @param session   Target session; must have an active subscription.
+ * @param resp_out  Receives the caller-owned completion response message.
+ * @return MCP_OK on success; MCP_ERR_NOT_FOUND or MCP_ERR_INVALID_ARGUMENT if no active subscription.
+ */
+mcp_status_t mcp_session_build_subscription_closure(mcp_context_t *ctx, mcp_session_t *session,
+                                                    mcp_message_t **resp_out);
 
 #endif

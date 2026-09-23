@@ -575,6 +575,161 @@ mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
     return mcp_client_request(ctx, client, "completion/complete", params, result_out);
 }
 
+mcp_status_t mcp_client_subscriptions_listen(mcp_context_t *ctx, mcp_client_t *client,
+                                             mcp_json_value_t *notifications_filter,
+                                             mcp_message_t **ack_out) {
+    if (client == NULL) {
+        if (notifications_filter != NULL) {
+            mcp_json_destroy(ctx, notifications_filter);
+        }
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (ack_out != NULL) {
+        *ack_out = NULL;
+    }
+
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    if (params == NULL) {
+        if (notifications_filter != NULL) {
+            mcp_json_destroy(ctx, notifications_filter);
+        }
+        return MCP_ERR_NOMEM;
+    }
+    if (notifications_filter != NULL) {
+        if (mcp_json_object_set_take(ctx, params, "notifications", notifications_filter) != MCP_OK) {
+            mcp_json_destroy(ctx, notifications_filter);
+            mcp_json_destroy(ctx, params);
+            return MCP_ERR_NOMEM;
+        }
+    }
+
+    double id = client->next_id;
+    client->next_id += 1.0;
+
+    mcp_message_t *req = mcp_request_new_number_id(ctx, id, "subscriptions/listen", params);
+    if (req == NULL) {
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    char *out = mcp_message_serialize(ctx, req);
+    mcp_message_destroy(ctx, req);
+    if (out == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_status_t st = mcp_transport_send(ctx, client->t, out, strlen(out));
+    mcp_json_free_string(ctx, out);
+    if (st != MCP_OK) {
+        return st;
+    }
+
+    char *line = NULL;
+    st = mcp_transport_recv(ctx, client->t, &line);
+    if (st != MCP_OK) {
+        return st;
+    }
+    mcp_message_t *msg = mcp_message_parse(ctx, line, strlen(line));
+    mcp_json_free_string(ctx, line);
+    if (msg == NULL) {
+        return MCP_ERR_PROTOCOL;
+    }
+
+    if (mcp_message_kind(ctx, msg) == MCP_MSG_RESPONSE) {
+        int code = 0;
+        if (mcp_message_error_code(ctx, msg, &code) == MCP_OK) {
+            mcp_message_destroy(ctx, msg);
+            return mcp_rpc_code_to_status(code);
+        }
+        mcp_message_destroy(ctx, msg);
+        return MCP_ERR_PROTOCOL;
+    }
+
+    if (mcp_message_kind(ctx, msg) == MCP_MSG_NOTIFICATION) {
+        const char *method = mcp_message_method(ctx, msg);
+        if (method == NULL || strcmp(method, "notifications/subscriptions/acknowledged") != 0) {
+            mcp_message_destroy(ctx, msg);
+            return MCP_ERR_PROTOCOL;
+        }
+        const mcp_json_value_t *ack_p = mcp_message_params(ctx, msg);
+        if (ack_p == NULL) {
+            mcp_message_destroy(ctx, msg);
+            return MCP_ERR_PROTOCOL;
+        }
+        const mcp_json_value_t *meta = mcp_json_object_get(ctx, ack_p, "_meta");
+        if (meta == NULL || mcp_json_object_get(ctx, meta, "io.modelcontextprotocol/subscriptionId") == NULL) {
+            mcp_message_destroy(ctx, msg);
+            return MCP_ERR_PROTOCOL;
+        }
+        if (ack_out != NULL) {
+            *ack_out = msg;
+        } else {
+            mcp_message_destroy(ctx, msg);
+        }
+        return MCP_OK;
+    }
+
+    mcp_message_destroy(ctx, msg);
+    return MCP_ERR_PROTOCOL;
+}
+
+mcp_status_t mcp_client_cancel_subscription(mcp_context_t *ctx, mcp_client_t *client,
+                                            const char *subscription_id) {
+    if (client == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = NULL;
+    if (subscription_id != NULL) {
+        params = mcp_json_object_new(ctx);
+        mcp_json_value_t *meta = mcp_json_object_new(ctx);
+        mcp_json_value_t *sub_v = mcp_json_string_new(ctx, subscription_id);
+        if (params == NULL || meta == NULL || sub_v == NULL) {
+            mcp_json_destroy(ctx, params);
+            mcp_json_destroy(ctx, meta);
+            mcp_json_destroy(ctx, sub_v);
+            return MCP_ERR_NOMEM;
+        }
+        if (mcp_json_object_set_take(ctx, meta, "io.modelcontextprotocol/subscriptionId", sub_v) != MCP_OK ||
+            mcp_json_object_set_take(ctx, params, "_meta", meta) != MCP_OK) {
+            mcp_json_destroy(ctx, sub_v);
+            mcp_json_destroy(ctx, meta);
+            mcp_json_destroy(ctx, params);
+            return MCP_ERR_NOMEM;
+        }
+    }
+    mcp_message_t *ntf = mcp_notification_new(ctx, "notifications/cancelled", params);
+    if (ntf == NULL) {
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    char *out = mcp_message_serialize(ctx, ntf);
+    mcp_message_destroy(ctx, ntf);
+    if (out == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_status_t st = mcp_transport_send(ctx, client->t, out, strlen(out));
+    mcp_json_free_string(ctx, out);
+    return st;
+}
+
+mcp_status_t mcp_client_recv_message(mcp_context_t *ctx, mcp_client_t *client,
+                                     mcp_message_t **msg_out) {
+    if (client == NULL || msg_out == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    *msg_out = NULL;
+    char *line = NULL;
+    mcp_status_t st = mcp_transport_recv(ctx, client->t, &line);
+    if (st != MCP_OK) {
+        return st;
+    }
+    mcp_message_t *msg = mcp_message_parse(ctx, line, strlen(line));
+    mcp_json_free_string(ctx, line);
+    if (msg == NULL) {
+        return MCP_ERR_PROTOCOL;
+    }
+    *msg_out = msg;
+    return MCP_OK;
+}
+
 void mcp_client_set_roots_provider(mcp_context_t *ctx, mcp_client_t *c,
                                    mcp_client_roots_fn fn, void *user_data) {
     (void)ctx;

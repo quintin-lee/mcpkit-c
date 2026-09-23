@@ -37,6 +37,7 @@ struct mcp_http_request {
     size_t nheaders;
     const char *body;
     size_t body_len;
+    char *owned_serialized;
 };
 
 struct mcp_http_response {
@@ -246,6 +247,9 @@ void mcp_http_request_destroy(mcp_context_t *ctx, mcp_http_request_t *req) {
         h_free(ctx, req->headers[i].name);
         h_free(ctx, req->headers[i].value);
     }
+    if (req->owned_serialized != NULL) {
+        h_free(ctx, req->owned_serialized);
+    }
     h_free(ctx, req);
 }
 
@@ -279,6 +283,169 @@ const char *mcp_http_request_body(mcp_context_t *ctx, const mcp_http_request_t *
         *len_out = req != NULL ? req->body_len : 0;
     }
     return req != NULL ? req->body : NULL;
+}
+
+mcp_http_request_t *mcp_http_request_new(mcp_context_t *ctx, mcp_http_method_t method,
+                                         const char *target) {
+    if (target == NULL) {
+        return NULL;
+    }
+    mcp_http_request_t *req = h_malloc(ctx, sizeof(*req));
+    if (req == NULL) {
+        return NULL;
+    }
+    memset(req, 0, sizeof(*req));
+    req->method = method;
+    req->target = dup_n(ctx, target, strlen(target));
+    if (req->target == NULL) {
+        h_free(ctx, req);
+        return NULL;
+    }
+    return req;
+}
+
+mcp_status_t mcp_http_request_set_header(mcp_context_t *ctx, mcp_http_request_t *req,
+                                         const char *name, const char *value) {
+    if (req == NULL || name == NULL || value == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    for (size_t i = 0; i < req->nheaders; i++) {
+        if (header_name_eq(req->headers[i].name, name)) {
+            char *v = dup_n(ctx, value, strlen(value));
+            if (v == NULL) {
+                return MCP_ERR_NOMEM;
+            }
+            h_free(ctx, req->headers[i].value);
+            req->headers[i].value = v;
+            return MCP_OK;
+        }
+    }
+    if (req->nheaders >= MCP_HTTP_MAX_HEADERS) {
+        return MCP_ERR_NOMEM;
+    }
+    char *n = dup_n(ctx, name, strlen(name));
+    char *v = dup_n(ctx, value, strlen(value));
+    if (n == NULL || v == NULL) {
+        if (n != NULL) {
+            h_free(ctx, n);
+        }
+        return MCP_ERR_NOMEM;
+    }
+    req->headers[req->nheaders].name = n;
+    req->headers[req->nheaders].value = v;
+    req->nheaders++;
+    return MCP_OK;
+}
+
+mcp_status_t mcp_http_request_set_body(mcp_context_t *ctx, mcp_http_request_t *req,
+                                       const char *body, size_t len) {
+    (void)ctx;
+    if (req == NULL || (body == NULL && len > 0)) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    req->body = body;
+    req->body_len = len;
+    return MCP_OK;
+}
+
+static const char *method_str(mcp_http_method_t m) {
+    switch (m) {
+        case MCP_HTTP_GET: return "GET";
+        case MCP_HTTP_POST: return "POST";
+        case MCP_HTTP_DELETE: return "DELETE";
+        default: return "UNKNOWN";
+    }
+}
+
+const char *mcp_http_request_serialize(mcp_context_t *ctx, mcp_http_request_t *req) {
+    if (req == NULL || req->target == NULL) {
+        return NULL;
+    }
+    const char *m = method_str(req->method);
+    size_t cap = 128 + strlen(m) + strlen(req->target) + req->body_len + 32;
+    for (size_t i = 0; i < req->nheaders; i++) {
+        cap += strlen(req->headers[i].name) + strlen(req->headers[i].value) + 4;
+    }
+    char digits[32];
+    int nd = snprintf(digits, sizeof(digits), "%zu", req->body_len);
+    if (nd < 0) {
+        return NULL;
+    }
+    cap += (size_t)nd;
+    char *out = h_malloc(ctx, cap + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    int n = snprintf(out, cap + 1, "%s %s HTTP/1.1\r\n", m, req->target);
+    if (n < 0) {
+        h_free(ctx, out);
+        return NULL;
+    }
+    size_t pos = (size_t)n;
+    bool has_cl = false;
+    for (size_t i = 0; i < req->nheaders; i++) {
+        if (header_name_eq(req->headers[i].name, "Content-Length")) {
+            has_cl = true;
+        }
+        n = snprintf(out + pos, cap + 1 - pos, "%s: %s\r\n", req->headers[i].name,
+                     req->headers[i].value);
+        if (n < 0) {
+            h_free(ctx, out);
+            return NULL;
+        }
+        pos += (size_t)n;
+    }
+    if (!has_cl && (req->method == MCP_HTTP_POST || req->body_len > 0)) {
+        n = snprintf(out + pos, cap + 1 - pos, "Content-Length: %s\r\n", digits);
+        if (n < 0) {
+            h_free(ctx, out);
+            return NULL;
+        }
+        pos += (size_t)n;
+    }
+    if (pos + 2 > cap) {
+        h_free(ctx, out);
+        return NULL;
+    }
+    memcpy(out + pos, "\r\n", 2);
+    pos += 2;
+    if (req->body != NULL && req->body_len > 0) {
+        memcpy(out + pos, req->body, req->body_len);
+        pos += req->body_len;
+    }
+    out[pos] = '\0';
+    if (req->owned_serialized != NULL) {
+        h_free(ctx, req->owned_serialized);
+    }
+    req->owned_serialized = out;
+    return out;
+}
+
+mcp_status_t mcp_http_request_set_mcp_metadata(mcp_context_t *ctx, mcp_http_request_t *req,
+                                               const char *protocol_version,
+                                               const char *method,
+                                               const char *name_or_uri) {
+    if (req == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    const char *pv = protocol_version != NULL ? protocol_version : "2026-07-28";
+    mcp_status_t st = mcp_http_request_set_header(ctx, req, "MCP-Protocol-Version", pv);
+    if (st != MCP_OK) {
+        return st;
+    }
+    if (method != NULL) {
+        st = mcp_http_request_set_header(ctx, req, "Mcp-Method", method);
+        if (st != MCP_OK) {
+            return st;
+        }
+    }
+    if (name_or_uri != NULL) {
+        st = mcp_http_request_set_header(ctx, req, "Mcp-Name", name_or_uri);
+        if (st != MCP_OK) {
+            return st;
+        }
+    }
+    return MCP_OK;
 }
 
 bool mcp_http_request_wants_close(mcp_context_t *ctx,

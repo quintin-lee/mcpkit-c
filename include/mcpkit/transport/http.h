@@ -130,6 +130,76 @@ const char *mcp_http_request_body(mcp_context_t *ctx,
                                   size_t *len_out);
 
 /**
+ * @brief Creates a new HTTP request for client use.
+ *
+ * @param ctx     Context; may be NULL.
+ * @param method  HTTP method (MCP_HTTP_GET, MCP_HTTP_POST, MCP_HTTP_DELETE).
+ * @param target  Request target path (e.g. "/mcp"); copied internally.
+ * @return Owned mcp_http_request_t, or NULL on allocation failure.
+ */
+mcp_http_request_t *mcp_http_request_new(mcp_context_t *ctx, mcp_http_method_t method,
+                                         const char *target);
+
+/**
+ * @brief Sets or replaces a header on an HTTP request.
+ *
+ * @param ctx    Context; may be NULL.
+ * @param req    Target request.
+ * @param name   Header name; not owned.
+ * @param value  Header value; not owned.
+ * @return MCP_OK on success; MCP_ERR_NOMEM on allocation failure;
+ *         MCP_ERR_INVALID_ARGUMENT on bad arguments.
+ */
+mcp_status_t mcp_http_request_set_header(mcp_context_t *ctx, mcp_http_request_t *req,
+                                         const char *name, const char *value);
+
+/**
+ * @brief Sets the body on an HTTP request.
+ *
+ * The buffer pointer is stored (not copied); caller must keep the body buffer alive
+ * for the lifetime of the request.
+ *
+ * @param ctx    Context; may be NULL.
+ * @param req    Target request.
+ * @param body   Body bytes; pointer stored, not copied.
+ * @param len    Body length in bytes.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT on bad arguments.
+ */
+mcp_status_t mcp_http_request_set_body(mcp_context_t *ctx, mcp_http_request_t *req,
+                                       const char *body, size_t len);
+
+/**
+ * @brief Serializes the HTTP request to a single owned snapshot.
+ *
+ * Returns a BORROWED const char*; valid until the next set_header /
+ * set_body call or destroy of the request.
+ *
+ * @param ctx  Context; may be NULL.
+ * @param req  Target request.
+ * @return BORROWED serialized string, or NULL on error.
+ */
+const char *mcp_http_request_serialize(mcp_context_t *ctx, mcp_http_request_t *req);
+
+/**
+ * @brief Sets SEP-2243 Streamable HTTP headers on an HTTP request.
+ *
+ * Sets "MCP-Protocol-Version: 2026-07-28" (or the provided protocol_version),
+ * and if method is non-NULL, sets "Mcp-Method: <method>".
+ * If name_or_uri is non-NULL, sets "Mcp-Name: <name_or_uri>".
+ *
+ * @param ctx               Context; may be NULL.
+ * @param req               Target HTTP request.
+ * @param protocol_version  Protocol version string (e.g. MCP_PROTOCOL_VERSION_LATEST); may be NULL to use default.
+ * @param method            MCP method string (e.g. "tools/call"); may be NULL.
+ * @param name_or_uri       MCP name or URI string (e.g. tool name); may be NULL.
+ * @return MCP_OK on success; MCP_ERR_* on error.
+ */
+mcp_status_t mcp_http_request_set_mcp_metadata(mcp_context_t *ctx, mcp_http_request_t *req,
+                                               const char *protocol_version,
+                                               const char *method,
+                                               const char *name_or_uri);
+
+/**
  * @brief Creates an HTTP response.
  *
  * Caller owns the response; destroy with mcp_http_response_destroy().

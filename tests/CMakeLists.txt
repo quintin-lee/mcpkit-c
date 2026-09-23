@@ -212,6 +212,10 @@ add_executable(test_mrtr unit/test_mrtr.c)
 target_link_libraries(test_mrtr PRIVATE mcpkit_core)
 add_test(NAME test_mrtr COMMAND test_mrtr)
 
+add_executable(test_subscriptions_stream unit/test_subscriptions_stream.c)
+target_link_libraries(test_subscriptions_stream PRIVATE mcpkit_core)
+add_test(NAME test_subscriptions_stream COMMAND test_subscriptions_stream)
+
 if(MCPKIT_BUILD_TLS)
   # Generate a self-signed cert in the build directory for the TLS test.
   # The cert is written to the tests/ subdirectory of the build tree.
