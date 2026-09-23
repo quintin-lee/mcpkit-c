@@ -220,6 +220,10 @@ add_executable(test_trace_context unit/test_trace_context.c)
 target_link_libraries(test_trace_context PRIVATE mcpkit_core)
 add_test(NAME test_trace_context COMMAND test_trace_context)
 
+add_executable(test_tasks_extension unit/test_tasks_extension.c)
+target_link_libraries(test_tasks_extension PRIVATE mcpkit_core)
+add_test(NAME test_tasks_extension COMMAND test_tasks_extension)
+
 if(MCPKIT_BUILD_TLS)
   # Generate a self-signed cert in the build directory for the TLS test.
   # The cert is written to the tests/ subdirectory of the build tree.

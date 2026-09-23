@@ -44,6 +44,7 @@ set(MCPKIT_CORE_SOURCES
   src/protocol/validate.c
   src/protocol/mrtr.c
   src/protocol/mrtr_state.c
+  src/protocol/tasks.c
   src/server/server.c
   src/server/registry.c
   src/server/session.c
