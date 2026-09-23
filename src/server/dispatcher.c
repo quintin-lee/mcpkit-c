@@ -467,7 +467,10 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
         return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "tools/call: unknown tool");
     }
     const mcp_json_value_t *args = mcp_json_object_get(ctx, params, "arguments");
-    if (tool->schema != NULL) {
+    const mcp_json_value_t *rs_val = mcp_json_object_get(ctx, params, "requestState");
+    bool is_mrtr_retry = (tool->handler_v2 != NULL && rs_val != NULL);
+
+    if (tool->schema != NULL && !is_mrtr_retry) {
         mcp_status_t vst;
         if (args != NULL) {
             vst = mcp_schema_validate(ctx, tool->schema, args);
@@ -490,7 +493,6 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
         mcp_tool_call_ctx_t call_ctx;
         call_ctx.args            = args;
         call_ctx.input_responses = mcp_json_object_get(ctx, params, "inputResponses");
-        const mcp_json_value_t *rs_val = mcp_json_object_get(ctx, params, "requestState");
         const char *rs_str = NULL;
         if (rs_val != NULL && mcp_json_type(ctx, rs_val) == MCP_JSON_STRING) {
             mcp_json_string_value(ctx, rs_val, &rs_str);

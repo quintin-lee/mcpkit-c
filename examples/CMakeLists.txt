@@ -19,6 +19,9 @@ target_link_libraries(threadpool-server PRIVATE mcpkit_core)
 add_executable(apps-host apps-host/main.c)
 target_link_libraries(apps-host PRIVATE mcpkit_core)
 
+add_executable(mrtr-server mrtr-server/main.c)
+target_link_libraries(mrtr-server PRIVATE mcpkit_core)
+
 if(MCPKIT_BUILD_HTTP)
   add_executable(http-server http-server/main.c)
   target_link_libraries(http-server PRIVATE mcpkit_core)

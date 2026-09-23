@@ -280,6 +280,36 @@ int mcp_message_validate_params(ctx, const mcp_message_t *msg);
 int mcp_message_validate(ctx, const mcp_message_t *msg);
 ```
 
+### `mrtr.h`
+Multi Round-Trip Requests protocol types and builders (MCP 2026-07-28):
+```c
+#define MCP_MRTR_RESULT_TYPE_COMPLETE       "complete"
+#define MCP_MRTR_RESULT_TYPE_INPUT_REQUIRED "input_required"
+
+typedef enum mcp_elicit_action {
+    MCP_ELICIT_ACCEPT = 0,
+    MCP_ELICIT_REJECT = 1,
+    MCP_ELICIT_CANCEL = 2,
+} mcp_elicit_action_t;
+
+/* Server-side builders: build an InputRequiredResult */
+mcp_json_value_t *mcp_mrtr_elicit_request_new(ctx, const char *message,
+                                              const char *mode,
+                                              mcp_json_value_t *schema);
+mcp_json_value_t *mcp_mrtr_result_input_required_new(ctx,
+                                                     mcp_json_value_t *input_requests,
+                                                     const char *request_state);
+
+/* Introspection helpers */
+bool        mcp_mrtr_is_input_required(ctx, const mcp_json_value_t *result);
+const char *mcp_mrtr_get_request_state(ctx, const mcp_json_value_t *result);
+const mcp_json_value_t *mcp_mrtr_get_input_requests(ctx, const mcp_json_value_t *result);
+
+/* Client-side builder */
+mcp_json_value_t *mcp_mrtr_input_response_new(ctx, mcp_elicit_action_t action,
+                                              mcp_json_value_t *data);
+```
+
 ---
 
 ## Server (`mcpkit/server/`)
@@ -349,11 +379,28 @@ int  mcp_server_set_response_meta(ctx, s, mcp_json_value_t *meta_or_null);
 mcp_tool_t *mcp_tool_new(ctx, const char *name, const char *desc,
                          mcp_json_value_t *input_schema,
                          mcp_tool_handler_fn handler, void *user_data);
-/* handler signature */
+/* V1 handler signature */
 typedef mcp_status_t (*mcp_tool_handler_fn)(
     mcp_context_t *ctx, mcp_session_t *session,
     const mcp_json_value_t *args, void *user_data,
     mcp_json_value_t **result_out);
+
+/* V2 MRTR-capable tool */
+typedef struct mcp_tool_call_ctx {
+    const mcp_json_value_t *args;            /* request arguments */
+    const mcp_json_value_t *input_responses; /* client responses on retry */
+    const char             *request_state;   /* server-embedded state token */
+} mcp_tool_call_ctx_t;
+
+typedef mcp_status_t (*mcp_tool_handler_v2_fn)(
+    mcp_context_t *ctx, mcp_session_t *session,
+    const mcp_tool_call_ctx_t *call_ctx, void *user_data,
+    mcp_json_value_t **result_out);
+
+mcp_tool_t *mcp_tool_new_v2(ctx, const char *name, const char *desc,
+                            mcp_json_value_t *input_schema,
+                            mcp_tool_handler_v2_fn handler, void *user_data);
+
 void          mcp_tool_destroy(ctx, mcp_tool_t *);
 
 /* Visibility (MCP Apps layer; default = BOTH) */
@@ -587,6 +634,16 @@ int          mcp_client_list_tools(ctx, c, mcp_json_value_t **result_out);
 int          mcp_client_call_tool(ctx, c, const char *name,
                                   mcp_json_value_t *args,
                                   mcp_json_value_t **result_out);
+/* MRTR auto-retry loop: automatically handles input_required responses up to
+   MCP_MRTR_MAX_HOPS (5). Invokes the registered elicitation handler to collect
+   user input and re-issues tools/call with inputResponses + requestState. */
+typedef mcp_json_value_t *(*mcp_client_mrtr_elicit_fn)(
+    mcp_context_t *ctx, const mcp_json_value_t *input_requests,
+    const char *request_state, void *user_data);
+void         mcp_client_set_mrtr_elicit_handler(ctx, c, mcp_client_mrtr_elicit_fn fn, void *ud);
+int          mcp_client_call_tool_mrtr(ctx, c, const char *name,
+                                       mcp_json_value_t *args,
+                                       mcp_json_value_t **result_out);
 int          mcp_client_read_resource(ctx, c, const char *uri,
                                       mcp_json_value_t **result_out);
 int          mcp_client_get_prompt(ctx, c, const char *name,

@@ -24,6 +24,22 @@ Format follows Keep a Changelog. Versions follow SemVer.
   Streamable HTTP POST traffic, via a host-supplied validation callback;
   401 + `WWW-Authenticate: Bearer` on missing/invalid token.  `auth_fn==NULL`
   preserves the existing `mcp_http_serve` behavior exactly.
+- Multi Round-Trip Requests (MRTR, MCP 2026-07-28 spec):
+  - Protocol helpers in `mcpkit/protocol/mrtr.h`: `mcp_mrtr_elicit_request_new`,
+    `mcp_mrtr_result_input_required_new`, `mcp_mrtr_is_input_required`,
+    `mcp_mrtr_get_request_state`, `mcp_mrtr_get_input_requests`,
+    `mcp_mrtr_input_response_new`, and `mcp_elicit_action_t`.
+  - Server-side V2 tools: `mcp_tool_call_ctx_t`, `mcp_tool_handler_v2_fn`,
+    `mcp_tool_new_v2()`. Dispatcher `route_tools_call` extracts `inputResponses`
+    and `requestState` to support multi-turn resumption; `InputRequiredResult`
+    is returned to the client without `complete` decoration.
+  - Client-side auto-retry engine: `mcp_client_call_tool_mrtr()` drives up to
+    5 round-trips automatically via host-injected `mcp_client_mrtr_elicit_fn`
+    callback registered with `mcp_client_set_mrtr_elicit_handler()`.
+  - Example server `examples/mrtr-server` demonstrating interactive 2FA
+    transaction authorization.
+  - Fix in `src/transport/socket.c`: added carry buffer to `sock_recv` so that
+    trailing pipelined bytes across newline boundaries are never dropped.
 - Protocol statelessness: `mcp_message_meta` accessor, `mcp_result_inject_result_type`
   and `mcp_result_inject_meta` decorators, `mcp_server_set_list_cache` /
   `mcp_server_set_response_meta` host config setters, `mcp_session_client_meta`
