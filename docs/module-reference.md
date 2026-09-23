@@ -214,7 +214,7 @@ void           mcp_message_destroy(ctx, mcp_message_t *);
 char          *mcp_message_serialize(ctx, const mcp_message_t *);  /* owned */
 mcp_message_t *mcp_message_parse(ctx, const char *text, size_t len); /* NULL on fail */
 
-/* Accessors */
+ /* Accessors */
 mcp_msg_kind_t mcp_message_kind(ctx, const mcp_message_t *);
 const char    *mcp_message_jsonrpc(ctx, const mcp_message_t *);
 const char    *mcp_message_method(ctx, const mcp_message_t *);
@@ -225,6 +225,15 @@ int            mcp_message_id_number(ctx, const mcp_message_t *, double *out);
 const mcp_json_value_t *mcp_message_result(ctx, const mcp_message_t *);
 int            mcp_message_error_code(ctx, const mcp_message_t *, int *out);
 const char    *mcp_message_error_text(ctx, const mcp_message_t *);
+
+/* _meta and result decorators */
+const mcp_json_value_t *mcp_message_meta(ctx, const mcp_message_t *);
+ /* Borrowed top-level "_meta" object on the envelope; NULL if absent or not an object. */
+int mcp_result_inject_result_type(ctx, mcp_json_value_t *result);
+ /* Adds resultType="complete" (static string, no allocation). INVALID_ARGUMENT on NULL result. */
+int mcp_result_inject_meta(ctx, mcp_json_value_t *result, mcp_json_value_t *meta);
+ /* set_take semantics: on success OR failure the meta is consumed by the call.
+  * NULL meta -> INVALID_ARGUMENT. */
 ```
 
 RPC status codes used in `mcp_response_err_new` and `mcp_message_error_code`:
@@ -328,8 +337,11 @@ typedef enum { MCP_TRACE_BEGIN, MCP_TRACE_END } mcp_trace_event_t;
 typedef void (*mcp_trace_fn)(mcp_context_t *ctx, mcp_trace_event_t ev,
                              const char *method, int status,
                              uint64_t duration_ns, void *userdata);
-int           mcp_server_set_tracer(ctx, s, mcp_trace_fn fn_or_null,
-                                    void *userdata);
+/* Statelessness: host configures list-cache TTL/scope and response _meta
+   (cloned internally; caller may free the original after calling).
+   ttl_ms=0 / scope=NULL omits the corresponding fields from list results. */
+int  mcp_server_set_list_cache(ctx, s, uint64_t ttl_ms, const char *scope_or_null);
+int  mcp_server_set_response_meta(ctx, s, mcp_json_value_t *meta_or_null);
 ```
 
 ### `tool.h`
@@ -375,8 +387,10 @@ void           mcp_prompt_destroy(ctx, mcp_prompt_t *);
 
 ### `session.h`
 ```c
-bool mcp_session_is_initialized(ctx, const mcp_session_t *);
-/* Apps-host flag: affects tool visibility filter in tools/list */
+ bool mcp_session_is_initialized(ctx, const mcp_session_t *);
+ /* Borrowed top-level _meta captured from the initialize request; NULL if absent. */
+const mcp_json_value_t *mcp_session_client_meta(ctx, const mcp_session_t *);
+ /* Apps-host flag: affects tool visibility filter in tools/list */
 int  mcp_session_set_apps_host(ctx, mcp_session_t *, int flag);
 bool mcp_session_is_apps_host(ctx, const mcp_session_t *);
 /* Permission grants (mask semantics: 0 = none; all-bits = all granted) */
@@ -407,14 +421,21 @@ A malformed `cursor` fails with `MCP_ERR_INVALID_PARAMS`.
 
 ### Advanced protocol methods
 
-`logging/setLevel` (`debug`/`info`/`notice`/`warning`/`error`, `warn`
-accepted as an alias) sets the per-server log floor that gates the
-dispatcher's `dlogf_srv` sites; `resources/subscribe` /
-`resources/unsubscribe` maintain a per-server deduplicated subscription set
-(idempotent); `resources/templates/list` answers an honest empty
-`{templates: []}`. Advanced notifications (`notifications/cancelled`,
-`notifications/progress`, the four `*_list_changed`,
-`notifications/resources/updated`, `logging/message`) are consumed by
+ `logging/setLevel` (`debug`/`info`/`notice`/`warning`/`error`, `warn`
+ accepted as an alias) sets the per-server log floor that gates the
+ dispatcher's `dlogf_srv` sites; `resources/subscribe` /
+ `resources/unsubscribe` maintain a per-server deduplicated subscription set
+ (idempotent); `resources/templates/list` answers an honest empty
+ `{templates: []}`. Advanced notifications (`notifications/cancelled`,
+ `notifications/progress`, the four `*_list_changed`,
+ `notifications/resources/updated`, `logging/message`) are consumed by
+
+ `mcp_server_notify` (counter bump + DEBUG log, no response).
+
+ `server/discover` returns a full capability object: `serverName`,
+ `serverVersion`, `protocolVersion`, `toolsCount`, `resourcesCount`,
+ `promptsCount`, `listTtlMs`/`listCacheScope` (only when configured),
+ `supportsStateless`/`supportsMeta` (both `true`), and `resultType: "complete"`.
 `mcp_server_notify` (counter + DEBUG log, no response) rather than being
 routed as requests.
 

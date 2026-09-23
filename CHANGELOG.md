@@ -24,6 +24,12 @@ Format follows Keep a Changelog. Versions follow SemVer.
   Streamable HTTP POST traffic, via a host-supplied validation callback;
   401 + `WWW-Authenticate: Bearer` on missing/invalid token.  `auth_fn==NULL`
   preserves the existing `mcp_http_serve` behavior exactly.
+- Protocol statelessness: `mcp_message_meta` accessor, `mcp_result_inject_result_type`
+  and `mcp_result_inject_meta` decorators, `mcp_server_set_list_cache` /
+  `mcp_server_set_response_meta` host config setters, `mcp_session_client_meta`
+  accessor, and `server/discover` RPC route.  All successful responses now carry
+  `resultType: "complete"`; list responses additionally carry `ttlMs` /
+  `cacheScope` when the host has configured `mcp_server_set_list_cache`.
 
 - `mcp_socket_serve`: multi-connection TCP accept-loop; each accepted
   connection is served on a threadpool worker.  Blocks until
