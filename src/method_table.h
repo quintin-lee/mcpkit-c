@@ -24,9 +24,10 @@ static const char *const k_mcp_server_methods[] = {
     "resources/subscribe",
     "resources/unsubscribe",
     "resources/templates/list",
+    "server/discover",
 };
 
-#define MCP_SERVER_METHOD_COUNT 15
+#define MCP_SERVER_METHOD_COUNT 16
 
 _Static_assert(sizeof(k_mcp_server_methods) / sizeof(*k_mcp_server_methods) ==
                    MCP_SERVER_METHOD_COUNT,
