@@ -26,6 +26,7 @@
 #include "mcpkit/server/prompt.h"
 #include "mcpkit/server/tool.h"
 #include "mcpkit/server/server.h"
+#include "mcpkit/protocol/tasks.h"
 
 typedef struct {
     char *ref_prefix;
@@ -133,6 +134,8 @@ struct mcp_server {
     // Guards all reads/writes of subscribed_uris, n_subscribed, cap_subscribed
     // from concurrent dispatch threads (route_advanced subscribe/unsubscribe).
     pthread_mutex_t subscribed_lock;
+    // MCP Tasks extension manager (SEP-2663). NULL if not enabled.
+    mcp_task_mgr_t *task_mgr;
 };
 
 struct mcp_queue {

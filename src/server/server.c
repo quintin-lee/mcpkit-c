@@ -147,6 +147,10 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     free_all_completions(ctx, srv);
     free_outbox(ctx, srv);
     free_subscribed(ctx, srv);
+    if (srv->task_mgr != NULL) {
+        mcp_task_mgr_free(ctx, srv->task_mgr);
+        srv->task_mgr = NULL;
+    }
     mcp_json_destroy(ctx, srv->response_meta);
     srv_free(ctx, srv->list_cache_scope);
     pthread_mutex_destroy(&srv->subscribed_lock);
@@ -493,4 +497,19 @@ mcp_status_t mcp_server_set_response_meta(mcp_context_t *ctx, mcp_server_t *srv,
     mcp_json_destroy(ctx, srv->response_meta);
     srv->response_meta = clone;
     return MCP_OK;
+}
+
+mcp_status_t mcp_server_enable_tasks(mcp_context_t *ctx, mcp_server_t *srv) {
+    if (srv == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (srv->task_mgr != NULL) {
+        return MCP_OK;
+    }
+    srv->task_mgr = mcp_task_mgr_new(ctx);
+    return srv->task_mgr != NULL ? MCP_OK : MCP_ERR_NOMEM;
+}
+
+mcp_task_mgr_t *mcp_server_get_task_mgr(mcp_server_t *srv) {
+    return srv != NULL ? srv->task_mgr : NULL;
 }

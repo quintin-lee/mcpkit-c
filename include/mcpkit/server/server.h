@@ -50,6 +50,7 @@ typedef struct mcp_tool mcp_tool_t;
 typedef struct mcp_resource mcp_resource_t;
 typedef struct mcp_prompt mcp_prompt_t;
 typedef struct mcp_json_value mcp_json_value_t;
+typedef struct mcp_task_mgr mcp_task_mgr_t;
 
 /**
  * @brief Creates a named server.
@@ -448,5 +449,22 @@ mcp_status_t mcp_server_set_list_cache(mcp_context_t *ctx, mcp_server_t *srv,
  */
 mcp_status_t mcp_server_set_response_meta(mcp_context_t *ctx, mcp_server_t *srv,
                                            mcp_json_value_t *meta_json);
+
+/**
+ * @brief Enables the MCP Tasks extension (SEP-2663) on the server.
+ *
+ * Allocates and initializes the server's task manager if not already enabled.
+ *
+ * @param ctx  Context.
+ * @param srv  Server.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if srv is NULL;
+ *         MCP_ERR_NOMEM on allocation failure.
+ */
+mcp_status_t mcp_server_enable_tasks(mcp_context_t *ctx, mcp_server_t *srv);
+
+/**
+ * @brief Returns the task manager for the server, or NULL if tasks are not enabled.
+ */
+mcp_task_mgr_t *mcp_server_get_task_mgr(mcp_server_t *srv);
 
 #endif

@@ -284,6 +284,32 @@ static mcp_message_t *route_server_discover(mcp_context_t *ctx, mcp_server_t *sr
         mcp_json_destroy(ctx, result);
         return NULL;
     }
+    if (srv->task_mgr != NULL) {
+        mcp_json_value_t *caps = mcp_json_object_get(ctx, result, "capabilities");
+        if (caps == NULL) {
+            caps = mcp_json_object_new(ctx);
+            if (caps == NULL || mcp_json_object_set_take(ctx, result, "capabilities", caps) != MCP_OK) {
+                mcp_json_destroy(ctx, caps);
+                mcp_json_destroy(ctx, result);
+                return NULL;
+            }
+        }
+        mcp_json_value_t *exts = mcp_json_object_get(ctx, caps, "extensions");
+        if (exts == NULL) {
+            exts = mcp_json_object_new(ctx);
+            if (exts == NULL || mcp_json_object_set_take(ctx, caps, "extensions", exts) != MCP_OK) {
+                mcp_json_destroy(ctx, exts);
+                mcp_json_destroy(ctx, result);
+                return NULL;
+            }
+        }
+        mcp_json_value_t *task_ext = mcp_json_object_new(ctx);
+        if (task_ext == NULL || mcp_json_object_set_take(ctx, exts, "io.modelcontextprotocol/tasks", task_ext) != MCP_OK) {
+            mcp_json_destroy(ctx, task_ext);
+            mcp_json_destroy(ctx, result);
+            return NULL;
+        }
+    }
     if (decorate_result(ctx, srv, result, true) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
@@ -1091,6 +1117,105 @@ static mcp_message_t *route_subscriptions_listen(mcp_context_t *ctx, mcp_server_
     return ack;
 }
 
+static mcp_message_t *route_tasks_get(mcp_context_t *ctx, mcp_server_t *srv,
+                                      const mcp_message_t *req) {
+    if (srv->task_mgr == NULL) {
+        return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "tasks extension not enabled");
+    }
+    const mcp_json_value_t *params = mcp_message_params(ctx, req);
+    const char *task_id = NULL;
+    if (get_string(ctx, params, "taskId", &task_id) != MCP_OK || task_id == NULL) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "tasks/get: missing taskId");
+    }
+    mcp_task_desc_t desc;
+    if (mcp_task_mgr_get(ctx, srv->task_mgr, task_id, &desc) != MCP_OK) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "tasks/get: task not found");
+    }
+    mcp_json_value_t *result = mcp_task_desc_to_json(ctx, &desc);
+    if (result == NULL) {
+        return NULL;
+    }
+    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
+    if (resp == NULL) {
+        mcp_json_destroy(ctx, result);
+    }
+    return resp;
+}
+
+static mcp_message_t *route_tasks_update(mcp_context_t *ctx, mcp_server_t *srv,
+                                         const mcp_message_t *req) {
+    if (srv->task_mgr == NULL) {
+        return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "tasks extension not enabled");
+    }
+    const mcp_json_value_t *params = mcp_message_params(ctx, req);
+    const char *task_id = NULL;
+    if (get_string(ctx, params, "taskId", &task_id) != MCP_OK || task_id == NULL) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "tasks/update: missing taskId");
+    }
+    mcp_task_desc_t desc;
+    if (mcp_task_mgr_get(ctx, srv->task_mgr, task_id, &desc) != MCP_OK) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "tasks/update: task not found");
+    }
+    if (desc.status == MCP_TASK_STATUS_INPUT_REQUIRED) {
+        mcp_task_mgr_set_status(ctx, srv->task_mgr, task_id, MCP_TASK_STATUS_WORKING, "Input received; resuming");
+    }
+    mcp_json_value_t *result = mcp_json_object_new(ctx);
+    if (result == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *v = mcp_json_bool_new(ctx, true);
+    if (v == NULL || mcp_json_object_set_take(ctx, result, "accepted", v) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
+    if (resp == NULL) {
+        mcp_json_destroy(ctx, result);
+    }
+    return resp;
+}
+
+static mcp_message_t *route_tasks_cancel(mcp_context_t *ctx, mcp_server_t *srv,
+                                         const mcp_message_t *req) {
+    if (srv->task_mgr == NULL) {
+        return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "tasks extension not enabled");
+    }
+    const mcp_json_value_t *params = mcp_message_params(ctx, req);
+    const char *task_id = NULL;
+    if (get_string(ctx, params, "taskId", &task_id) != MCP_OK || task_id == NULL) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "tasks/cancel: missing taskId");
+    }
+    if (mcp_task_mgr_cancel(ctx, srv->task_mgr, task_id) != MCP_OK) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "tasks/cancel: task not found");
+    }
+    mcp_json_value_t *result = mcp_json_object_new(ctx);
+    if (result == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *v = mcp_json_bool_new(ctx, true);
+    if (v == NULL || mcp_json_object_set_take(ctx, result, "cancelled", v) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
+    if (resp == NULL) {
+        mcp_json_destroy(ctx, result);
+    }
+    return resp;
+}
+
 static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s,
                                      const mcp_message_t *req, const char *method) {
     // Method names come from method_table.h so the route table and the
@@ -1146,6 +1271,15 @@ static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_s
     }
     if (strcmp(method, k_mcp_server_methods[16]) == 0) {
         return route_subscriptions_listen(ctx, srv, s, req);
+    }
+    if (strcmp(method, k_mcp_server_methods[17]) == 0) {
+        return route_tasks_get(ctx, srv, req);
+    }
+    if (strcmp(method, k_mcp_server_methods[18]) == 0) {
+        return route_tasks_update(ctx, srv, req);
+    }
+    if (strcmp(method, k_mcp_server_methods[19]) == 0) {
+        return route_tasks_cancel(ctx, srv, req);
     }
     dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=unknown_method method=%s", method);
     // No counter or trace here: dispatch counts error responses and

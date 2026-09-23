@@ -26,9 +26,12 @@ static const char *const k_mcp_server_methods[] = {
     "resources/templates/list",
     "server/discover",
     "subscriptions/listen",
+    "tasks/get",
+    "tasks/update",
+    "tasks/cancel",
 };
 
-#define MCP_SERVER_METHOD_COUNT 17
+#define MCP_SERVER_METHOD_COUNT 20
 
 _Static_assert(sizeof(k_mcp_server_methods) / sizeof(*k_mcp_server_methods) ==
                    MCP_SERVER_METHOD_COUNT,
@@ -50,9 +53,10 @@ static const char *const k_mcp_server_notifications[] = {
     "notifications/message",
     "notifications/roots/list_changed",
     "notifications/subscriptions/acknowledged",
+    "notifications/tasks",
 };
 
-#define MCP_SERVER_NOTIFICATION_COUNT 10
+#define MCP_SERVER_NOTIFICATION_COUNT 11
 
 _Static_assert(sizeof(k_mcp_server_notifications) / sizeof(*k_mcp_server_notifications) ==
                    MCP_SERVER_NOTIFICATION_COUNT,
