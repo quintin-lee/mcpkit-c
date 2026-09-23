@@ -29,9 +29,11 @@ static const char *const k_mcp_server_methods[] = {
     "tasks/get",
     "tasks/update",
     "tasks/cancel",
+    "skills/list",
+    "skills/get",
 };
 
-#define MCP_SERVER_METHOD_COUNT 20
+#define MCP_SERVER_METHOD_COUNT 22
 
 _Static_assert(sizeof(k_mcp_server_methods) / sizeof(*k_mcp_server_methods) ==
                    MCP_SERVER_METHOD_COUNT,

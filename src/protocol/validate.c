@@ -297,7 +297,8 @@ mcp_status_t mcp_validate_params(mcp_context_t *ctx, const mcp_message_t *msg,
             strcmp(method, "subscriptions/listen") == 0 ||
             strcmp(method, "tasks/get") == 0 ||
             strcmp(method, "tasks/update") == 0 ||
-            strcmp(method, "tasks/cancel") == 0) {
+            strcmp(method, "tasks/cancel") == 0 ||
+            strcmp(method, "skills/get") == 0) {
             goto invalid;
         }
         set_code(rpc_code_out, 0);
@@ -348,6 +349,15 @@ mcp_status_t mcp_validate_params(mcp_context_t *ctx, const mcp_message_t *msg,
                strcmp(method, "tasks/update") == 0 ||
                strcmp(method, "tasks/cancel") == 0) {
         if (require_string_param(ctx, params, "taskId") != MCP_OK) {
+            goto invalid;
+        }
+    } else if (strcmp(method, "skills/get") == 0) {
+        const mcp_json_value_t *v_name = mcp_json_object_get(ctx, params, "name");
+        const mcp_json_value_t *v_uri = mcp_json_object_get(ctx, params, "uri");
+        const char *s = NULL;
+        bool has_name = (v_name != NULL && mcp_json_string_value(ctx, v_name, &s) == MCP_OK && s != NULL && *s != '\0');
+        bool has_uri = (v_uri != NULL && mcp_json_string_value(ctx, v_uri, &s) == MCP_OK && s != NULL && *s != '\0');
+        if (!has_name && !has_uri) {
             goto invalid;
         }
     }

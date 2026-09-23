@@ -284,8 +284,8 @@ static mcp_message_t *route_server_discover(mcp_context_t *ctx, mcp_server_t *sr
         mcp_json_destroy(ctx, result);
         return NULL;
     }
-    if (srv->task_mgr != NULL) {
-        mcp_json_value_t *caps = mcp_json_object_get(ctx, result, "capabilities");
+    if (srv->task_mgr != NULL || srv->skill_reg != NULL) {
+        mcp_json_value_t *caps = (mcp_json_value_t *)mcp_json_object_get(ctx, result, "capabilities");
         if (caps == NULL) {
             caps = mcp_json_object_new(ctx);
             if (caps == NULL || mcp_json_object_set_take(ctx, result, "capabilities", caps) != MCP_OK) {
@@ -294,7 +294,7 @@ static mcp_message_t *route_server_discover(mcp_context_t *ctx, mcp_server_t *sr
                 return NULL;
             }
         }
-        mcp_json_value_t *exts = mcp_json_object_get(ctx, caps, "extensions");
+        mcp_json_value_t *exts = (mcp_json_value_t *)mcp_json_object_get(ctx, caps, "extensions");
         if (exts == NULL) {
             exts = mcp_json_object_new(ctx);
             if (exts == NULL || mcp_json_object_set_take(ctx, caps, "extensions", exts) != MCP_OK) {
@@ -303,11 +303,21 @@ static mcp_message_t *route_server_discover(mcp_context_t *ctx, mcp_server_t *sr
                 return NULL;
             }
         }
-        mcp_json_value_t *task_ext = mcp_json_object_new(ctx);
-        if (task_ext == NULL || mcp_json_object_set_take(ctx, exts, "io.modelcontextprotocol/tasks", task_ext) != MCP_OK) {
-            mcp_json_destroy(ctx, task_ext);
-            mcp_json_destroy(ctx, result);
-            return NULL;
+        if (srv->task_mgr != NULL) {
+            mcp_json_value_t *task_ext = mcp_json_object_new(ctx);
+            if (task_ext == NULL || mcp_json_object_set_take(ctx, exts, "io.modelcontextprotocol/tasks", task_ext) != MCP_OK) {
+                mcp_json_destroy(ctx, task_ext);
+                mcp_json_destroy(ctx, result);
+                return NULL;
+            }
+        }
+        if (srv->skill_reg != NULL) {
+            mcp_json_value_t *skill_ext = mcp_json_object_new(ctx);
+            if (skill_ext == NULL || mcp_json_object_set_take(ctx, exts, "io.modelcontextprotocol/skills", skill_ext) != MCP_OK) {
+                mcp_json_destroy(ctx, skill_ext);
+                mcp_json_destroy(ctx, result);
+                return NULL;
+            }
         }
     }
     if (decorate_result(ctx, srv, result, true) != MCP_OK) {
@@ -1216,6 +1226,94 @@ static mcp_message_t *route_tasks_cancel(mcp_context_t *ctx, mcp_server_t *srv,
     return resp;
 }
 
+static mcp_message_t *route_skills_list(mcp_context_t *ctx, mcp_server_t *srv,
+                                        const mcp_message_t *req) {
+    if (srv->skill_reg == NULL) {
+        return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "skills extension not enabled");
+    }
+    size_t offset = page_offset(ctx, req);
+    if (offset == (size_t)-1) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "invalid cursor");
+    }
+    mcp_json_value_t *result = mcp_json_object_new(ctx);
+    mcp_json_value_t *arr = mcp_json_array_new(ctx);
+    if (result == NULL || arr == NULL) {
+        mcp_json_destroy(ctx, result);
+        mcp_json_destroy(ctx, arr);
+        return NULL;
+    }
+    size_t count = mcp_skill_registry_count(srv->skill_reg);
+    size_t end = offset + MCP_LIST_PAGE_SIZE;
+    if (end > count) {
+        end = count;
+    }
+    for (size_t i = offset; i < end; i++) {
+        const mcp_skill_t *sk = mcp_skill_registry_get_at(srv->skill_reg, i);
+        if (sk == NULL) {
+            continue;
+        }
+        mcp_json_value_t *item = mcp_skill_to_json(ctx, sk);
+        if (item == NULL || mcp_json_array_append(ctx, arr, item) != MCP_OK) {
+            mcp_json_destroy(ctx, item);
+            mcp_json_destroy(ctx, arr);
+            mcp_json_destroy(ctx, result);
+            return NULL;
+        }
+    }
+    if (mcp_json_object_set_take(ctx, result, "skills", arr) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    if (end < count) {
+        if (set_next_cursor(ctx, result, end) != MCP_OK) {
+            mcp_json_destroy(ctx, result);
+            return NULL;
+        }
+    }
+    if (decorate_result(ctx, srv, result, true) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
+    if (resp == NULL) {
+        mcp_json_destroy(ctx, result);
+    }
+    return resp;
+}
+
+static mcp_message_t *route_skills_get(mcp_context_t *ctx, mcp_server_t *srv,
+                                       const mcp_message_t *req) {
+    if (srv->skill_reg == NULL) {
+        return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "skills extension not enabled");
+    }
+    const mcp_json_value_t *params = mcp_message_params(ctx, req);
+    const char *name = NULL;
+    const char *uri = NULL;
+    get_string(ctx, params, "name", &name);
+    get_string(ctx, params, "uri", &uri);
+    const char *lookup_key = (name != NULL && *name != '\0') ? name : uri;
+    if (lookup_key == NULL) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "skills/get: missing name or uri");
+    }
+    const mcp_skill_t *sk = mcp_skill_registry_find(srv->skill_reg, lookup_key);
+    if (sk == NULL) {
+        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "skills/get: skill not found");
+    }
+    mcp_json_value_t *result = mcp_skill_to_json(ctx, sk);
+    if (result == NULL) {
+        return NULL;
+    }
+    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    mcp_message_t *resp = mcp_response_ok_new(ctx, req, result);
+    if (resp == NULL) {
+        mcp_json_destroy(ctx, result);
+    }
+    return resp;
+}
+
 static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s,
                                      const mcp_message_t *req, const char *method) {
     // Method names come from method_table.h so the route table and the
@@ -1280,6 +1378,12 @@ static mcp_message_t *route_request(mcp_context_t *ctx, mcp_server_t *srv, mcp_s
     }
     if (strcmp(method, k_mcp_server_methods[19]) == 0) {
         return route_tasks_cancel(ctx, srv, req);
+    }
+    if (strcmp(method, k_mcp_server_methods[20]) == 0) {
+        return route_skills_list(ctx, srv, req);
+    }
+    if (strcmp(method, k_mcp_server_methods[21]) == 0) {
+        return route_skills_get(ctx, srv, req);
     }
     dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=unknown_method method=%s", method);
     // No counter or trace here: dispatch counts error responses and

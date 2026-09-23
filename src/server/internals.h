@@ -27,6 +27,7 @@
 #include "mcpkit/server/tool.h"
 #include "mcpkit/server/server.h"
 #include "mcpkit/protocol/tasks.h"
+#include "mcpkit/protocol/skills.h"
 
 typedef struct {
     char *ref_prefix;
@@ -136,6 +137,8 @@ struct mcp_server {
     pthread_mutex_t subscribed_lock;
     // MCP Tasks extension manager (SEP-2663). NULL if not enabled.
     mcp_task_mgr_t *task_mgr;
+    // MCP Skills extension registry (SEP-2640). NULL if not enabled.
+    mcp_skill_registry_t *skill_reg;
 };
 
 struct mcp_queue {

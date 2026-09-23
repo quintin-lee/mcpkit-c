@@ -51,6 +51,7 @@ typedef struct mcp_resource mcp_resource_t;
 typedef struct mcp_prompt mcp_prompt_t;
 typedef struct mcp_json_value mcp_json_value_t;
 typedef struct mcp_task_mgr mcp_task_mgr_t;
+typedef struct mcp_skill_registry mcp_skill_registry_t;
 
 /**
  * @brief Creates a named server.
@@ -466,5 +467,22 @@ mcp_status_t mcp_server_enable_tasks(mcp_context_t *ctx, mcp_server_t *srv);
  * @brief Returns the task manager for the server, or NULL if tasks are not enabled.
  */
 mcp_task_mgr_t *mcp_server_get_task_mgr(mcp_server_t *srv);
+
+/**
+ * @brief Enables the MCP Skills extension (SEP-2640) on the server.
+ *
+ * Allocates and initializes the server's skill registry if not already enabled.
+ *
+ * @param ctx  Context.
+ * @param srv  Server.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if srv is NULL;
+ *         MCP_ERR_NOMEM on allocation failure.
+ */
+mcp_status_t mcp_server_enable_skills(mcp_context_t *ctx, mcp_server_t *srv);
+
+/**
+ * @brief Returns the skill registry for the server, or NULL if skills are not enabled.
+ */
+mcp_skill_registry_t *mcp_server_get_skill_registry(mcp_server_t *srv);
 
 #endif

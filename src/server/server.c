@@ -151,6 +151,10 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
         mcp_task_mgr_free(ctx, srv->task_mgr);
         srv->task_mgr = NULL;
     }
+    if (srv->skill_reg != NULL) {
+        mcp_skill_registry_free(ctx, srv->skill_reg);
+        srv->skill_reg = NULL;
+    }
     mcp_json_destroy(ctx, srv->response_meta);
     srv_free(ctx, srv->list_cache_scope);
     pthread_mutex_destroy(&srv->subscribed_lock);
@@ -512,4 +516,19 @@ mcp_status_t mcp_server_enable_tasks(mcp_context_t *ctx, mcp_server_t *srv) {
 
 mcp_task_mgr_t *mcp_server_get_task_mgr(mcp_server_t *srv) {
     return srv != NULL ? srv->task_mgr : NULL;
+}
+
+mcp_status_t mcp_server_enable_skills(mcp_context_t *ctx, mcp_server_t *srv) {
+    if (srv == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (srv->skill_reg != NULL) {
+        return MCP_OK;
+    }
+    srv->skill_reg = mcp_skill_registry_new(ctx);
+    return srv->skill_reg != NULL ? MCP_OK : MCP_ERR_NOMEM;
+}
+
+mcp_skill_registry_t *mcp_server_get_skill_registry(mcp_server_t *srv) {
+    return srv != NULL ? srv->skill_reg : NULL;
 }
