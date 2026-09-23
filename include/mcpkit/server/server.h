@@ -375,6 +375,40 @@ mcp_status_t mcp_server_set_tracer(mcp_context_t *ctx, mcp_server_t *server,
  *         be built; MCP_ERR_INVALID_ARGUMENT if server or method is NULL.
  */
 mcp_status_t mcp_server_request_client(mcp_context_t *ctx, mcp_server_t *server,
-                                       const char *method, mcp_json_value_t *params);
+                                        const char *method, mcp_json_value_t *params);
+
+/**
+ * @brief Configures the `ttlMs` and `cacheScope` fields carried in
+ *        list-type responses (tools/list, resources/list, prompts/list,
+ *        completion/list, server/discover).
+ *
+ * Passing `ttl_ms == 0` omits `ttlMs`; passing `cache_scope_or_null == NULL`
+ * omits `cacheScope`. Multiple calls overwrite the previous values.
+ *
+ * @param ctx                   Context.
+ * @param srv                   Server (non-NULL required).
+ * @param ttl_ms                Cache TTL in milliseconds; 0 = omit.
+ * @param cache_scope_or_null   Cache scope string; NULL = omit.
+ * @return MCP_OK; MCP_ERR_NOMEM on allocation failure;
+ *         MCP_ERR_INVALID_ARGUMENT if srv is NULL.
+ */
+mcp_status_t mcp_server_set_list_cache(mcp_context_t *ctx, mcp_server_t *srv,
+                                        uint64_t ttl_ms, const char *cache_scope_or_null);
+
+/**
+ * @brief Sets the `_meta` object injected into list-type and discover
+ *        responses by the server.
+ *
+ * `meta_json` is caller-owned; on success the server stores an independent
+ * clone (the host may keep or destroy its original). Pass NULL to clear.
+ *
+ * @param ctx        Context.
+ * @param srv        Server (non-NULL required).
+ * @param meta_json  Meta object; may be NULL to clear.
+ * @return MCP_OK; MCP_ERR_NOMEM on clone failure;
+ *         MCP_ERR_INVALID_ARGUMENT if srv is NULL.
+ */
+mcp_status_t mcp_server_set_response_meta(mcp_context_t *ctx, mcp_server_t *srv,
+                                           mcp_json_value_t *meta_json);
 
 #endif

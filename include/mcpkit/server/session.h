@@ -19,7 +19,7 @@
 
 #include "mcpkit/core/error.h"
 
-
+typedef struct mcp_json_value mcp_json_value_t;
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_session mcp_session_t;
 
@@ -96,5 +96,18 @@ mcp_status_t mcp_session_revoke(mcp_context_t *ctx, mcp_session_t *session,
  */
 bool mcp_session_grants(mcp_context_t *ctx, const mcp_session_t *session,
                         uint32_t perm_mask);
+
+/**
+ * @brief Returns the `_meta` object stored on the session from the
+ *        initialize request, or NULL if the client did not send one.
+ *
+ * The returned pointer is BORROWED; valid while the session is alive.
+ *
+ * @param ctx     Context.
+ * @param session Session to inspect; NULL returns NULL.
+ * @return Borrowed `_meta` value, or NULL.
+ */
+const mcp_json_value_t *mcp_session_client_meta(mcp_context_t *ctx,
+                                                 const mcp_session_t *session);
 
 #endif

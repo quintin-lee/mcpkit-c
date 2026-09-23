@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "internals.h"
+#include "mcpkit/json/json.h"
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/server/dispatcher.h"
 #include "mcpkit/server/session.h"
@@ -64,6 +65,9 @@ mcp_server_t *mcp_server_create(mcp_context_t *ctx, const char *name, const char
     atomic_init(&srv->log_floor, MCP_LOG_DEBUG);
     pthread_mutex_init(&srv->subscribed_lock, NULL);
     srv->next_server_id = 1000.0;
+    srv->list_ttl_ms = 0;
+    srv->list_cache_scope = NULL;
+    srv->response_meta = NULL;
     srv->name = srv_strdup(ctx, name);
     srv->version = srv_strdup(ctx, version);
     if (srv->name == NULL || srv->version == NULL) {
@@ -143,6 +147,8 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     free_all_completions(ctx, srv);
     free_outbox(ctx, srv);
     free_subscribed(ctx, srv);
+    mcp_json_destroy(ctx, srv->response_meta);
+    srv_free(ctx, srv->list_cache_scope);
     pthread_mutex_destroy(&srv->subscribed_lock);
     srv_free(ctx, srv->name);
     srv_free(ctx, srv->version);
@@ -396,5 +402,34 @@ mcp_status_t mcp_server_request_client(mcp_context_t *ctx, mcp_server_t *srv,
         srv->cap_outbox = ncap;
     }
     srv->outbox[srv->n_outbox++] = req;
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_set_list_cache(mcp_context_t *ctx, mcp_server_t *srv,
+                                        uint64_t ttl_ms, const char *cache_scope_or_null) {
+    if (srv == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    srv->list_ttl_ms = ttl_ms;
+    char *scope_copy = (cache_scope_or_null != NULL) ? srv_strdup(ctx, cache_scope_or_null) : NULL;
+    if (cache_scope_or_null != NULL && scope_copy == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    srv_free(ctx, srv->list_cache_scope);
+    srv->list_cache_scope = scope_copy;
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_set_response_meta(mcp_context_t *ctx, mcp_server_t *srv,
+                                           mcp_json_value_t *meta_json) {
+    if (srv == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *clone = (meta_json != NULL) ? mcp_json_clone(ctx, meta_json) : NULL;
+    if (meta_json != NULL && clone == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_destroy(ctx, srv->response_meta);
+    srv->response_meta = clone;
     return MCP_OK;
 }

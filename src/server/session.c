@@ -32,6 +32,7 @@ void session_free(mcp_context_t *ctx, mcp_session_t *s) {
         return;
     }
     mcp_idset_destroy(ctx, s->ids);
+    mcp_json_destroy(ctx, s->client_meta);
     srv_free(ctx, s->client_name);
     srv_free(ctx, s->client_version);
     srv_free(ctx, s);
@@ -75,6 +76,15 @@ mcp_status_t mcp_session_revoke(mcp_context_t *ctx, mcp_session_t *session, uint
 bool mcp_session_grants(mcp_context_t *ctx, const mcp_session_t *session, uint32_t perm_mask) {
     (void)ctx;
     return session != NULL && (session->granted & perm_mask) == perm_mask;
+}
+
+const mcp_json_value_t *mcp_session_client_meta(mcp_context_t *ctx,
+                                                 const mcp_session_t *session) {
+    (void)ctx;
+    if (session == NULL) {
+        return NULL;
+    }
+    return session->client_meta;
 }
 
 mcp_session_t *mcp_server_create_session(mcp_context_t *ctx, mcp_server_t *srv) {

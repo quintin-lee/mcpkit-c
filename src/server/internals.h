@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "mcpkit/core/context.h"
+#include "mcpkit/json/value.h"
 #include "mcpkit/logging/log.h"
 #include "mcpkit/protocol/validate.h"
 #include "mcpkit/server/resource.h"
@@ -65,6 +66,9 @@ struct mcp_session {
     char *client_name;
     char *client_version;
     mcp_idset_t *ids;
+    // Deep clone of the "_meta" field carried in the initialize request.
+    // NULL if the client did not send one. Destroyed with the session.
+    mcp_json_value_t *client_meta;
 };
 
 struct mcp_server {
@@ -107,6 +111,14 @@ struct mcp_server {
     size_t n_subscribed;
     size_t cap_subscribed;
     double next_server_id;
+    // List-response cache parameters; 0/NULL = omit from list responses.
+    // Set via mcp_server_set_list_cache; overridable; no lock needed
+    // (read in dispatch threads, written by host before serving starts).
+    uint64_t list_ttl_ms;
+    char *list_cache_scope;
+    // Host-supplied _meta object injected into list/discover responses.
+    // Cloned at set time; NULL = no _meta injection.
+    mcp_json_value_t *response_meta;
     // Guards all reads/writes of subscribed_uris, n_subscribed, cap_subscribed
     // from concurrent dispatch threads (route_advanced subscribe/unsubscribe).
     pthread_mutex_t subscribed_lock;
