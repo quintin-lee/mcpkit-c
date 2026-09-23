@@ -200,6 +200,14 @@ const char *mcp_message_error_text(mcp_context_t *ctx, const mcp_message_t *msg)
     return s;
 }
 
+const mcp_json_value_t *mcp_message_meta(mcp_context_t *ctx, const mcp_message_t *msg) {
+    const mcp_json_value_t *v = get_key(ctx, msg, "_meta");
+    if (v == NULL || mcp_json_type(ctx, v) != MCP_JSON_OBJECT) {
+        return NULL;
+    }
+    return v;
+}
+
 static mcp_json_value_t *new_envelope(mcp_context_t *ctx) {
     mcp_json_value_t *dom = mcp_json_object_new(ctx);
     if (dom == NULL) {
@@ -452,6 +460,34 @@ mcp_message_t *mcp_response_err_new(mcp_context_t *ctx, const mcp_message_t *req
         return NULL;
     }
     return msg;
+}
+
+mcp_status_t mcp_result_inject_result_type(mcp_context_t *ctx, mcp_json_value_t *result) {
+    if (result == NULL || mcp_json_type(ctx, result) != MCP_JSON_OBJECT) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *s = mcp_json_string_new(ctx, "complete");
+    if (s == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    if (mcp_json_object_set_take(ctx, result, "resultType", s) != MCP_OK) {
+        return MCP_ERR_NOMEM;
+    }
+    return MCP_OK;
+}
+
+mcp_status_t mcp_result_inject_meta(mcp_context_t *ctx, mcp_json_value_t *result,
+                                     mcp_json_value_t *meta) {
+    if (result == NULL || mcp_json_type(ctx, result) != MCP_JSON_OBJECT) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (meta == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (mcp_json_object_set_take(ctx, result, "_meta", meta) != MCP_OK) {
+        return MCP_ERR_NOMEM;
+    }
+    return MCP_OK;
 }
 
 char *mcp_message_serialize(mcp_context_t *ctx, const mcp_message_t *msg) {

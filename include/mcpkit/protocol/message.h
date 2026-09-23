@@ -202,6 +202,20 @@ mcp_status_t mcp_message_error_code(mcp_context_t *ctx, const mcp_message_t *msg
  */
 const char *mcp_message_error_text(mcp_context_t *ctx, const mcp_message_t *msg);
 
+/**
+ * @brief Returns the top-level `"_meta"` field of the request.
+ *
+ * The client may carry extension metadata in a top-level `_meta` object
+ * on any JSON-RPC request. This accessor returns a BORROWED pointer valid
+ * while `msg` is alive; NULL if the key is absent or the value is not an
+ * object.
+ *
+ * @param ctx  Context.
+ * @param msg  Message to inspect.
+ * @return Borrowed `_meta` value, or NULL.
+ */
+const mcp_json_value_t *mcp_message_meta(mcp_context_t *ctx, const mcp_message_t *msg);
+
 /* --- Builders --- */
 /* params / result / data are owned by the caller; on success ownership
  * transfers to the message. On failure (MCP_ERR_NOMEM / NULL) the
@@ -277,6 +291,36 @@ mcp_message_t *mcp_response_err_new(mcp_context_t *ctx, const mcp_message_t *req
  *         mcp_json_free_string(ctx, s) using the SAME ctx.
  */
 char *mcp_message_serialize(mcp_context_t *ctx, const mcp_message_t *msg);
+
+/**
+ * @brief Injects `"resultType": "complete"` into a result object.
+ *
+ * Signals to the client that this response is a complete result, not a
+ * partial/streaming fragment. No allocation is made for the value string
+ * (a static literal is used internally).
+ *
+ * @param ctx     Context.
+ * @param result  Result object to decorate (must be a non-NULL JSON object;
+ *                NOMEM/INVALID_ARGUMENT otherwise).
+ * @return MCP_OK on success; MCP_ERR_NOMEM on allocation failure;
+ *         MCP_ERR_INVALID_ARGUMENT if `result` is NULL or not an object.
+ */
+mcp_status_t mcp_result_inject_result_type(mcp_context_t *ctx, mcp_json_value_t *result);
+
+/**
+ * @brief Injects a caller-owned `_meta` object into a result object.
+ *
+ * @param ctx     Context.
+ * @param result  Result object to decorate (must be a non-NULL JSON object).
+ * @param meta    Meta value; caller-owned. On success ownership transfers to
+ *                `result` (destroyed with the result). On failure the caller
+ *                retains ownership of `meta`.
+ * @return MCP_OK on success; MCP_ERR_NOMEM on allocation failure;
+ *         MCP_ERR_INVALID_ARGUMENT if `result` or `meta` is NULL or
+ *         `result` is not an object.
+ */
+mcp_status_t mcp_result_inject_meta(mcp_context_t *ctx, mcp_json_value_t *result,
+                                    mcp_json_value_t *meta);
 
 /**
  * @brief Maps an MCP status code to the nearest JSON-RPC error code.
