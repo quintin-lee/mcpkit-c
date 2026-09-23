@@ -204,6 +204,10 @@ add_executable(test_stdio_serve_with_client unit/test_stdio_serve_with_client.c)
 target_link_libraries(test_stdio_serve_with_client PRIVATE mcpkit_core)
 add_test(NAME test_stdio_serve_with_client COMMAND test_stdio_serve_with_client)
 
+add_executable(test_protocol_statelessness unit/test_protocol_statelessness.c)
+target_link_libraries(test_protocol_statelessness PRIVATE mcpkit_core)
+add_test(NAME test_protocol_statelessness COMMAND test_protocol_statelessness)
+
 if(MCPKIT_BUILD_TLS)
   # Generate a self-signed cert in the build directory for the TLS test.
   # The cert is written to the tests/ subdirectory of the build tree.
