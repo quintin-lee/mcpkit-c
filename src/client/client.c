@@ -47,6 +47,7 @@ mcp_client_t *mcp_client_create(mcp_context_t *ctx, mcp_transport_t *transport) 
     c->elicitation_ud = NULL;
     c->mrtr_elicit_fn = NULL;
     c->mrtr_elicit_ud = NULL;
+    c->bearer_token = NULL;
     return c;
 }
 
@@ -57,6 +58,9 @@ void mcp_client_destroy(mcp_context_t *ctx, mcp_client_t *client) {
     const mcp_allocator_t *a = alloc_of(ctx);
     if (client->version != NULL) {
         a->free_fn(client->version, a->userdata);
+    }
+    if (client->bearer_token != NULL) {
+        a->free_fn(client->bearer_token, a->userdata);
     }
     a->free_fn(client, a->userdata);
 }
@@ -984,3 +988,33 @@ mcp_status_t mcp_client_handle_server_request(mcp_context_t *ctx, mcp_client_t *
                                      "unknown method", NULL);
     return *resp_out != NULL ? MCP_OK : MCP_ERR_NOMEM;
 }
+
+mcp_status_t mcp_client_set_bearer_token(mcp_context_t *ctx, mcp_client_t *client,
+                                         const char *bearer_token) {
+    if (client == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    const mcp_allocator_t *a = alloc_of(ctx != NULL ? ctx : client->ctx);
+    if (client->bearer_token != NULL) {
+        a->free_fn(client->bearer_token, a->userdata);
+        client->bearer_token = NULL;
+    }
+    if (bearer_token != NULL) {
+        size_t len = strlen(bearer_token);
+        client->bearer_token = a->malloc_fn(len + 1, a->userdata);
+        if (client->bearer_token == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+        memcpy(client->bearer_token, bearer_token, len + 1);
+    }
+    return MCP_OK;
+}
+
+const char *mcp_client_get_bearer_token(mcp_context_t *ctx, const mcp_client_t *client) {
+    (void)ctx;
+    if (client == NULL) {
+        return NULL;
+    }
+    return client->bearer_token;
+}
+

@@ -515,6 +515,29 @@ mcp_status_t mcp_client_handle_server_request(mcp_context_t *ctx, mcp_client_t *
                                               const mcp_message_t *req,
                                               mcp_message_t **resp_out);
 
+/**
+ * @brief Sets the OAuth Bearer token to be used for requests by this client.
+ *
+ * Copies the token string. If bearer_token is NULL, clears any stored token.
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client; must not be NULL.
+ * @param bearer_token Bearer token string to copy, or NULL to clear.
+ * @return MCP_OK on success; INVALID_ARGUMENT if client is NULL; NOMEM on allocation failure.
+ */
+mcp_status_t mcp_client_set_bearer_token(mcp_context_t *ctx, mcp_client_t *client,
+                                         const char *bearer_token);
+
+/**
+ * @brief Retrieves the currently stored OAuth Bearer token, if any.
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client; may be NULL.
+ * @return Borrowed token pointer owned by client, or NULL if unset/client is NULL.
+ */
+const char *mcp_client_get_bearer_token(mcp_context_t *ctx, const mcp_client_t *client);
+
 /** @} */
 
 #endif
+

@@ -28,6 +28,8 @@ struct mcp_client {
     /* MRTR elicitation callback (NULL = no auto-retry on input_required). */
     mcp_client_mrtr_elicit_fn mrtr_elicit_fn;
     void *mrtr_elicit_ud;
+    /* Stored OAuth 2.1 Bearer token (NULL if unauthenticated). */
+    char *bearer_token;
 };
 
 #endif
