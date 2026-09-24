@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <time.h>
 
 #include "mcpkit/mcpkit.h"
 #include "mcpkit/protocol/validate.h"
@@ -189,6 +190,173 @@ static int cmd_call(const char *server_bin, const char *tool_name, const char *a
     return 0;
 }
 
+static void on_signal(int sig) {
+    (void)sig;
+    mcp_request_shutdown();
+}
+
+static uint64_t now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+}
+
+static mcp_json_value_t *build_filter(mcp_context_t *ctx, const char *filter_str) {
+    if (filter_str == NULL || filter_str[0] == '\0' ||
+        strcmp(filter_str, "all") == 0 || strcmp(filter_str, "*") == 0) {
+        mcp_json_value_t *f = mcp_json_object_new(ctx);
+        if (f == NULL) return NULL;
+        (void)mcp_json_object_set_take(ctx, f, "toolsListChanged", mcp_json_bool_new(ctx, true));
+        (void)mcp_json_object_set_take(ctx, f, "promptsListChanged", mcp_json_bool_new(ctx, true));
+        (void)mcp_json_object_set_take(ctx, f, "resourcesListChanged", mcp_json_bool_new(ctx, true));
+        return f;
+    }
+    if (filter_str[0] == '{') {
+        return mcp_json_parse(ctx, filter_str, strlen(filter_str));
+    }
+    if (strcmp(filter_str, "toolsListChanged") == 0 || strcmp(filter_str, "tools") == 0) {
+        mcp_json_value_t *f = mcp_json_object_new(ctx);
+        if (f == NULL) return NULL;
+        (void)mcp_json_object_set_take(ctx, f, "toolsListChanged", mcp_json_bool_new(ctx, true));
+        return f;
+    }
+    if (strcmp(filter_str, "promptsListChanged") == 0 || strcmp(filter_str, "prompts") == 0) {
+        mcp_json_value_t *f = mcp_json_object_new(ctx);
+        if (f == NULL) return NULL;
+        (void)mcp_json_object_set_take(ctx, f, "promptsListChanged", mcp_json_bool_new(ctx, true));
+        return f;
+    }
+    if (strcmp(filter_str, "resourcesListChanged") == 0 || strcmp(filter_str, "resources") == 0) {
+        mcp_json_value_t *f = mcp_json_object_new(ctx);
+        if (f == NULL) return NULL;
+        (void)mcp_json_object_set_take(ctx, f, "resourcesListChanged", mcp_json_bool_new(ctx, true));
+        return f;
+    }
+    if (strstr(filter_str, "://") != NULL) {
+        mcp_json_value_t *f = mcp_json_object_new(ctx);
+        mcp_json_value_t *arr = mcp_json_array_new(ctx);
+        mcp_json_value_t *val = mcp_json_string_new(ctx, filter_str);
+        if (f == NULL || arr == NULL || val == NULL) {
+            mcp_json_destroy(ctx, f);
+            mcp_json_destroy(ctx, arr);
+            mcp_json_destroy(ctx, val);
+            return NULL;
+        }
+        if (mcp_json_array_append(ctx, arr, val) != MCP_OK) {
+            mcp_json_destroy(ctx, val);
+            mcp_json_destroy(ctx, arr);
+            mcp_json_destroy(ctx, f);
+            return NULL;
+        }
+        (void)mcp_json_object_set_take(ctx, f, "resourceSubscriptions", arr);
+        return f;
+    }
+    mcp_json_value_t *f = mcp_json_object_new(ctx);
+    if (f != NULL) {
+        (void)mcp_json_object_set_take(ctx, f, filter_str, mcp_json_bool_new(ctx, true));
+    }
+    return f;
+}
+
+static int cmd_listen(const char *server_bin, const char *filter_str, int timeout_sec) {
+    cli_t cli = {NULL};
+    if (spawn(server_bin, &cli) != 0) {
+        cli_cleanup(&cli);
+        return 1;
+    }
+    if (cli_init(&cli) != 0) {
+        cli_cleanup(&cli);
+        return 1;
+    }
+
+    mcp_transport_set_timeout(cli.ctx, cli.transport, 200, 0);
+
+    mcp_json_value_t *filter = build_filter(cli.ctx, filter_str);
+    if (filter == NULL && filter_str != NULL && filter_str[0] == '{') {
+        fprintf(stderr, "mcpkit-cli: invalid filter JSON\n");
+        mcp_client_disconnect(cli.ctx, cli.client);
+        cli_cleanup(&cli);
+        return 1;
+    }
+
+    mcp_message_t *ack = NULL;
+    if (mcp_client_subscriptions_listen(cli.ctx, cli.client, filter, &ack) != MCP_OK) {
+        fprintf(stderr, "mcpkit-cli: subscriptions/listen failed\n");
+        mcp_client_disconnect(cli.ctx, cli.client);
+        cli_cleanup(&cli);
+        return 1;
+    }
+
+    char sub_id_buf[64] = {0};
+    const char *sub_id_str = NULL;
+    if (ack != NULL) {
+        const mcp_json_value_t *ack_p = mcp_message_params(cli.ctx, ack);
+        if (ack_p != NULL) {
+            const mcp_json_value_t *meta = mcp_json_object_get(cli.ctx, ack_p, "_meta");
+            if (meta != NULL) {
+                const mcp_json_value_t *sub_v =
+                    mcp_json_object_get(cli.ctx, meta, "io.modelcontextprotocol/subscriptionId");
+                if (sub_v != NULL) {
+                    if (mcp_json_string_value(cli.ctx, sub_v, &sub_id_str) != MCP_OK) {
+                        double d = 0;
+                        if (mcp_json_number_value(cli.ctx, sub_v, &d) == MCP_OK) {
+                            snprintf(sub_id_buf, sizeof(sub_id_buf), "%.0f", d);
+                            sub_id_str = sub_id_buf;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    struct sigaction sa, old_sa_int, old_sa_term;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = on_signal;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGINT, &sa, &old_sa_int);
+    sigaction(SIGTERM, &sa, &old_sa_term);
+
+    uint64_t start_ms = now_ms();
+    while (!mcp_shutdown_requested()) {
+        if (timeout_sec > 0) {
+            uint64_t elapsed_sec = (now_ms() - start_ms) / 1000u;
+            if (elapsed_sec >= (uint64_t)timeout_sec) {
+                break;
+            }
+        }
+        mcp_message_t *msg = NULL;
+        mcp_status_t st = mcp_client_recv_message(cli.ctx, cli.client, &msg);
+        if (st == MCP_ERR_TIMEOUT) {
+            continue;
+        }
+        if (st != MCP_OK) {
+            break;
+        }
+        char *s = mcp_message_serialize(cli.ctx, msg);
+        if (s != NULL) {
+            printf("%s\n", s);
+            fflush(stdout);
+            mcp_json_free_string(cli.ctx, s);
+        }
+        mcp_message_destroy(cli.ctx, msg);
+    }
+
+    if (sub_id_str != NULL && sub_id_str[0] != '\0') {
+        (void)mcp_client_cancel_subscription(cli.ctx, cli.client, sub_id_str);
+    }
+
+    sigaction(SIGINT, &old_sa_int, NULL);
+    sigaction(SIGTERM, &old_sa_term, NULL);
+    mcp_shutdown_clear();
+
+    if (ack != NULL) {
+        mcp_message_destroy(cli.ctx, ack);
+    }
+    mcp_client_disconnect(cli.ctx, cli.client);
+    cli_cleanup(&cli);
+    return 0;
+}
+
 static int cmd_validate(const char *file_path) {
     mcp_context_t *ctx = mcp_context_create(NULL);
     mcp_idset_t *ids = mcp_idset_create(ctx);
@@ -303,6 +471,23 @@ int main(int argc, char **argv) {
         }
         const char *args_json = argc >= 5 ? argv[4] : NULL;
         return cmd_call(argv[2], argv[3], args_json);
+    }
+    if (strcmp(argv[1], "listen") == 0) {
+        const char *filter = NULL;
+        int timeout_sec = 0;
+        if (argc >= 4) {
+            char *endptr = NULL;
+            long val = strtol(argv[3], &endptr, 10);
+            if (*endptr == '\0' && val >= 0) {
+                timeout_sec = (int)val;
+            } else {
+                filter = argv[3];
+                if (argc >= 5) {
+                    timeout_sec = atoi(argv[4]);
+                }
+            }
+        }
+        return cmd_listen(argv[2], filter, timeout_sec);
     }
     if (strcmp(argv[1], "validate") == 0) {
         return cmd_validate(argv[2]);
