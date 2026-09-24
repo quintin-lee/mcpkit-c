@@ -6,6 +6,10 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ### Added
 
+- MCP Registry Manifest & CLI Tooling (Official MCP Registry schema):
+  - Added MCP Registry server manifest parser, validator, and serializer (`mcp_registry_manifest_parse()`, `mcp_registry_manifest_validate()`, `mcp_registry_manifest_serialize()`) in `mcpkit/protocol/registry.h` and `src/protocol/registry.c`.
+  - Added CLI subcommands `manifest init [name]`, `manifest validate <file>`, `registry search <query>`, and `registry info <server-id>` in `tools/mcpkit-cli/main.c`.
+  - Added unit test coverage in `tests/unit/test_registry_manifest.c` and acceptance tests in `tests/acceptance/cli_accept.sh`.
 - OAuth 2.1 Client Authorization Flow (SEP-2207, SEP-1046, RFC 7636):
   - Added OAuth 2.1 token response parsing (`mcp_oauth_token_response_parse()`, `mcp_oauth_token_response_cleanup()`) and URL-encoded request body builders (`mcp_oauth_build_token_request_pkce()`, `mcp_oauth_build_refresh_request()`, `mcp_oauth_build_client_credentials_request()`) in `mcpkit/core/auth.h` and `src/core/auth.c`.
   - Added Bearer token management in `mcpkit/client/client.h` and `src/client/client.c` (`mcp_client_set_bearer_token()`, `mcp_client_get_bearer_token()`).

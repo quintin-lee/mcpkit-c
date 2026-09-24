@@ -480,6 +480,37 @@ void         mcp_uri_template_free_string(mcp_context_t *ctx, char *uri);
 ```
 Matches concrete URIs against patterns like `"file:///{+path}"` or `"items/{id}"`, extracts variable values into a JSON object, and expands templates with provided variables.
 
+### `registry.h`
+Official MCP Registry server manifest (`mcp.json`) parser, validator, and serializer:
+```c
+typedef enum {
+    MCP_TRANSPORT_KIND_UNKNOWN = 0,
+    MCP_TRANSPORT_KIND_STDIO,
+    MCP_TRANSPORT_KIND_STREAMABLE_HTTP,
+    MCP_TRANSPORT_KIND_SOCKET
+} mcp_registry_transport_kind_t;
+
+typedef struct {
+    char *name;
+    char *version;
+    char *description;
+    char *author;
+    char *license;
+    char *repository;
+    mcp_registry_transport_kind_t transport;
+    bool has_tools;
+    bool has_resources;
+    bool has_prompts;
+} mcp_registry_manifest_t;
+
+mcp_status_t mcp_registry_manifest_parse(mcp_context_t *ctx, const char *json_str, size_t len, mcp_registry_manifest_t *m_out);
+mcp_status_t mcp_registry_manifest_validate(mcp_context_t *ctx, const mcp_registry_manifest_t *m, char *err_msg_out);
+char        *mcp_registry_manifest_serialize(mcp_context_t *ctx, const mcp_registry_manifest_t *m);
+void         mcp_registry_free_string(mcp_context_t *ctx, char *str);
+void         mcp_registry_manifest_cleanup(mcp_context_t *ctx, mcp_registry_manifest_t *m);
+```
+Parses, validates, and generates official MCP Registry server manifest documents (`mcp.json`) for discovering, installing, and publishing servers.
+
 ---
 
 ## Server (`mcpkit/server/`)
@@ -1035,6 +1066,10 @@ usage: mcpkit-cli discover <server-bin>
        mcpkit-cli inspect <server-bin>
        mcpkit-cli call <server-bin> <tool> [args-json]
        mcpkit-cli listen <server-bin> [filter] [timeout_sec]
+       mcpkit-cli manifest init [name]
+       mcpkit-cli manifest validate <file>
+       mcpkit-cli registry search <query>
+       mcpkit-cli registry info <server-id>
        mcpkit-cli validate <file>
        mcpkit-cli test <server-bin>
 ```
@@ -1045,5 +1080,10 @@ usage: mcpkit-cli discover <server-bin>
 - **`inspect <server-bin>`**: Performs full client initialization and queries `tools/list` and `resources/list`, dumping all definitions.
 - **`call <server-bin> <tool> [args-json]`**: Invokes a specific tool with JSON arguments and prints the result.
 - **`listen <server-bin> [filter] [timeout_sec]`**: Establishes a real-time notification stream (`subscriptions/listen`). Supports filtering by notification kind (`tools`, `prompts`, `resources`, `all`, or resource URI) or custom JSON filter. Streams incoming events with periodic timeout detection, handles `SIGINT`/`SIGTERM`, and gracefully cancels active subscriptions (`notifications/cancelled`).
+- **`manifest init [name]`**: Scaffolds a template `mcp.json` server manifest configured with standard transports and tool flags.
+- **`manifest validate <file>`**: Validates an `mcp.json` server manifest against official MCP Registry schema rules.
+- **`registry search <query>`**: Searches official MCP registry packages by name, ID, or description.
+- **`registry info <server-id>`**: Inspects detailed package metadata, installation command, and capability flags for a specific server package.
 - **`validate <file>`**: Validates a file of newline-delimited JSON-RPC messages against MCP protocol schemas.
 - **`test <server-bin>`**: Runs basic health checks (ping, non-empty tools list) against a server binary.
+

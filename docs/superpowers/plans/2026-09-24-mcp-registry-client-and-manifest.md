@@ -30,7 +30,7 @@
 - Modify: `tests/CMakeLists.txt`
 - Modify: `src/CMakeLists.txt`
 
-- [ ] **Step 1: Write failing unit test in `tests/unit/test_registry_manifest.c`**
+- [x] **Step 1: Write failing unit test in `tests/unit/test_registry_manifest.c`**
 
 ```c
 #include <stdio.h>
@@ -85,7 +85,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Add test target to `tests/CMakeLists.txt` and verify compile failure**
+- [x] **Step 2: Add test target to `tests/CMakeLists.txt` and verify compile failure**
 
 ```cmake
 add_executable(test_registry_manifest unit/test_registry_manifest.c)
@@ -93,7 +93,7 @@ target_link_libraries(test_registry_manifest PRIVATE mcpkit_core)
 add_test(NAME test_registry_manifest COMMAND test_registry_manifest)
 ```
 
-- [ ] **Step 3: Define structs and APIs in `include/mcpkit/protocol/registry.h`**
+- [x] **Step 3: Define structs and APIs in `include/mcpkit/protocol/registry.h`**
 
 ```c
 typedef enum {
@@ -124,16 +124,16 @@ char *mcp_registry_manifest_serialize(mcp_context_t *ctx, const mcp_registry_man
 void mcp_registry_manifest_cleanup(mcp_context_t *ctx, mcp_registry_manifest_t *m);
 ```
 
-- [ ] **Step 4: Implement in `src/protocol/registry.c` and add to `src/CMakeLists.txt`**
+- [x] **Step 4: Implement in `src/protocol/registry.c` and add to `src/CMakeLists.txt`**
 
 Implement JSON mapping, schema required fields validation, and clean memory cleanup.
 
-- [ ] **Step 5: Run tests and verify PASS**
+- [x] **Step 5: Run tests and verify PASS**
 
 Run: `cmake --build build --target test_registry_manifest && ./build/tests/test_registry_manifest`
 Expected: `test_registry_manifest OK`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add include/mcpkit/protocol/registry.h src/protocol/registry.c src/CMakeLists.txt tests/unit/test_registry_manifest.c tests/CMakeLists.txt
@@ -148,17 +148,17 @@ git commit -m "feat(registry): add mcp.json server manifest parser, validator, a
 - Modify: `tools/mcpkit-cli/main.c`
 - Modify: `tests/acceptance/cli_accept.sh`
 
-- [ ] **Step 1: Implement `cmd_manifest_init` and `cmd_manifest_validate` in `tools/mcpkit-cli/main.c`**
+- [x] **Step 1: Implement `cmd_manifest_init` and `cmd_manifest_validate` in `tools/mcpkit-cli/main.c`**
 
 - `mcpkit-cli manifest init [name]`: Scaffolds a template `mcp.json` file with standard transport, schema versions, and tool declarations.
 - `mcpkit-cli manifest validate <path/to/mcp.json>`: Reads the file, executes `mcp_registry_manifest_validate`, and outputs OK or formatted error details.
 
-- [ ] **Step 2: Implement `cmd_registry_search` and `cmd_registry_info`**
+- [x] **Step 2: Implement `cmd_registry_search` and `cmd_registry_info`**
 
 - `mcpkit-cli registry search <query>`: Queries the MCP registry endpoint (or local registry index) and outputs matching servers with descriptions.
 - `mcpkit-cli registry info <server-id>`: Displays detailed package metadata, installation command, and capability flags.
 
-- [ ] **Step 3: Update `main()` argument parsing and usage message**
+- [x] **Step 3: Update `main()` argument parsing and usage message**
 
 Update usage:
 ```text
@@ -168,16 +168,16 @@ Update usage:
        mcpkit-cli registry info <server-id>
 ```
 
-- [ ] **Step 4: Add acceptance test cases in `tests/acceptance/cli_accept.sh`**
+- [x] **Step 4: Add acceptance test cases in `tests/acceptance/cli_accept.sh`**
 
 Test running `manifest init tmp_mcp.json`, then validating it with `manifest validate tmp_mcp.json`, and cleaning up.
 
-- [ ] **Step 5: Verify build & tests**
+- [x] **Step 5: Verify build & tests**
 
 Run: `cmake --build build && ctest --test-dir build --output-on-failure`
 Expected: 100% tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tools/mcpkit-cli/main.c tests/acceptance/cli_accept.sh
