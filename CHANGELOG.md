@@ -6,6 +6,11 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ### Added
 
+- Developer CLI Inspector Subcommands (`discover` & `listen`) and C SDK Discovery API:
+  - Added `mcpkit-cli discover <server-bin>` to statelessly probe server capabilities (`server/discover`) without requiring an `initialize` handshake.
+  - Added `mcpkit-cli listen <server-bin> [filter] [timeout_sec]` to stream real-time events via `subscriptions/listen` with flexible filtering (`tools`, `prompts`, `resources`, `all`, resource URIs, or raw JSON), periodic timeout detection, signal handling (`SIGINT`/`SIGTERM`), and graceful cancellation (`notifications/cancelled`).
+  - Added `mcp_client_discover()` in `mcpkit/client/client.h` and `src/client/client.c` as a client API for capability discovery.
+  - Added CLI acceptance tests in `tests/acceptance/cli_accept.sh` verifying `discover` and `listen` against `stdio-server`.
 - Content Annotations and Audience Tagging (SEP-1249):
   - Added `mcpkit/protocol/content.h` and `src/protocol/content.c` defining `mcp_content_annotations_t`, `mcp_content_audience_t` bitmasks (`MCP_AUDIENCE_USER`, `MCP_AUDIENCE_ASSISTANT`), and serialization to/from JSON.
   - Added constructors `mcp_content_text_new_annotated()`, `mcp_content_image_new_annotated()`, `mcp_content_resource_new_annotated()`, and extraction function `mcp_content_extract_annotations()`.

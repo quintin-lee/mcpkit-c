@@ -17,7 +17,7 @@
 - Modify: `src/client/client.c`
 - Test: `tests/unit/test_client.c`
 
-- [ ] **Step 1: Write failing unit test in `tests/unit/test_client.c`**
+- [x] **Step 1: Write failing unit test in `tests/unit/test_client.c`**
 
 Add tests for `mcp_client_discover` checking argument validation and discovering capability response:
 ```c
@@ -32,12 +32,12 @@ Add tests for `mcp_client_discover` checking argument validation and discovering
     mcp_json_destroy(ctx, disc);
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cmake --build build --target test_client && ./build/tests/test_client`
 Expected: Compilation failure due to undeclared `mcp_client_discover`.
 
-- [ ] **Step 3: Implement `mcp_client_discover` in `include/mcpkit/client/client.h` and `src/client/client.c`**
+- [x] **Step 3: Implement `mcp_client_discover` in `include/mcpkit/client/client.h` and `src/client/client.c`**
 
 In `include/mcpkit/client/client.h`:
 ```c
@@ -67,12 +67,12 @@ mcp_status_t mcp_client_discover(mcp_context_t *ctx, mcp_client_t *client,
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cmake --build build --target test_client && ./build/tests/test_client`
 Expected: PASS with 0 errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add include/mcpkit/client/client.h src/client/client.c tests/unit/test_client.c
@@ -86,7 +86,7 @@ git commit -m "feat(client): add mcp_client_discover API"
 **Files:**
 - Modify: `tools/mcpkit-cli/main.c`
 
-- [ ] **Step 1: Implement `cmd_discover`**
+- [x] **Step 1: Implement `cmd_discover`**
 
 In `tools/mcpkit-cli/main.c`, add `cmd_discover(const char *server_bin)`:
 - Spawns child process via `spawn(server_bin, &cli)`.
@@ -96,7 +96,7 @@ In `tools/mcpkit-cli/main.c`, add `cmd_discover(const char *server_bin)`:
 - Prints serialized JSON result.
 - Destroys result, disconnects, cleans up child process, returns 0 on success, 1 on failure.
 
-- [ ] **Step 2: Update CLI Usage & Subcommand Dispatch**
+- [x] **Step 2: Update CLI Usage & Subcommand Dispatch**
 
 Update `main(int argc, char **argv)`:
 - Update usage message:
@@ -104,13 +104,13 @@ Update `main(int argc, char **argv)`:
   `mcpkit-cli listen <server-bin> [filter] [timeout_sec]`
 - Wire `argv[1]` equals `"discover"` to `cmd_discover(argv[2])`.
 
-- [ ] **Step 3: Build and test manually against `examples/stdio-server`**
+- [x] **Step 3: Build and test manually against `examples/stdio-server`**
 
 Run: `cmake --build build --target mcpkit-cli stdio-server`
 Run: `./build/tools/mcpkit-cli discover ./build/examples/stdio-server`
 Expected: Prints JSON containing `"serverName":"stdio-server"` and exits with 0.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tools/mcpkit-cli/main.c
@@ -124,11 +124,11 @@ git commit -m "feat(cli): add discover subcommand to mcpkit-cli"
 **Files:**
 - Modify: `tools/mcpkit-cli/main.c`
 
-- [ ] **Step 1: Add time and signal helpers for `listen`**
+- [x] **Step 1: Add time and signal helpers for `listen`**
 
 Add monotonic timer helper `now_ms` and SIGINT/SIGTERM signal handler triggering `mcp_request_shutdown()`.
 
-- [ ] **Step 2: Implement filter construction helper `build_filter`**
+- [x] **Step 2: Implement filter construction helper `build_filter`**
 
 Parse filter string into `mcp_json_value_t *`:
 - NULL or empty or `"all"` or `"*"`: `{"toolsListChanged": true, "promptsListChanged": true, "resourcesListChanged": true}`.
@@ -138,7 +138,7 @@ Parse filter string into `mcp_json_value_t *`:
 - `"resourcesListChanged"` or `"resources"`: `{"resourcesListChanged": true}`.
 - Contains `"://"`: `{"resourceSubscriptions": [filter]}`.
 
-- [ ] **Step 3: Implement `cmd_listen`**
+- [x] **Step 3: Implement `cmd_listen`**
 
 In `tools/mcpkit-cli/main.c`:
 - `spawn(server_bin, &cli)` and `cli_init(&cli)`.
@@ -150,7 +150,7 @@ In `tools/mcpkit-cli/main.c`:
 - When exiting loop: if subscription ID present, call `mcp_client_cancel_subscription(cli.ctx, cli.client, sub_id)`.
 - Restore signal handlers, call `mcp_shutdown_clear()`, cleanup and exit 0.
 
-- [ ] **Step 4: Update argument parsing in `main()`**
+- [x] **Step 4: Update argument parsing in `main()`**
 
 In `main(int argc, char **argv)`:
 - Handle `"listen"`:
@@ -158,12 +158,12 @@ In `main(int argc, char **argv)`:
   - If argument 3 is a string, treat as `filter`, and argument 4 as `timeout_sec` (if present).
   - Call `cmd_listen(server_bin, filter, timeout_sec)`.
 
-- [ ] **Step 5: Test manually with `stdio-server` and timeout**
+- [x] **Step 5: Test manually with `stdio-server` and timeout**
 
 Run: `./build/tools/mcpkit-cli listen ./build/examples/stdio-server all 1`
 Expected: Subscribes, waits 1 second, cleanly cancels and exits 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tools/mcpkit-cli/main.c
@@ -177,7 +177,7 @@ git commit -m "feat(cli): add listen subcommand to mcpkit-cli"
 **Files:**
 - Modify: `tests/acceptance/cli_accept.sh`
 
-- [ ] **Step 1: Add `discover` and `listen` checks to `tests/acceptance/cli_accept.sh`**
+- [x] **Step 1: Add `discover` and `listen` checks to `tests/acceptance/cli_accept.sh`**
 
 Add checks:
 ```bash
@@ -190,17 +190,17 @@ case "$out" in *stdio-server*) ;; *) echo "FAIL: discover stdio-server missing s
 "$CLI" listen "$STDIO_SRV" tools 1
 ```
 
-- [ ] **Step 2: Run CTest test suite**
+- [x] **Step 2: Run CTest test suite**
 
 Run: `ctest --test-dir build --output-on-failure`
 Expected: 56/56 (100%) tests PASS.
 
-- [ ] **Step 3: Run under ASan to verify zero leaks**
+- [x] **Step 3: Run under ASan to verify zero leaks**
 
 Run: `LD_PRELOAD=/usr/lib/libasan.so.8.0.0 ctest --test-dir build --output-on-failure`
 Expected: PASS with 0 memory errors or leaks.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/acceptance/cli_accept.sh
@@ -215,15 +215,15 @@ git commit -m "test(cli): add acceptance tests for discover and listen subcomman
 - Modify: `docs/module-reference.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: Update `docs/module-reference.md`**
+- [x] **Step 1: Update `docs/module-reference.md`**
 
 Document `mcp_client_discover` and the `mcpkit-cli` `discover` and `listen` commands with usage examples.
 
-- [ ] **Step 2: Update `CHANGELOG.md`**
+- [x] **Step 2: Update `CHANGELOG.md`**
 
 Add changelog entries for `discover` and `listen` subcommands and `mcp_client_discover`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/module-reference.md CHANGELOG.md

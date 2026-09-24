@@ -812,6 +812,7 @@ int          mcp_client_initialize(ctx, c, const char *client_name,
 /* Convenience methods — each takes params (client takes ownership on failure),
    returns result (caller destroys). */
 int          mcp_client_ping(ctx, c);
+int          mcp_client_discover(ctx, c, mcp_json_value_t **result_out);
 int          mcp_client_list_tools(ctx, c, mcp_json_value_t **result_out);
 /* list_tools auto-paginates: follows nextCursor and returns the merged
    {"tools": [...]} object, so callers never see pages. */
@@ -991,3 +992,27 @@ int mcp_plugin_unregister(const char *kind, const char *name);
 const mcp_plugin_entry_t *mcp_plugin_get(const char *kind, const char *name);
 ```
 No ctx — global (matches the `mcp_default_allocator` precedent).
+
+---
+
+## CLI Tool (`mcpkit-cli`)
+
+Standalone developer diagnostic and inspection CLI aligning with the official MCP Inspector.
+
+```bash
+usage: mcpkit-cli discover <server-bin>
+       mcpkit-cli inspect <server-bin>
+       mcpkit-cli call <server-bin> <tool> [args-json]
+       mcpkit-cli listen <server-bin> [filter] [timeout_sec]
+       mcpkit-cli validate <file>
+       mcpkit-cli test <server-bin>
+```
+
+### Commands
+
+- **`discover <server-bin>`**: Probes server capabilities statelessly via `server/discover` without requiring an `initialize` handshake. Prints server name, supported protocol versions, tool/resource/prompt counts, and active extension capabilities (`tasks`, `skills`, stateless metadata).
+- **`inspect <server-bin>`**: Performs full client initialization and queries `tools/list` and `resources/list`, dumping all definitions.
+- **`call <server-bin> <tool> [args-json]`**: Invokes a specific tool with JSON arguments and prints the result.
+- **`listen <server-bin> [filter] [timeout_sec]`**: Establishes a real-time notification stream (`subscriptions/listen`). Supports filtering by notification kind (`tools`, `prompts`, `resources`, `all`, or resource URI) or custom JSON filter. Streams incoming events with periodic timeout detection, handles `SIGINT`/`SIGTERM`, and gracefully cancels active subscriptions (`notifications/cancelled`).
+- **`validate <file>`**: Validates a file of newline-delimited JSON-RPC messages against MCP protocol schemas.
+- **`test <server-bin>`**: Runs basic health checks (ping, non-empty tools list) against a server binary.
