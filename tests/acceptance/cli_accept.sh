@@ -15,6 +15,14 @@ case "$out" in *echo*) ;; *) echo "FAIL: inspect stdio-server missing echo"; exi
 out="$("$CLI" call "$STDIO_SRV" echo '{"text":"hi"}')"
 case "$out" in *hi*) ;; *) echo "FAIL: call echo missing 'hi'"; exit 1 ;; esac
 
+# discover: stateless capability probe
+out="$("$CLI" discover "$STDIO_SRV")"
+case "$out" in *stdio-server*) ;; *) echo "FAIL: discover stdio-server missing stdio-server"; exit 1 ;; esac
+
+# listen: real-time notification stream subscription with timeout
+"$CLI" listen "$STDIO_SRV" all 1
+"$CLI" listen "$STDIO_SRV" tools 1
+
 "$CLI" test "$STDIO_SRV"
 "$CLI" test "$POOL_SRV"
 
