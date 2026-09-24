@@ -6,6 +6,18 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ### Added
 
+- Content Annotations and Audience Tagging (SEP-1249):
+  - Added `mcpkit/protocol/content.h` and `src/protocol/content.c` defining `mcp_content_annotations_t`, `mcp_content_audience_t` bitmasks (`MCP_AUDIENCE_USER`, `MCP_AUDIENCE_ASSISTANT`), and serialization to/from JSON.
+  - Added constructors `mcp_content_text_new_annotated()`, `mcp_content_image_new_annotated()`, `mcp_content_resource_new_annotated()`, and extraction function `mcp_content_extract_annotations()`.
+- Client Active Roots Notification:
+  - Added `mcp_client_notify_roots_list_changed()` in `mcpkit/client/client.h` enabling clients to emit `notifications/roots/list_changed` when filesystem roots are modified.
+- RFC 6570 URI Templates Matching & Expansion (Level 1 & Level 2):
+  - Added `mcpkit/protocol/uri_template.h` and `src/protocol/uri_template.c` supporting simple expansion `{var}` and reserved expansion `{+var}`.
+  - Implemented `mcp_uri_template_match()` extracting variables from concrete URIs into JSON objects with automatic URL-decoding, and `mcp_uri_template_expand()` producing expanded URI strings.
+- Streamable HTTP SSE Streaming Frame Parser (W3C SSE):
+  - Added `mcpkit/transport/sse.h` and `src/transport/sse.c` implementing `mcp_sse_parser_t` with arbitrary chunk boundary resilience, CRLF/CR/LF line ending handling, multiline data accumulation, comment filtering, and `Last-Event-ID` tracking for connection resumption.
+- RFC 7636 PKCE & OAuth 2.1 Metadata Utilities:
+  - Added `mcpkit/core/auth.h` and `src/core/auth.c` implementing SHA-256 + unpadded Base64URL `code_challenge` computation (`mcp_pkce_compute_challenge()`, validated against RFC 7636 Appendix B test vector), cryptographically secure `code_verifier` generator (`mcp_pkce_generate()`), and RFC 8414 OAuth 2.0 / 2.1 metadata parser (`mcp_oauth_metadata_parse()`).
 - Tasks Extension (`io.modelcontextprotocol/tasks`, SEP-2663):
   - Protocol data structures in `mcpkit/protocol/tasks.h`: `mcp_task_status_t` (`working`, `input_required`, `completed`, `failed`, `cancelled`), `mcp_task_desc_t`, and task manager `mcp_task_mgr_t`.
   - Server integration: `mcp_server_enable_tasks()`, `mcp_server_get_task_mgr()`, dispatcher routes `tasks/get`, `tasks/update`, `tasks/cancel`, and dynamic capability advertising under `capabilities.extensions["io.modelcontextprotocol/tasks"]` in `server/discover`.

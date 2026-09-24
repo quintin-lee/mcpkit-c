@@ -87,6 +87,30 @@ mcp_status_t mcp_trace_inject_into_meta(mcp_context_t *ctx,
 ```
 Extracts and injects `traceparent`, `tracestate`, and `baggage` fields within `_meta` JSON objects.
 
+### `auth.h`
+RFC 7636 PKCE (Proof Key for Code Exchange) & OAuth 2.1 metadata utilities:
+```c
+mcp_status_t mcp_pkce_compute_challenge(const char *code_verifier,
+                                        char code_challenge_out[44]);
+mcp_status_t mcp_pkce_generate(mcp_context_t *ctx,
+                               char code_verifier_out[129],
+                               char code_challenge_out[44]);
+
+typedef struct mcp_oauth_metadata {
+    char issuer[256];
+    char authorization_endpoint[256];
+    char token_endpoint[256];
+    char registration_endpoint[256];
+    char jwks_uri[256];
+    bool supports_pkce_s256;
+} mcp_oauth_metadata_t;
+
+mcp_status_t mcp_oauth_metadata_parse(mcp_context_t *ctx,
+                                      const mcp_json_value_t *json_metadata,
+                                      mcp_oauth_metadata_t *out_metadata);
+```
+Computes unpadded Base64URL SHA-256 S256 code challenge from a code verifier (verified against RFC 7636 test vectors), generates cryptographically secure verifiers, and parses RFC 8414 OAuth 2.0 / 2.1 metadata objects.
+
 ---
 
 ## Logging (`mcpkit/logging/`)
@@ -398,6 +422,37 @@ const mcp_skill_t    *mcp_skill_registry_find_by_uri(mcp_context_t *ctx, const m
 size_t                mcp_skill_registry_count(mcp_context_t *ctx, const mcp_skill_registry_t *reg);
 const mcp_skill_t    *mcp_skill_registry_get_at(mcp_context_t *ctx, const mcp_skill_registry_t *reg, size_t index);
 ```
+
+### `content.h`
+Content Annotations and audience tagging (SEP-1249):
+```c
+typedef enum mcp_content_audience {
+    MCP_AUDIENCE_NONE      = 0,
+    MCP_AUDIENCE_USER      = (1 << 0),
+    MCP_AUDIENCE_ASSISTANT = (1 << 1),
+    MCP_AUDIENCE_ALL       = (MCP_AUDIENCE_USER | MCP_AUDIENCE_ASSISTANT)
+} mcp_content_audience_t;
+
+typedef struct mcp_content_annotations {
+    uint32_t audience;      /* Bitmask of mcp_content_audience_t */
+    double priority;        /* 0.0 to 1.0; negative if unspecified */
+    char last_modified[64]; /* ISO-8601 timestamp string */
+} mcp_content_annotations_t;
+
+mcp_json_value_t *mcp_content_text_new_annotated(ctx, const char *text, const mcp_content_annotations_t *annotations);
+mcp_json_value_t *mcp_content_image_new_annotated(ctx, const char *data_b64, const char *mime_type, const mcp_content_annotations_t *annotations);
+mcp_json_value_t *mcp_content_resource_new_annotated(ctx, const char *uri, const char *mime_type, const char *text_or_blob, bool is_bin, const mcp_content_annotations_t *annotations);
+mcp_status_t      mcp_content_extract_annotations(ctx, const mcp_json_value_t *content_obj, mcp_content_annotations_t *out_annotations);
+```
+
+### `uri_template.h`
+RFC 6570 URI Template matching and expansion (Level 1 & 2):
+```c
+mcp_status_t mcp_uri_template_match(mcp_context_t *ctx, const char *pattern, const char *uri, mcp_json_value_t **out_variables);
+mcp_status_t mcp_uri_template_expand(mcp_context_t *ctx, const char *pattern, const mcp_json_value_t *variables, char **out_uri);
+void         mcp_uri_template_free_string(mcp_context_t *ctx, char *uri);
+```
+Matches concrete URIs against patterns like `"file:///{+path}"` or `"items/{id}"`, extracts variable values into a JSON object, and expands templates with provided variables.
 
 ---
 
@@ -716,6 +771,25 @@ destroyed when the loop exits. Validates `MCP-Protocol-Version`,
 SEP-2243, rejecting mismatches with HTTP 400 and standard JSON-RPC errors
 (`MCP_RPC_HEADER_MISMATCH` -32020 / `MCP_RPC_UNSUPPORTED_PROTOCOL_VERSION` -32022).
 
+### `sse.h`
+W3C Server-Sent Events (SSE) streaming frame parser:
+```c
+typedef struct mcp_sse_event {
+    const char *event;      /* Event type, defaults to "message" */
+    const char *data;       /* Event data, multiline concatenated with '\n' */
+    const char *id;         /* Event ID string, or NULL */
+    int64_t retry_ms;       /* Reconnection retry time in ms, or -1 */
+} mcp_sse_event_t;
+
+typedef void (*mcp_sse_event_cb)(const mcp_sse_event_t *ev, void *userdata);
+
+mcp_sse_parser_t *mcp_sse_parser_create(mcp_context_t *ctx, mcp_sse_event_cb on_event, void *userdata);
+mcp_status_t      mcp_sse_parser_feed(mcp_context_t *ctx, mcp_sse_parser_t *parser, const char *chunk, size_t len);
+const char       *mcp_sse_parser_last_event_id(mcp_context_t *ctx, const mcp_sse_parser_t *parser);
+void              mcp_sse_parser_destroy(mcp_context_t *ctx, mcp_sse_parser_t *parser);
+```
+Streaming parser handling arbitrary chunk boundaries, CRLF/CR/LF line endings, multiline data accumulation, comments, and `Last-Event-ID` tracking for connection resumption.
+
 ---
 
 ## Client (`mcpkit/client/`)
@@ -789,6 +863,7 @@ const char  *mcp_client_protocol_version(ctx, const mcp_client_t *c);
    serialize + send + mcp_message_destroy). No provider, or provider
    returns NULL -> -32601 response. */
 void         mcp_client_set_roots_provider(ctx, c, mcp_client_roots_fn fn, void *ud);
+mcp_status_t mcp_client_notify_roots_list_changed(ctx, c);
 void         mcp_client_set_sample_provider(ctx, c, mcp_client_sample_fn fn, void *ud);
 void         mcp_client_set_elicitation_provider(ctx, c, mcp_client_elicitation_fn fn, void *ud);
 int          mcp_client_handle_server_request(ctx, c, const mcp_message_t *req,
