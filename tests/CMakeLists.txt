@@ -248,6 +248,11 @@ add_executable(test_auth_client unit/test_auth_client.c)
 target_link_libraries(test_auth_client PRIVATE mcpkit_core)
 add_test(NAME test_auth_client COMMAND test_auth_client)
 
+add_executable(test_registry_manifest unit/test_registry_manifest.c)
+target_link_libraries(test_registry_manifest PRIVATE mcpkit_core)
+add_test(NAME test_registry_manifest COMMAND test_registry_manifest)
+
+
 if(MCPKIT_BUILD_TLS)
   # Generate a self-signed cert in the build directory for the TLS test.
   # The cert is written to the tests/ subdirectory of the build tree.

@@ -49,6 +49,7 @@ set(MCPKIT_CORE_SOURCES
   src/protocol/skills.c
   src/protocol/content.c
   src/protocol/uri_template.c
+  src/protocol/registry.c
   src/server/server.c
   src/server/registry.c
   src/server/session.c
