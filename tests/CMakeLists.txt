@@ -244,6 +244,10 @@ add_executable(test_auth_pkce unit/test_auth_pkce.c)
 target_link_libraries(test_auth_pkce PRIVATE mcpkit_core)
 add_test(NAME test_auth_pkce COMMAND test_auth_pkce)
 
+add_executable(test_auth_client unit/test_auth_client.c)
+target_link_libraries(test_auth_client PRIVATE mcpkit_core)
+add_test(NAME test_auth_client COMMAND test_auth_client)
+
 if(MCPKIT_BUILD_TLS)
   # Generate a self-signed cert in the build directory for the TLS test.
   # The cert is written to the tests/ subdirectory of the build tree.

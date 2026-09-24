@@ -13,6 +13,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "mcpkit/core/context.h"
 #include "mcpkit/core/error.h"
@@ -81,6 +82,78 @@ mcp_status_t mcp_pkce_generate(mcp_context_t *ctx,
 mcp_status_t mcp_oauth_metadata_parse(mcp_context_t *ctx,
                                       const mcp_json_value_t *json_metadata,
                                       mcp_oauth_metadata_t *out_metadata);
+
+/**
+ * @brief OAuth 2.0 / 2.1 Token Response (RFC 6749 Section 5.1).
+ */
+typedef struct mcp_oauth_token_response {
+    char *access_token;
+    char *token_type;
+    uint32_t expires_in;
+    char *refresh_token;
+    char *scope;
+} mcp_oauth_token_response_t;
+
+/**
+ * @brief Parses an OAuth 2.0 / 2.1 Token Response JSON string.
+ *
+ * @param ctx       Context; may be NULL.
+ * @param json_str  JSON string returned by the token endpoint.
+ * @param len       Length of json_str.
+ * @param resp_out  Receives populated token response. Caller frees via mcp_oauth_token_response_cleanup().
+ * @return MCP_OK on success;
+ *         MCP_ERR_INVALID_ARGUMENT on NULL args;
+ *         MCP_ERR_PROTOCOL if access_token or token_type is missing/invalid.
+ */
+mcp_status_t mcp_oauth_token_response_parse(mcp_context_t *ctx,
+                                            const char *json_str,
+                                            size_t len,
+                                            mcp_oauth_token_response_t *resp_out);
+
+/**
+ * @brief Frees allocated strings in mcp_oauth_token_response_t.
+ */
+void mcp_oauth_token_response_cleanup(mcp_context_t *ctx,
+                                      mcp_oauth_token_response_t *resp);
+
+/**
+ * @brief Builds application/x-www-form-urlencoded body for PKCE authorization code exchange.
+ *
+ * grant_type=authorization_code&code=...&code_verifier=...&redirect_uri=...&client_id=...
+ */
+mcp_status_t mcp_oauth_build_token_request_pkce(mcp_context_t *ctx,
+                                                const char *code,
+                                                const char *code_verifier,
+                                                const char *redirect_uri,
+                                                const char *client_id,
+                                                char **body_out);
+
+/**
+ * @brief Builds application/x-www-form-urlencoded body for token refresh (SEP-2207).
+ *
+ * grant_type=refresh_token&refresh_token=...&client_id=...&scope=...
+ */
+mcp_status_t mcp_oauth_build_refresh_request(mcp_context_t *ctx,
+                                             const char *refresh_token,
+                                             const char *client_id,
+                                             const char *scope,
+                                             char **body_out);
+
+/**
+ * @brief Builds application/x-www-form-urlencoded body for OAuth Client Credentials (SEP-1046).
+ *
+ * grant_type=client_credentials&client_id=...&client_secret=...&scope=...
+ */
+mcp_status_t mcp_oauth_build_client_credentials_request(mcp_context_t *ctx,
+                                                        const char *client_id,
+                                                        const char *client_secret,
+                                                        const char *scope,
+                                                        char **body_out);
+
+/**
+ * @brief Frees a string allocated by mcp_oauth_build_* functions.
+ */
+void mcp_oauth_free_string(mcp_context_t *ctx, char *str);
 
 #ifdef __cplusplus
 }
