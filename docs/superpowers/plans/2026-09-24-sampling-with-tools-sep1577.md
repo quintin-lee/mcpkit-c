@@ -30,7 +30,7 @@
 - Modify: `tests/CMakeLists.txt`
 - Modify: `src/CMakeLists.txt`
 
-- [ ] **Step 1: Write failing unit test in `tests/unit/test_sampling_tools.c`**
+- [x] **Step 1: Write failing unit test in `tests/unit/test_sampling_tools.c`**
 
 ```c
 #include <stdio.h>
@@ -90,7 +90,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Add test target to `tests/CMakeLists.txt` and verify compile failure**
+- [x] **Step 2: Add test target to `tests/CMakeLists.txt` and verify compile failure**
 
 ```cmake
 add_executable(test_sampling_tools unit/test_sampling_tools.c)
@@ -98,7 +98,7 @@ target_link_libraries(test_sampling_tools PRIVATE mcpkit_core)
 add_test(NAME test_sampling_tools COMMAND test_sampling_tools)
 ```
 
-- [ ] **Step 3: Define structs and APIs in `include/mcpkit/protocol/sampling.h`**
+- [x] **Step 3: Define structs and APIs in `include/mcpkit/protocol/sampling.h`**
 
 ```c
 typedef enum {
@@ -130,16 +130,16 @@ mcp_json_value_t *mcp_sampling_content_tool_result_new(mcp_context_t *ctx, const
                                                        const char *content, bool is_error);
 ```
 
-- [ ] **Step 4: Implement in `src/protocol/sampling.c` and add to `src/CMakeLists.txt`**
+- [x] **Step 4: Implement in `src/protocol/sampling.c` and add to `src/CMakeLists.txt`**
 
 Implement JSON construction, memory ownership handling, and error checking.
 
-- [ ] **Step 5: Run tests and verify PASS**
+- [x] **Step 5: Run tests and verify PASS**
 
 Run: `cmake --build build --target test_sampling_tools && ./build/tests/test_sampling_tools`
 Expected: `test_sampling_tools OK`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add include/mcpkit/protocol/sampling.h src/protocol/sampling.c src/CMakeLists.txt tests/unit/test_sampling_tools.c tests/CMakeLists.txt
@@ -155,20 +155,20 @@ git commit -m "feat(sampling): add Sampling with Tools (SEP-1577) data structure
 - Modify: `src/client/client.c`
 - Modify: `tests/unit/test_sampling_tools.c`
 
-- [ ] **Step 1: Write client sampling test with tools**
+- [x] **Step 1: Write client sampling test with tools**
 
 Simulate server-to-client request `sampling/createMessage` carrying `tools` and verify host callback receives the parsed tools and can return a `tool_use` response.
 
-- [ ] **Step 2: Update `client.h` and `client.c` provider handling**
+- [x] **Step 2: Update `client.h` and `client.c` provider handling**
 
 Extend `mcp_client_handle_server_request` to parse `tools` and `toolChoice` from `sampling/createMessage` params and pass them to the registered provider.
 
-- [ ] **Step 3: Run test suite & verify**
+- [x] **Step 3: Run test suite & verify**
 
 Run: `cmake --build build && ctest --test-dir build --output-on-failure`
 Expected: 100% tests PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add include/mcpkit/client/client.h src/client/client.c tests/unit/test_sampling_tools.c

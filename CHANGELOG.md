@@ -6,6 +6,10 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ### Added
 
+- Sampling with Tools (SEP-1577):
+  - Added protocol data structures, parameter builders, and inspection helpers (`mcp_sampling_params_new()`, `mcp_sampling_params_add_tool()`, `mcp_sampling_params_set_tool_choice()`, `mcp_sampling_params_get_tool_count()`, `mcp_sampling_params_get_tool_at()`, `mcp_sampling_params_get_tool_choice()`) in `mcpkit/protocol/sampling.h` and `src/protocol/sampling.c`.
+  - Added constructors for `tool_use` (`mcp_sampling_content_tool_use_new()`) and `tool_result` (`mcp_sampling_content_tool_result_new()`) content blocks.
+  - Added unit and client dispatch test coverage in `tests/unit/test_sampling_tools.c`.
 - MCP Registry Manifest & CLI Tooling (Official MCP Registry schema):
   - Added MCP Registry server manifest parser, validator, and serializer (`mcp_registry_manifest_parse()`, `mcp_registry_manifest_validate()`, `mcp_registry_manifest_serialize()`) in `mcpkit/protocol/registry.h` and `src/protocol/registry.c`.
   - Added CLI subcommands `manifest init [name]`, `manifest validate <file>`, `registry search <query>`, and `registry info <server-id>` in `tools/mcpkit-cli/main.c`.

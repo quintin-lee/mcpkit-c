@@ -511,6 +511,33 @@ void         mcp_registry_manifest_cleanup(mcp_context_t *ctx, mcp_registry_mani
 ```
 Parses, validates, and generates official MCP Registry server manifest documents (`mcp.json`) for discovering, installing, and publishing servers.
 
+### `sampling.h`
+Sampling with Tools extension protocol builders and parsers (SEP-1577):
+```c
+typedef enum {
+    MCP_TOOL_CHOICE_AUTO = 0,
+    MCP_TOOL_CHOICE_NONE,
+    MCP_TOOL_CHOICE_REQUIRED,
+    MCP_TOOL_CHOICE_SPECIFIC
+} mcp_sampling_tool_choice_t;
+
+typedef struct {
+    const char *name;
+    const char *description;
+    const mcp_json_value_t *input_schema;
+} mcp_sampling_tool_def_t;
+
+mcp_json_value_t *mcp_sampling_params_new(mcp_context_t *ctx, uint32_t max_tokens);
+mcp_status_t      mcp_sampling_params_add_tool(mcp_context_t *ctx, mcp_json_value_t *params, const mcp_sampling_tool_def_t *tool);
+mcp_status_t      mcp_sampling_params_set_tool_choice(mcp_context_t *ctx, mcp_json_value_t *params, mcp_sampling_tool_choice_t mode, const char *specific_tool_name);
+size_t            mcp_sampling_params_get_tool_count(mcp_context_t *ctx, const mcp_json_value_t *params);
+const mcp_json_value_t *mcp_sampling_params_get_tool_at(mcp_context_t *ctx, const mcp_json_value_t *params, size_t index);
+mcp_status_t      mcp_sampling_params_get_tool_choice(mcp_context_t *ctx, const mcp_json_value_t *params, mcp_sampling_tool_choice_t *out_mode, const char **out_specific_tool_name);
+mcp_json_value_t *mcp_sampling_content_tool_use_new(mcp_context_t *ctx, const char *id, const char *name, mcp_json_value_t *input);
+mcp_json_value_t *mcp_sampling_content_tool_result_new(mcp_context_t *ctx, const char *tool_use_id, const char *content, bool is_error);
+```
+Constructs and inspects `sampling/createMessage` requests carrying tool definitions and tool choice modes, and builds `tool_use` / `tool_result` content blocks for LLM message exchanges.
+
 ---
 
 ## Server (`mcpkit/server/`)
