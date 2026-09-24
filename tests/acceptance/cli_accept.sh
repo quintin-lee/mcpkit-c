@@ -31,4 +31,19 @@ case "$out" in *stdio-server*) ;; *) echo "FAIL: discover stdio-server missing s
 out="$("$APPS_HOST")"
 case "$out" in *"_meta"*"resourceUri"*) ;; *) echo "FAIL: apps-host demo missing _meta.ui"; exit 1 ;; esac
 
+# manifest and registry tooling
+TMP_MANIFEST="test_mcp.json"
+rm -f "$TMP_MANIFEST"
+"$CLI" manifest init "$TMP_MANIFEST"
+out="$("$CLI" manifest validate "$TMP_MANIFEST")"
+case "$out" in *valid*) ;; *) echo "FAIL: manifest validate failed"; rm -f "$TMP_MANIFEST"; exit 1 ;; esac
+rm -f "$TMP_MANIFEST"
+
+out="$("$CLI" registry search echo)"
+case "$out" in *echo*) ;; *) echo "FAIL: registry search missing echo"; exit 1 ;; esac
+
+out="$("$CLI" registry info "io.modelcontextprotocol/filesystem")"
+case "$out" in *filesystem*) ;; *) echo "FAIL: registry info missing filesystem"; exit 1 ;; esac
+
 echo "CLI acceptance: PASS"
+

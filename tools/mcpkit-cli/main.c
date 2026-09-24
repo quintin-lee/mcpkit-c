@@ -10,9 +10,11 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <ctype.h>
 #include <time.h>
 
 #include "mcpkit/mcpkit.h"
+#include "mcpkit/protocol/registry.h"
 #include "mcpkit/protocol/validate.h"
 
 typedef struct {
@@ -441,6 +443,287 @@ static int cmd_test(const char *server_bin) {
     return 0;
 }
 
+static int cmd_manifest_init(const char *arg) {
+    const char *filepath = "mcp.json";
+    char name_buf[128] = "mcp-server-c";
+
+    if (arg != NULL && arg[0] != '\0') {
+        if (strstr(arg, ".json") != NULL) {
+            filepath = arg;
+            const char *slash = strrchr(arg, '/');
+            const char *base = slash ? slash + 1 : arg;
+            snprintf(name_buf, sizeof(name_buf), "%s", base);
+            char *dot = strstr(name_buf, ".json");
+            if (dot != NULL) {
+                *dot = '\0';
+            }
+        } else {
+            snprintf(name_buf, sizeof(name_buf), "%s", arg);
+        }
+    }
+
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    if (ctx == NULL) {
+        fprintf(stderr, "error: failed to create context\n");
+        return 1;
+    }
+
+    mcp_registry_manifest_t m = {
+        .name = name_buf,
+        .version = "0.1.0",
+        .description = "MCP Server written in C",
+        .author = "",
+        .license = "MIT",
+        .repository = "",
+        .transport = MCP_TRANSPORT_KIND_STDIO,
+        .has_tools = true,
+        .has_resources = false,
+        .has_prompts = false
+    };
+
+    char *json = mcp_registry_manifest_serialize(ctx, &m);
+    if (json == NULL) {
+        fprintf(stderr, "error: failed to serialize manifest\n");
+        mcp_context_destroy(ctx);
+        return 1;
+    }
+
+    FILE *f = fopen(filepath, "w");
+    if (f == NULL) {
+        fprintf(stderr, "error: cannot open '%s' for writing: %s\n", filepath, strerror(errno));
+        mcp_registry_free_string(ctx, json);
+        mcp_context_destroy(ctx);
+        return 1;
+    }
+    fputs(json, f);
+    fputc('\n', f);
+    fclose(f);
+
+    mcp_registry_free_string(ctx, json);
+    mcp_context_destroy(ctx);
+
+    printf("Initialized MCP manifest in %s\n", filepath);
+    return 0;
+}
+
+static int cmd_manifest_validate(const char *filepath) {
+    if (filepath == NULL || filepath[0] == '\0') {
+        fprintf(stderr, "usage: mcpkit-cli manifest validate <file>\n");
+        return 2;
+    }
+
+    FILE *f = fopen(filepath, "rb");
+    if (f == NULL) {
+        fprintf(stderr, "error: cannot open '%s': %s\n", filepath, strerror(errno));
+        return 1;
+    }
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (sz < 0 || sz > 10 * 1024 * 1024) {
+        fclose(f);
+        fprintf(stderr, "error: invalid file size for '%s'\n", filepath);
+        return 1;
+    }
+    char *buf = malloc((size_t)sz + 1);
+    if (buf == NULL) {
+        fclose(f);
+        fprintf(stderr, "error: out of memory reading '%s'\n", filepath);
+        return 1;
+    }
+    size_t nread = fread(buf, 1, (size_t)sz, f);
+    fclose(f);
+    buf[nread] = '\0';
+
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    if (ctx == NULL) {
+        free(buf);
+        fprintf(stderr, "error: context allocation failed\n");
+        return 1;
+    }
+
+    mcp_registry_manifest_t m;
+    memset(&m, 0, sizeof(m));
+    mcp_status_t st = mcp_registry_manifest_parse(ctx, buf, nread, &m);
+    free(buf);
+
+    if (st != MCP_OK) {
+        fprintf(stderr, "Validation failed: JSON parse error or malformed manifest (%s)\n",
+                mcp_status_string(st));
+        mcp_context_destroy(ctx);
+        return 1;
+    }
+
+    char err_buf[128] = {0};
+    st = mcp_registry_manifest_validate(ctx, &m, err_buf);
+    if (st != MCP_OK) {
+        fprintf(stderr, "Validation failed: %s\n", err_buf[0] ? err_buf : mcp_status_string(st));
+        mcp_registry_manifest_cleanup(ctx, &m);
+        mcp_context_destroy(ctx);
+        return 1;
+    }
+
+    printf("Manifest is valid: %s (v%s)\n", m.name, m.version);
+    mcp_registry_manifest_cleanup(ctx, &m);
+    mcp_context_destroy(ctx);
+    return 0;
+}
+
+typedef struct {
+    const char *id;
+    const char *name;
+    const char *version;
+    const char *description;
+    const char *transport;
+    const char *repository;
+    bool tools;
+    bool resources;
+    bool prompts;
+} registry_entry_t;
+
+static const registry_entry_t kRegistryCatalog[] = {
+    {
+        .id = "io.modelcontextprotocol/filesystem",
+        .name = "filesystem",
+        .version = "1.2.0",
+        .description = "Secure filesystem access tools (read, write, list, search)",
+        .transport = "stdio",
+        .repository = "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+        .tools = true,
+        .resources = false,
+        .prompts = false
+    },
+    {
+        .id = "io.modelcontextprotocol/sqlite",
+        .name = "sqlite",
+        .version = "1.1.0",
+        .description = "SQLite database querying and schema inspection",
+        .transport = "stdio",
+        .repository = "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
+        .tools = true,
+        .resources = true,
+        .prompts = false
+    },
+    {
+        .id = "io.modelcontextprotocol/fetch",
+        .name = "fetch",
+        .version = "1.0.4",
+        .description = "Web content fetching and conversion for LLM consumption",
+        .transport = "stdio",
+        .repository = "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+        .tools = true,
+        .resources = false,
+        .prompts = false
+    },
+    {
+        .id = "io.modelcontextprotocol/git",
+        .name = "git",
+        .version = "1.0.2",
+        .description = "Git repository operations and commit history inspection",
+        .transport = "stdio",
+        .repository = "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+        .tools = true,
+        .resources = false,
+        .prompts = false
+    },
+    {
+        .id = "io.modelcontextprotocol/echo",
+        .name = "echo",
+        .version = "1.0.0",
+        .description = "Diagnostic echo server for Model Context Protocol",
+        .transport = "stdio",
+        .repository = "https://github.com/modelcontextprotocol/servers/tree/main/src/echo",
+        .tools = true,
+        .resources = true,
+        .prompts = true
+    },
+    {
+        .id = "mcpkit/echo-server",
+        .name = "mcpkit-echo",
+        .version = "0.2.0",
+        .description = "High-performance zero-dependency C MCP reference echo server",
+        .transport = "stdio",
+        .repository = "https://github.com/modelcontextprotocol/mcpkit-c",
+        .tools = true,
+        .resources = false,
+        .prompts = false
+    }
+};
+
+static const size_t kRegistryCatalogCount = sizeof(kRegistryCatalog) / sizeof(kRegistryCatalog[0]);
+
+static bool str_contains_ci(const char *haystack, const char *needle) {
+    if (!haystack || !needle) return false;
+    if (needle[0] == '\0') return true;
+    size_t nlen = strlen(needle);
+    size_t hlen = strlen(haystack);
+    if (nlen > hlen) return false;
+    for (size_t i = 0; i <= hlen - nlen; i++) {
+        bool match = true;
+        for (size_t j = 0; j < nlen; j++) {
+            if (tolower((unsigned char)haystack[i + j]) != tolower((unsigned char)needle[j])) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
+static int cmd_registry_search(const char *query) {
+    printf("%-38s %-10s %s\n", "NAME / ID", "TRANSPORT", "DESCRIPTION");
+    printf("%-38s %-10s %s\n", "--------------------------------------", "----------", "----------------------------------------");
+    size_t matches = 0;
+    for (size_t i = 0; i < kRegistryCatalogCount; i++) {
+        const registry_entry_t *e = &kRegistryCatalog[i];
+        if (query == NULL || query[0] == '\0' || strcmp(query, "*") == 0 ||
+            str_contains_ci(e->id, query) ||
+            str_contains_ci(e->name, query) ||
+            str_contains_ci(e->description, query)) {
+            printf("%-38s %-10s %s\n", e->id, e->transport, e->description);
+            matches++;
+        }
+    }
+    if (matches == 0) {
+        printf("No servers found matching '%s'\n", query ? query : "");
+    } else {
+        printf("\nFound %zu server(s).\n", matches);
+    }
+    return 0;
+}
+
+static int cmd_registry_info(const char *server_id) {
+    if (server_id == NULL || server_id[0] == '\0') {
+        fprintf(stderr, "usage: mcpkit-cli registry info <server-id>\n");
+        return 2;
+    }
+    const registry_entry_t *found = NULL;
+    for (size_t i = 0; i < kRegistryCatalogCount; i++) {
+        if (strcmp(kRegistryCatalog[i].id, server_id) == 0 ||
+            strcmp(kRegistryCatalog[i].name, server_id) == 0) {
+            found = &kRegistryCatalog[i];
+            break;
+        }
+    }
+    if (found == NULL) {
+        fprintf(stderr, "Package '%s' not found in registry\n", server_id);
+        return 1;
+    }
+    printf("Package:      %s\n", found->id);
+    printf("Name:         %s\n", found->name);
+    printf("Version:      %s\n", found->version);
+    printf("Transport:    %s\n", found->transport);
+    printf("Repository:   %s\n", found->repository);
+    printf("Description:  %s\n", found->description);
+    printf("Capabilities: tools=%s, resources=%s, prompts=%s\n",
+           found->tools ? "true" : "false",
+           found->resources ? "true" : "false",
+           found->prompts ? "true" : "false");
+    printf("Install:      mcpkit-cli install %s\n", found->id);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     /* A closed peer must surface as EPIPE/MCP_ERR_IO, not a SIGPIPE kill. */
     signal(SIGPIPE, SIG_IGN);
@@ -450,10 +733,55 @@ int main(int argc, char **argv) {
                 "       mcpkit-cli inspect <server-bin>\n"
                 "       mcpkit-cli call <server-bin> <tool> [args-json]\n"
                 "       mcpkit-cli listen <server-bin> [filter] [timeout_sec]\n"
+                "       mcpkit-cli manifest init [name]\n"
+                "       mcpkit-cli manifest validate <file>\n"
+                "       mcpkit-cli registry search <query>\n"
+                "       mcpkit-cli registry info <server-id>\n"
                 "       mcpkit-cli validate <file>\n"
                 "       mcpkit-cli test <server-bin>\n");
         return 2;
     }
+
+    if (strcmp(argv[1], "manifest") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "usage: mcpkit-cli manifest init [name]\n"
+                            "       mcpkit-cli manifest validate <file>\n");
+            return 2;
+        }
+        if (strcmp(argv[2], "init") == 0) {
+            return cmd_manifest_init(argc >= 4 ? argv[3] : NULL);
+        }
+        if (strcmp(argv[2], "validate") == 0) {
+            if (argc < 4) {
+                fprintf(stderr, "usage: mcpkit-cli manifest validate <file>\n");
+                return 2;
+            }
+            return cmd_manifest_validate(argv[3]);
+        }
+        fprintf(stderr, "mcpkit-cli: unknown manifest action '%s'\n", argv[2]);
+        return 2;
+    }
+
+    if (strcmp(argv[1], "registry") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "usage: mcpkit-cli registry search <query>\n"
+                            "       mcpkit-cli registry info <server-id>\n");
+            return 2;
+        }
+        if (strcmp(argv[2], "search") == 0) {
+            return cmd_registry_search(argc >= 4 ? argv[3] : "");
+        }
+        if (strcmp(argv[2], "info") == 0) {
+            if (argc < 4) {
+                fprintf(stderr, "usage: mcpkit-cli registry info <server-id>\n");
+                return 2;
+            }
+            return cmd_registry_info(argv[3]);
+        }
+        fprintf(stderr, "mcpkit-cli: unknown registry action '%s'\n", argv[2]);
+        return 2;
+    }
+
     if (argc < 3) {
         fprintf(stderr, "mcpkit-cli: missing argument\n");
         return 2;
