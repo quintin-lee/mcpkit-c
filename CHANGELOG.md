@@ -6,6 +6,18 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ### Added
 
+- Tasks Extension (`io.modelcontextprotocol/tasks`, SEP-2663):
+  - Protocol data structures in `mcpkit/protocol/tasks.h`: `mcp_task_status_t` (`working`, `input_required`, `completed`, `failed`, `cancelled`), `mcp_task_desc_t`, and task manager `mcp_task_mgr_t`.
+  - Server integration: `mcp_server_enable_tasks()`, `mcp_server_get_task_mgr()`, dispatcher routes `tasks/get`, `tasks/update`, `tasks/cancel`, and dynamic capability advertising under `capabilities.extensions["io.modelcontextprotocol/tasks"]` in `server/discover`.
+  - Client helper APIs: `mcp_client_tasks_get()`, `mcp_client_tasks_update()`, and `mcp_client_tasks_cancel()`.
+  - L3 validation requiring string `taskId` parameter.
+- Skills Extension (`io.modelcontextprotocol/skills`, SEP-2640):
+  - Protocol data structures in `mcpkit/protocol/skills.h`: `mcp_skill_resource_t`, `mcp_skill_t`, and `mcp_skill_registry_t` for managing agent tool and workflow skill manifests.
+  - Server integration: `mcp_server_enable_skills()`, `mcp_server_get_skill_registry()`, dispatcher routes `skills/list` (paginated with `CacheableResult` metadata) and `skills/get` (lookup by name or URI), and dynamic capability advertising under `capabilities.extensions["io.modelcontextprotocol/skills"]` in `server/discover`.
+  - Client helper APIs: `mcp_client_skills_list()` and `mcp_client_skills_get()`.
+  - L3 validation requiring string `name` or `uri`.
+- W3C Trace Context Propagation (SEP-414):
+  - `mcp_trace_extract_from_meta()` and `mcp_trace_inject_into_meta()` in `mcpkit/core/trace.h` for extracting and injecting W3C `traceparent`, `tracestate`, and `baggage` fields in `_meta` JSON objects.
 - CI: `ci-fuzz` workflow builds with `-DMCPKIT_BUILD_FUZZ=ON` and drives
   the four stdin fuzz harnesses against valid/invalid/empty inputs via
   `tests/fuzz/fuzz_run.sh`; a crash (rc >= 128) fails the job.

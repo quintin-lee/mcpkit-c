@@ -68,6 +68,25 @@ void mcp_shutdown_clear(void);     /* host calls explicitly before a run */
 `MCP_ERR_CANCELLED` once the flag is set. Pair with a finite recv timeout
 so an idle loop wakes up promptly.
 
+### `trace.h`
+W3C Trace Context propagation helpers (SEP-414):
+```c
+typedef struct mcp_trace_context {
+    char traceparent[64]; /* W3C traceparent (version-traceid-parentid-traceflags) */
+    char tracestate[256]; /* W3C tracestate vendor list */
+    char baggage[512];    /* W3C baggage key-value pairs */
+} mcp_trace_context_t;
+
+mcp_status_t mcp_trace_extract_from_meta(mcp_context_t *ctx,
+                                         const mcp_json_value_t *meta,
+                                         mcp_trace_context_t *out);
+
+mcp_status_t mcp_trace_inject_into_meta(mcp_context_t *ctx,
+                                        mcp_json_value_t *meta,
+                                        const mcp_trace_context_t *trace);
+```
+Extracts and injects `traceparent`, `tracestate`, and `baggage` fields within `_meta` JSON objects.
+
 ---
 
 ## Logging (`mcpkit/logging/`)
@@ -329,6 +348,55 @@ mcp_status_t mcp_mrtr_state_unpack_raw(ctx, const char *state_str,
                                        const uint8_t *key, size_t key_len,
                                        void **data_out, size_t *data_len_out);
 void         mcp_mrtr_state_free(ctx, char *state);
+```
+
+### `tasks.h`
+Official MCP Tasks extension (SEP-2663, `io.modelcontextprotocol/tasks`):
+```c
+typedef enum mcp_task_status {
+    MCP_TASK_STATUS_WORKING = 0,
+    MCP_TASK_STATUS_INPUT_REQUIRED = 1,
+    MCP_TASK_STATUS_COMPLETED = 2,
+    MCP_TASK_STATUS_FAILED = 3,
+    MCP_TASK_STATUS_CANCELLED = 4
+} mcp_task_status_t;
+
+const char   *mcp_task_status_to_string(mcp_task_status_t status);
+mcp_status_t  mcp_task_status_from_string(const char *str, mcp_task_status_t *out_status);
+
+mcp_task_desc_t *mcp_task_desc_create(mcp_context_t *ctx, const char *task_id);
+void             mcp_task_desc_destroy(mcp_context_t *ctx, mcp_task_desc_t *desc);
+mcp_json_value_t *mcp_task_desc_to_json(mcp_context_t *ctx, const mcp_task_desc_t *desc);
+
+mcp_task_mgr_t  *mcp_task_mgr_create(mcp_context_t *ctx);
+void             mcp_task_mgr_free(mcp_context_t *ctx, mcp_task_mgr_t *mgr);
+mcp_task_desc_t *mcp_task_mgr_create_task(mcp_context_t *ctx, mcp_task_mgr_t *mgr, const char *task_id);
+const mcp_task_desc_t *mcp_task_mgr_get(mcp_context_t *ctx, mcp_task_mgr_t *mgr, const char *task_id);
+mcp_status_t     mcp_task_mgr_set_status(mcp_context_t *ctx, mcp_task_mgr_t *mgr, const char *task_id, mcp_task_status_t status);
+mcp_status_t     mcp_task_mgr_set_result(mcp_context_t *ctx, mcp_task_mgr_t *mgr, const char *task_id, mcp_json_value_t *result);
+mcp_status_t     mcp_task_mgr_set_error(mcp_context_t *ctx, mcp_task_mgr_t *mgr, const char *task_id, int code, const char *message);
+mcp_status_t     mcp_task_mgr_set_input_requests(mcp_context_t *ctx, mcp_task_mgr_t *mgr, const char *task_id, mcp_json_value_t *requests);
+mcp_status_t     mcp_task_mgr_cancel(mcp_context_t *ctx, mcp_task_mgr_t *mgr, const char *task_id);
+```
+
+### `skills.h`
+Official MCP Skills extension (SEP-2640, `io.modelcontextprotocol/skills`):
+```c
+mcp_skill_resource_t *mcp_skill_resource_create(mcp_context_t *ctx, const char *path, const char *content);
+void                  mcp_skill_resource_destroy(mcp_context_t *ctx, mcp_skill_resource_t *res);
+
+mcp_skill_t *mcp_skill_create(mcp_context_t *ctx, const char *name, const char *uri, const char *description);
+void         mcp_skill_destroy(mcp_context_t *ctx, mcp_skill_t *skill);
+mcp_status_t mcp_skill_add_resource(mcp_context_t *ctx, mcp_skill_t *skill, mcp_skill_resource_t *res);
+mcp_json_value_t *mcp_skill_to_json(mcp_context_t *ctx, const mcp_skill_t *skill);
+
+mcp_skill_registry_t *mcp_skill_registry_create(mcp_context_t *ctx);
+void                  mcp_skill_registry_free(mcp_context_t *ctx, mcp_skill_registry_t *reg);
+mcp_status_t          mcp_skill_registry_add(mcp_context_t *ctx, mcp_skill_registry_t *reg, mcp_skill_t *skill);
+const mcp_skill_t    *mcp_skill_registry_find(mcp_context_t *ctx, const mcp_skill_registry_t *reg, const char *name);
+const mcp_skill_t    *mcp_skill_registry_find_by_uri(mcp_context_t *ctx, const mcp_skill_registry_t *reg, const char *uri);
+size_t                mcp_skill_registry_count(mcp_context_t *ctx, const mcp_skill_registry_t *reg);
+const mcp_skill_t    *mcp_skill_registry_get_at(mcp_context_t *ctx, const mcp_skill_registry_t *reg, size_t index);
 ```
 
 ---
@@ -696,6 +764,13 @@ int          mcp_client_get_prompt(ctx, c, const char *name,
 int          mcp_client_subscriptions_listen(ctx, c, mcp_json_value_t *filter, mcp_message_t **ack_out);
 int          mcp_client_cancel_subscription(ctx, c, const char *subscription_id);
 int          mcp_client_recv_message(ctx, c, mcp_message_t **msg_out);
+
+/* Tasks & Skills extensions (SEP-2663, SEP-2640) */
+int          mcp_client_tasks_get(ctx, c, const char *task_id, mcp_json_value_t **result_out);
+int          mcp_client_tasks_update(ctx, c, const char *task_id, mcp_json_value_t *input_responses, mcp_json_value_t **result_out);
+int          mcp_client_tasks_cancel(ctx, c, const char *task_id, mcp_json_value_t **result_out);
+int          mcp_client_skills_list(ctx, c, const char *cursor, mcp_json_value_t **result_out);
+int          mcp_client_skills_get(ctx, c, const char *name_or_uri, mcp_json_value_t **result_out);
 
 /* Low-level request: any method; result_out may be NULL.
    mcp_status_t: OK on success (result_out set), MCP_ERR_PROTOCOL on
