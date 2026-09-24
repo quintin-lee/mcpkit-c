@@ -50,6 +50,7 @@ set(MCPKIT_CORE_SOURCES
   src/protocol/content.c
   src/protocol/uri_template.c
   src/protocol/registry.c
+  src/protocol/sampling.c
   src/server/server.c
   src/server/registry.c
   src/server/session.c

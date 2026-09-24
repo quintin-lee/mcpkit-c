@@ -252,6 +252,10 @@ add_executable(test_registry_manifest unit/test_registry_manifest.c)
 target_link_libraries(test_registry_manifest PRIVATE mcpkit_core)
 add_test(NAME test_registry_manifest COMMAND test_registry_manifest)
 
+add_executable(test_sampling_tools unit/test_sampling_tools.c)
+target_link_libraries(test_sampling_tools PRIVATE mcpkit_core)
+add_test(NAME test_sampling_tools COMMAND test_sampling_tools)
+
 
 if(MCPKIT_BUILD_TLS)
   # Generate a self-signed cert in the build directory for the TLS test.
