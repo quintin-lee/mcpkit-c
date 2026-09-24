@@ -318,8 +318,8 @@ static uint8_t *b64url_decode(const mcp_allocator_t *a, const char *str, size_t 
         }
     }
 
-    if (bits >= 6) {
-        /* Incomplete/dangling 6-bit sextet (invalid base64) */
+    if (bits >= 6 || (bits > 0 && (val & ((1U << bits) - 1)) != 0)) {
+        /* Incomplete/dangling sextet or non-zero padding bits (invalid base64) */
         a->free_fn(buf, a->userdata);
         return NULL;
     }

@@ -106,10 +106,12 @@ mcp_session_t *mcp_server_create_session(mcp_context_t *ctx, mcp_server_t *srv) 
     if (s == NULL) {
         return NULL;
     }
+    pthread_mutex_lock(&srv->sessions_lock);
     if (srv->n_sessions == srv->cap_sessions) {
         size_t ncap = srv->cap_sessions == 0 ? 4 : srv->cap_sessions * 2;
         mcp_session_t **narr = srv_realloc(ctx, srv->sessions, ncap * sizeof(*narr));
         if (narr == NULL) {
+            pthread_mutex_unlock(&srv->sessions_lock);
             session_free(ctx, s);
             return NULL;
         }
@@ -117,6 +119,7 @@ mcp_session_t *mcp_server_create_session(mcp_context_t *ctx, mcp_server_t *srv) 
         srv->cap_sessions = ncap;
     }
     srv->sessions[srv->n_sessions++] = s;
+    pthread_mutex_unlock(&srv->sessions_lock);
     return s;
 }
 
@@ -124,13 +127,16 @@ void mcp_server_destroy_session(mcp_context_t *ctx, mcp_server_t *srv, mcp_sessi
     if (srv == NULL || session == NULL) {
         return;
     }
+    pthread_mutex_lock(&srv->sessions_lock);
     for (size_t i = 0; i < srv->n_sessions; i++) {
         if (srv->sessions[i] == session) {
             srv->sessions[i] = srv->sessions[--srv->n_sessions];
+            pthread_mutex_unlock(&srv->sessions_lock);
             session_free(ctx, session);
             return;
         }
     }
+    pthread_mutex_unlock(&srv->sessions_lock);
 }
 
 bool mcp_session_has_active_subscription(mcp_context_t *ctx, const mcp_session_t *session) {

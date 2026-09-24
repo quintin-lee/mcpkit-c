@@ -64,6 +64,7 @@ mcp_server_t *mcp_server_create(mcp_context_t *ctx, const char *name, const char
     atomic_init(&srv->c_tools_called, 0);
     atomic_init(&srv->log_floor, MCP_LOG_DEBUG);
     pthread_mutex_init(&srv->subscribed_lock, NULL);
+    pthread_mutex_init(&srv->sessions_lock, NULL);
     srv->next_server_id = 1000.0;
     srv->list_ttl_ms = 0;
     srv->list_cache_scope = NULL;
@@ -101,10 +102,15 @@ static void free_all_prompts(mcp_context_t *ctx, mcp_server_t *srv) {
 }
 
 static void free_all_sessions(mcp_context_t *ctx, mcp_server_t *srv) {
+    pthread_mutex_lock(&srv->sessions_lock);
     for (size_t i = 0; i < srv->n_sessions; i++) {
         session_free(ctx, srv->sessions[i]);
     }
     srv_free(ctx, srv->sessions);
+    srv->sessions = NULL;
+    srv->n_sessions = 0;
+    srv->cap_sessions = 0;
+    pthread_mutex_unlock(&srv->sessions_lock);
 }
 
 static void free_all_completions(mcp_context_t *ctx, mcp_server_t *srv) {
@@ -158,6 +164,7 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     mcp_json_destroy(ctx, srv->response_meta);
     srv_free(ctx, srv->list_cache_scope);
     pthread_mutex_destroy(&srv->subscribed_lock);
+    pthread_mutex_destroy(&srv->sessions_lock);
     srv_free(ctx, srv->name);
     srv_free(ctx, srv->version);
     srv_free(ctx, srv);
