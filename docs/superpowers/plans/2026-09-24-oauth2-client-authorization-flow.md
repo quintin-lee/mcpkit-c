@@ -29,7 +29,7 @@
 - Create: `tests/unit/test_auth_client.c`
 - Modify: `tests/CMakeLists.txt`
 
-- [ ] **Step 1: Write failing unit test in `tests/unit/test_auth_client.c`**
+- [x] **Step 1: Write failing unit test in `tests/unit/test_auth_client.c`**
 
 ```c
 #include <stdio.h>
@@ -88,7 +88,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Add executable to `tests/CMakeLists.txt` and verify compile failure**
+- [x] **Step 2: Add executable to `tests/CMakeLists.txt` and verify compile failure**
 
 Add:
 ```cmake
@@ -99,7 +99,7 @@ add_test(NAME test_auth_client COMMAND test_auth_client)
 Run: `cmake --build build --target test_auth_client`
 Expected: Compile failure due to missing token functions in `auth.h`.
 
-- [ ] **Step 3: Define structs and APIs in `include/mcpkit/core/auth.h`**
+- [x] **Step 3: Define structs and APIs in `include/mcpkit/core/auth.h`**
 
 ```c
 typedef struct {
@@ -127,16 +127,16 @@ mcp_status_t mcp_oauth_build_client_credentials_request(mcp_context_t *ctx, cons
                                                         char **body_out);
 ```
 
-- [ ] **Step 4: Implement functions in `src/core/auth.c`**
+- [x] **Step 4: Implement functions in `src/core/auth.c`**
 
 Implement URL encoding, query string assembly, JSON parsing, and memory management.
 
-- [ ] **Step 5: Run tests and verify PASS**
+- [x] **Step 5: Run tests and verify PASS**
 
 Run: `cmake --build build --target test_auth_client && ./build/tests/test_auth_client`
 Expected: `test_auth_client OK`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add include/mcpkit/core/auth.h src/core/auth.c tests/unit/test_auth_client.c tests/CMakeLists.txt
@@ -152,12 +152,12 @@ git commit -m "feat(auth): add OAuth 2.1 token response parsing and request buil
 - Modify: `src/client/client.c`
 - Modify: `tests/unit/test_auth_client.c`
 
-- [ ] **Step 1: Write test for client token management**
+- [x] **Step 1: Write test for client token management**
 
 Add test case in `tests/unit/test_auth_client.c`:
 Verify `mcp_client_set_bearer_token()` stores and retrieves the Bearer token, and that headers or transport meta are decorated with `Authorization: Bearer <token>`.
 
-- [ ] **Step 2: Declare token APIs in `include/mcpkit/client/client.h`**
+- [x] **Step 2: Declare token APIs in `include/mcpkit/client/client.h`**
 
 ```c
 mcp_status_t mcp_client_set_bearer_token(mcp_context_t *ctx, mcp_client_t *client,
@@ -165,16 +165,16 @@ mcp_status_t mcp_client_set_bearer_token(mcp_context_t *ctx, mcp_client_t *clien
 const char *mcp_client_get_bearer_token(mcp_context_t *ctx, const mcp_client_t *client);
 ```
 
-- [ ] **Step 3: Implement in `src/client/client.c`**
+- [x] **Step 3: Implement in `src/client/client.c`**
 
 Add `bearer_token` string to `struct mcp_client` and cleanup upon destruction.
 
-- [ ] **Step 4: Run test suite & verify**
+- [x] **Step 4: Run test suite & verify**
 
 Run: `cmake --build build --target test_auth_client && ./build/tests/test_auth_client`
 Expected: PASS with 0 memory errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add include/mcpkit/client/client.h src/client/client.c tests/unit/test_auth_client.c

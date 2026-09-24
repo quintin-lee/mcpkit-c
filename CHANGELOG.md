@@ -6,6 +6,10 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ### Added
 
+- OAuth 2.1 Client Authorization Flow (SEP-2207, SEP-1046, RFC 7636):
+  - Added OAuth 2.1 token response parsing (`mcp_oauth_token_response_parse()`, `mcp_oauth_token_response_cleanup()`) and URL-encoded request body builders (`mcp_oauth_build_token_request_pkce()`, `mcp_oauth_build_refresh_request()`, `mcp_oauth_build_client_credentials_request()`) in `mcpkit/core/auth.h` and `src/core/auth.c`.
+  - Added Bearer token management in `mcpkit/client/client.h` and `src/client/client.c` (`mcp_client_set_bearer_token()`, `mcp_client_get_bearer_token()`).
+  - Added unit test coverage in `tests/unit/test_auth_client.c`.
 - Developer CLI Inspector Subcommands (`discover` & `listen`) and C SDK Discovery API:
   - Added `mcpkit-cli discover <server-bin>` to statelessly probe server capabilities (`server/discover`) without requiring an `initialize` handshake.
   - Added `mcpkit-cli listen <server-bin> [filter] [timeout_sec]` to stream real-time events via `subscriptions/listen` with flexible filtering (`tools`, `prompts`, `resources`, `all`, resource URIs, or raw JSON), periodic timeout detection, signal handling (`SIGINT`/`SIGTERM`), and graceful cancellation (`notifications/cancelled`).

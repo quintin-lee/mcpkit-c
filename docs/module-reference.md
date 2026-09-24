@@ -108,8 +108,34 @@ typedef struct mcp_oauth_metadata {
 mcp_status_t mcp_oauth_metadata_parse(mcp_context_t *ctx,
                                       const mcp_json_value_t *json_metadata,
                                       mcp_oauth_metadata_t *out_metadata);
+
+typedef struct {
+    char *access_token;
+    char *token_type;
+    uint32_t expires_in;
+    char *refresh_token;
+    char *scope;
+} mcp_oauth_token_response_t;
+
+mcp_status_t mcp_oauth_token_response_parse(mcp_context_t *ctx, const char *json, size_t len,
+                                            mcp_oauth_token_response_t *resp_out);
+void mcp_oauth_token_response_cleanup(mcp_context_t *ctx, mcp_oauth_token_response_t *resp);
+void mcp_oauth_free_string(mcp_context_t *ctx, char *str);
+
+mcp_status_t mcp_oauth_build_token_request_pkce(mcp_context_t *ctx, const char *code,
+                                                const char *code_verifier, const char *redirect_uri,
+                                                const char *client_id, char **body_out);
+
+mcp_status_t mcp_oauth_build_refresh_request(mcp_context_t *ctx, const char *refresh_token,
+                                             const char *client_id, const char *scope,
+                                             char **body_out);
+
+mcp_status_t mcp_oauth_build_client_credentials_request(mcp_context_t *ctx, const char *client_id,
+                                                        const char *client_secret, const char *scope,
+                                                        char **body_out);
 ```
-Computes unpadded Base64URL SHA-256 S256 code challenge from a code verifier (verified against RFC 7636 test vectors), generates cryptographically secure verifiers, and parses RFC 8414 OAuth 2.0 / 2.1 metadata objects.
+Computes unpadded Base64URL SHA-256 S256 code challenge from a code verifier (verified against RFC 7636 test vectors), generates cryptographically secure verifiers, parses RFC 8414 OAuth 2.0 / 2.1 metadata objects, parses token responses, and builds urlencoded token exchange, refresh (SEP-2207), and client credentials (SEP-1046) request bodies.
+
 
 ---
 
@@ -869,6 +895,11 @@ void         mcp_client_set_sample_provider(ctx, c, mcp_client_sample_fn fn, voi
 void         mcp_client_set_elicitation_provider(ctx, c, mcp_client_elicitation_fn fn, void *ud);
 int          mcp_client_handle_server_request(ctx, c, const mcp_message_t *req,
                                               mcp_message_t **resp_out);
+
+/* OAuth 2.1 Bearer token management */
+mcp_status_t mcp_client_set_bearer_token(mcp_context_t *ctx, mcp_client_t *client,
+                                         const char *bearer_token);
+const char  *mcp_client_get_bearer_token(mcp_context_t *ctx, const mcp_client_t *client);
 ```
 
 ---
