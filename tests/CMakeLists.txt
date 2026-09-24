@@ -240,6 +240,10 @@ add_executable(test_sse_parser unit/test_sse_parser.c)
 target_link_libraries(test_sse_parser PRIVATE mcpkit_core)
 add_test(NAME test_sse_parser COMMAND test_sse_parser)
 
+add_executable(test_auth_pkce unit/test_auth_pkce.c)
+target_link_libraries(test_auth_pkce PRIVATE mcpkit_core)
+add_test(NAME test_auth_pkce COMMAND test_auth_pkce)
+
 if(MCPKIT_BUILD_TLS)
   # Generate a self-signed cert in the build directory for the TLS test.
   # The cert is written to the tests/ subdirectory of the build tree.

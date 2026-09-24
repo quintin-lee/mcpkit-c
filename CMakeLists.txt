@@ -35,6 +35,7 @@ set(MCPKIT_CORE_SOURCES
   src/core/context.c
   src/core/shutdown.c
   src/core/trace.c
+  src/core/auth.c
   src/logging/logger.c
   src/json/builtin.c
   src/json/api.c
