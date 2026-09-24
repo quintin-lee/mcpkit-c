@@ -859,6 +859,24 @@ void mcp_client_set_roots_provider(mcp_context_t *ctx, mcp_client_t *c,
     c->roots_ud = user_data;
 }
 
+mcp_status_t mcp_client_notify_roots_list_changed(mcp_context_t *ctx, mcp_client_t *client) {
+    if (client == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_message_t *ntf = mcp_notification_new(ctx, "notifications/roots/list_changed", NULL);
+    if (ntf == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    char *out = mcp_message_serialize(ctx, ntf);
+    mcp_message_destroy(ctx, ntf);
+    if (out == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_status_t st = mcp_transport_send(ctx, client->t, out, strlen(out));
+    mcp_json_free_string(ctx, out);
+    return st;
+}
+
 void mcp_client_set_sample_provider(mcp_context_t *ctx, mcp_client_t *c,
                                     mcp_client_sample_fn fn, void *user_data) {
     (void)ctx;

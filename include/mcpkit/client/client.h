@@ -406,6 +406,18 @@ void mcp_client_set_roots_provider(mcp_context_t *ctx, mcp_client_t *c,
                                    mcp_client_roots_fn fn, void *user_data);
 
 /**
+ * @brief Emits a notifications/roots/list_changed notification to the server.
+ *
+ * Informs the server that the client's list of roots has changed, prompting
+ * the server to re-query via roots/list.
+ *
+ * @param ctx    Context; may be NULL.
+ * @param client Initialized and connected client instance; must not be NULL.
+ * @return MCP_OK on success, or transport write error.
+ */
+mcp_status_t mcp_client_notify_roots_list_changed(mcp_context_t *ctx, mcp_client_t *client);
+
+/**
  * @brief Host-injected callback that responds to a sampling/createMessage
  *        request sent by the server to the client.
  *

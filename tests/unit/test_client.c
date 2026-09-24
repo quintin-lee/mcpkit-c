@@ -308,6 +308,11 @@ int main(void) {
     CHECK(strstr(fake2.sent, "\"method\":\"skills/get\"") != NULL);
     CHECK(strstr(fake2.sent, "\"uri\":\"skills://code-search\"") != NULL);
 
+    // 7. notifications/roots/list_changed
+    CHECK(mcp_client_notify_roots_list_changed(ctx, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_notify_roots_list_changed(ctx, c2) == MCP_OK);
+    CHECK(strstr(fake2.sent, "\"method\":\"notifications/roots/list_changed\"") != NULL);
+    CHECK(strstr(fake2.sent, "\"id\":") == NULL);
 
     mcp_client_destroy(ctx, c2);
     mcp_transport_destroy(ctx, t2);
