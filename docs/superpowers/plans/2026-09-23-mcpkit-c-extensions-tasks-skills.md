@@ -1,6 +1,6 @@
 # Tasks, Skills & OpenTelemetry Trace Context Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Implement the official MCP Tasks extension (`io.modelcontextprotocol/tasks`, SEP-2663), Skills extension (`io.modelcontextprotocol/skills`, SEP-2640), and OpenTelemetry W3C Trace Context propagation (`_meta.traceparent`, SEP-414) in pure C99 with zero external dependencies.
 
@@ -64,7 +64,7 @@ Implement OpenTelemetry W3C Trace Context (`traceparent`, `tracestate`, `baggage
 - Create: `tests/unit/test_trace_context.c`
 - Modify: `tests/CMakeLists.txt`
 
-- [ ] **Step 1: Write header `include/mcpkit/core/trace.h`**
+- [x] **Step 1: Write header `include/mcpkit/core/trace.h`**
 
 ```c
 #ifndef MCPKIT_CORE_TRACE_H
@@ -99,7 +99,7 @@ mcp_status_t mcp_trace_inject_into_meta(mcp_context_t *ctx,
 #endif /* MCPKIT_CORE_TRACE_H */
 ```
 
-- [ ] **Step 2: Write failing test `tests/unit/test_trace_context.c`**
+- [x] **Step 2: Write failing test `tests/unit/test_trace_context.c`**
 
 ```c
 #include "mcpkit/core/trace.h"
@@ -135,19 +135,19 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 3: Register test in `tests/CMakeLists.txt` and verify compile failure**
+- [x] **Step 3: Register test in `tests/CMakeLists.txt` and verify compile failure**
 
 Add `test_trace_context` to `tests/CMakeLists.txt`, run `cmake --build build --target test_trace_context` and verify unresolved symbols.
 
-- [ ] **Step 4: Implement `src/core/trace.c`**
+- [x] **Step 4: Implement `src/core/trace.c`**
 
 Implement `mcp_trace_extract_from_meta` and `mcp_trace_inject_into_meta` with safe bounded string copy (`strncpy` / `snprintf`) and null validation.
 
-- [ ] **Step 5: Run tests and verify PASS**
+- [x] **Step 5: Run tests and verify PASS**
 
 Run `ctest --test-dir build -R test_trace_context --output-on-failure`.
 
-- [ ] **Step 6: Git commit**
+- [x] **Step 6: Git commit**
 
 ```bash
 git add include/mcpkit/core/trace.h src/core/trace.c tests/unit/test_trace_context.c tests/CMakeLists.txt
@@ -167,7 +167,7 @@ Implement the core in-memory state manager for MCP Tasks (`io.modelcontextprotoc
 - Create: `tests/unit/test_tasks_extension.c`
 - Modify: `tests/CMakeLists.txt`
 
-- [ ] **Step 1: Write header `include/mcpkit/protocol/tasks.h`**
+- [x] **Step 1: Write header `include/mcpkit/protocol/tasks.h`**
 
 ```c
 #ifndef MCPKIT_PROTOCOL_TASKS_H
@@ -239,7 +239,7 @@ mcp_json_value_t *mcp_task_desc_to_json(mcp_context_t *ctx, const mcp_task_desc_
 #endif /* MCPKIT_PROTOCOL_TASKS_H */
 ```
 
-- [ ] **Step 2: Write failing test in `tests/unit/test_tasks_extension.c`**
+- [x] **Step 2: Write failing test in `tests/unit/test_tasks_extension.c`**
 
 Test task lifecycle:
 1. Create task `task-1001` with `poll_interval_ms = 1000`.
@@ -249,15 +249,15 @@ Test task lifecycle:
 5. Serialize to JSON via `mcp_task_desc_to_json` and verify `taskId`, `status`, `pollIntervalMs`, `result` fields match spec.
 6. Verify terminal state does not allow invalid transitions.
 
-- [ ] **Step 3: Implement `src/protocol/tasks.c`**
+- [x] **Step 3: Implement `src/protocol/tasks.c`**
 
 Implement `mcp_task_mgr_t` backing array/list with allocator abstraction, proper cleanup on `free`, and `mcp_task_desc_to_json` formatter.
 
-- [ ] **Step 4: Build and test**
+- [x] **Step 4: Build and test**
 
 Run `ctest --test-dir build -R test_tasks_extension --output-on-failure`.
 
-- [ ] **Step 5: Git commit**
+- [x] **Step 5: Git commit**
 
 ```bash
 git add include/mcpkit/protocol/tasks.h src/protocol/tasks.c tests/unit/test_tasks_extension.c tests/CMakeLists.txt
@@ -281,14 +281,14 @@ Expose `tasks/get`, `tasks/update`, and `tasks/cancel` RPC routes.
 - Modify: `src/server/dispatcher.c`
 - Modify: `tests/unit/test_tasks_extension.c`
 
-- [ ] **Step 1: Update `src/method_table.h`**
+- [x] **Step 1: Update `src/method_table.h`**
   - Add `"tasks/get"`, `"tasks/update"`, `"tasks/cancel"` to `k_mcp_server_methods`. Update `MCP_SERVER_METHOD_COUNT` (17 -> 20).
   - Add `"notifications/tasks"` to `k_mcp_server_notifications`. Update `MCP_SERVER_NOTIFICATION_COUNT` (10 -> 11).
 
-- [ ] **Step 2: Update `src/protocol/validate.c`**
+- [x] **Step 2: Update `src/protocol/validate.c`**
   - In L3 params validation, enforce string `"taskId"` parameter for `tasks/get`, `tasks/update`, and `tasks/cancel`.
 
-- [ ] **Step 3: Add Tasks management to `mcp_server_t`**
+- [x] **Step 3: Add Tasks management to `mcp_server_t`**
   - In `include/mcpkit/server/server.h`:
     ```c
     mcp_status_t mcp_server_enable_tasks(mcp_context_t *ctx, mcp_server_t *srv);
@@ -297,18 +297,18 @@ Expose `tasks/get`, `tasks/update`, and `tasks/cancel` RPC routes.
   - In `src/server/internals.h`: add `mcp_task_mgr_t *task_mgr;`.
   - In `src/server/server.c`: initialize `task_mgr = NULL` in `mcp_server_create`, destroy in `mcp_server_destroy`.
 
-- [ ] **Step 4: Implement dispatcher routes in `src/server/dispatcher.c`**
+- [x] **Step 4: Implement dispatcher routes in `src/server/dispatcher.c`**
   - Add `route_tasks_get`, `route_tasks_update`, `route_tasks_cancel`.
   - When `tasks/get` is called: find task by `taskId`; if not found, return `-32602` Invalid Params; serialize task descriptor and return `mcp_response_ok_new`.
   - When `tasks/update` is called: update input responses, acknowledge with `{ "accepted": true }`.
   - When `tasks/cancel` is called: call `mcp_task_mgr_cancel`, acknowledge with `{ "cancelled": true }`.
   - In `route_server_discover`: if `srv->task_mgr != NULL`, advertise `"io.modelcontextprotocol/tasks": {}` in `capabilities.extensions`.
 
-- [ ] **Step 5: Add dispatcher end-to-end test cases in `test_tasks_extension.c`**
+- [x] **Step 5: Add dispatcher end-to-end test cases in `test_tasks_extension.c`**
   - Call `server/discover` and verify extension capability advertised.
   - Dispatch JSON-RPC `tasks/get` and verify proper response format.
 
-- [ ] **Step 6: Build, run tests, and commit**
+- [x] **Step 6: Build, run tests, and commit**
 
 ```bash
 git add src/method_table.h src/protocol/validate.c include/mcpkit/server/server.h src/server/internals.h src/server/server.c src/server/dispatcher.c tests/unit/test_tasks_extension.c
@@ -328,7 +328,7 @@ Implement the core registry for MCP Skills (`io.modelcontextprotocol/skills`). E
 - Create: `tests/unit/test_skills_extension.c`
 - Modify: `tests/CMakeLists.txt`
 
-- [ ] **Step 1: Write header `include/mcpkit/protocol/skills.h`**
+- [x] **Step 1: Write header `include/mcpkit/protocol/skills.h`**
 
 ```c
 #ifndef MCPKIT_PROTOCOL_SKILLS_H
@@ -386,20 +386,20 @@ mcp_json_value_t *mcp_skill_to_json(mcp_context_t *ctx, const mcp_skill_t *skill
 #endif /* MCPKIT_PROTOCOL_SKILLS_H */
 ```
 
-- [ ] **Step 2: Write failing test in `tests/unit/test_skills_extension.c`**
+- [x] **Step 2: Write failing test in `tests/unit/test_skills_extension.c`**
   - Register skill `"code-review"` with description and frontmatter object.
   - Add resources `skill://code-review/SKILL.md` and `skill://code-review/checklist.md`.
   - Lookup by name and by URI.
   - Verify JSON structure matches SEP-2640 spec.
 
-- [ ] **Step 3: Implement `src/protocol/skills.c`**
+- [x] **Step 3: Implement `src/protocol/skills.c`**
   - Implement dynamic list with string duplication, frontmatter cloning/ownership transfer, and resource addition.
 
-- [ ] **Step 4: Build and test**
+- [x] **Step 4: Build and test**
 
 Run `ctest --test-dir build -R test_skills_extension --output-on-failure`.
 
-- [ ] **Step 5: Git commit**
+- [x] **Step 5: Git commit**
 
 ```bash
 git add include/mcpkit/protocol/skills.h src/protocol/skills.c tests/unit/test_skills_extension.c tests/CMakeLists.txt
@@ -423,13 +423,13 @@ Expose `skills/list` and `skills/get` RPC routes with pagination and `CacheableR
 - Modify: `src/server/dispatcher.c`
 - Modify: `tests/unit/test_skills_extension.c`
 
-- [ ] **Step 1: Update `src/method_table.h`**
+- [x] **Step 1: Update `src/method_table.h`**
   - Add `"skills/list"`, `"skills/get"` to `k_mcp_server_methods`. Update `MCP_SERVER_METHOD_COUNT` (20 -> 22).
 
-- [ ] **Step 2: Update `src/protocol/validate.c`**
+- [x] **Step 2: Update `src/protocol/validate.c`**
   - In L3 params validation, enforce either string `"name"` or `"uri"` for `skills/get`.
 
-- [ ] **Step 3: Add Skills registry to `mcp_server_t`**
+- [x] **Step 3: Add Skills registry to `mcp_server_t`**
   - In `include/mcpkit/server/server.h`:
     ```c
     mcp_status_t mcp_server_enable_skills(mcp_context_t *ctx, mcp_server_t *srv);
@@ -438,16 +438,16 @@ Expose `skills/list` and `skills/get` RPC routes with pagination and `CacheableR
   - In `src/server/internals.h`: add `mcp_skill_registry_t *skill_reg;`.
   - In `src/server/server.c`: initialize and free.
 
-- [ ] **Step 4: Implement dispatcher routes in `src/server/dispatcher.c`**
+- [x] **Step 4: Implement dispatcher routes in `src/server/dispatcher.c`**
   - Add `route_skills_list`: returns paginated skills array with `CacheableResult` decoration (`decorate_result(ctx, srv, result, true)`).
   - Add `route_skills_get`: lookup skill by name or URI; return formatted skill descriptor.
   - In `route_server_discover`: if `srv->skill_reg != NULL`, advertise `"io.modelcontextprotocol/skills": {}` in `capabilities.extensions`.
 
-- [ ] **Step 5: Run tests and verify PASS**
+- [x] **Step 5: Run tests and verify PASS**
 
 Run `ctest --test-dir build -R test_skills_extension --output-on-failure`.
 
-- [ ] **Step 6: Git commit**
+- [x] **Step 6: Git commit**
 
 ```bash
 git add src/method_table.h src/protocol/validate.c include/mcpkit/server/server.h src/server/internals.h src/server/server.c src/server/dispatcher.c tests/unit/test_skills_extension.c
@@ -466,7 +466,7 @@ Provide high-level client helper functions in `include/mcpkit/client/client.h` a
 - Modify: `src/client/client.c`
 - Modify: `tests/unit/test_client.c`
 
-- [ ] **Step 1: Add declarations in `include/mcpkit/client/client.h`**
+- [x] **Step 1: Add declarations in `include/mcpkit/client/client.h`**
 
 ```c
 mcp_status_t mcp_client_tasks_get(mcp_context_t *ctx, mcp_client_t *c,
@@ -486,13 +486,13 @@ mcp_status_t mcp_client_skills_get(mcp_context_t *ctx, mcp_client_t *c,
                                    const char *name_or_uri, mcp_message_t **out_resp);
 ```
 
-- [ ] **Step 2: Implement in `src/client/client.c`**
+- [x] **Step 2: Implement in `src/client/client.c`**
   - Build JSON-RPC request message with appropriate params dictionary and invoke `mcp_client_send_request()`.
 
-- [ ] **Step 3: Add client unit test cases in `tests/unit/test_client.c`**
+- [x] **Step 3: Add client unit test cases in `tests/unit/test_client.c`**
   - Verify client request construction and response parsing for Tasks and Skills methods.
 
-- [ ] **Step 4: Build, run tests, and commit**
+- [x] **Step 4: Build, run tests, and commit**
 
 ```bash
 git add include/mcpkit/client/client.h src/client/client.c tests/unit/test_client.c
@@ -510,19 +510,19 @@ Run the complete test suite across all compiler and sanitizer gates. Verify zero
 - Modify: `CHANGELOG.md`
 - Modify: `docs/module-reference.md`
 
-- [ ] **Step 1: Run complete test suite**
+- [x] **Step 1: Run complete test suite**
 
 Run `ctest --test-dir build -j1 --output-on-failure`. Expected: 100% PASS.
 
-- [ ] **Step 2: ASan + UBSan gate check**
+- [x] **Step 2: ASan + UBSan gate check**
 
 Configure build with `-DCMAKE_BUILD_TYPE=Debug -DMCPKIT_ENABLE_ASAN=ON` and re-run all test targets.
 
-- [ ] **Step 3: Update documentation and Changelog**
+- [x] **Step 3: Update documentation and Changelog**
   - Add documentation entries for `mcpkit/core/trace.h`, `mcpkit/protocol/tasks.h`, and `mcpkit/protocol/skills.h` in `docs/module-reference.md`.
   - Add `Tasks Extension (SEP-2663)`, `Skills Extension (SEP-2640)`, and `Trace Context (SEP-414)` entries to `CHANGELOG.md`.
 
-- [ ] **Step 4: Git commit**
+- [x] **Step 4: Git commit**
 
 ```bash
 git add docs/module-reference.md CHANGELOG.md
