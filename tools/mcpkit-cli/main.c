@@ -84,7 +84,7 @@ static int spawn(const char *server_bin, cli_t *cli) {
     return 0;
 }
 
-static int cli_init(cli_t *cli) {
+static int cli_connect_raw(cli_t *cli) {
     cli->ctx = mcp_context_create(NULL);
     if (cli->ctx == NULL) return -1;
     cli->transport = mcp_stdio_transport_create(cli->ctx, cli->in, cli->out);
@@ -92,6 +92,11 @@ static int cli_init(cli_t *cli) {
     cli->client = mcp_client_create(cli->ctx, cli->transport);
     if (cli->client == NULL) return -1;
     if (mcp_client_connect(cli->ctx, cli->client) != MCP_OK) return -1;
+    return 0;
+}
+
+static int cli_init(cli_t *cli) {
+    if (cli_connect_raw(cli) != 0) return -1;
     if (mcp_client_initialize(cli->ctx, cli->client, "mcpkit-cli", mcpkit_version_string(), NULL) != MCP_OK)
         return -1;
     return 0;
@@ -103,6 +108,29 @@ static void print_result(cli_t *cli, const mcp_json_value_t *v) {
         printf("%s\n", s);
         mcp_json_free_string(cli->ctx, s);
     }
+}
+
+static int cmd_discover(const char *server_bin) {
+    cli_t cli = {NULL};
+    if (spawn(server_bin, &cli) != 0) {
+        cli_cleanup(&cli);
+        return 1;
+    }
+    if (cli_connect_raw(&cli) != 0) {
+        cli_cleanup(&cli);
+        return 1;
+    }
+    mcp_json_value_t *result = NULL;
+    if (mcp_client_discover(cli.ctx, cli.client, &result) != MCP_OK) {
+        mcp_client_disconnect(cli.ctx, cli.client);
+        cli_cleanup(&cli);
+        return 1;
+    }
+    print_result(&cli, result);
+    mcp_json_destroy(cli.ctx, result);
+    mcp_client_disconnect(cli.ctx, cli.client);
+    cli_cleanup(&cli);
+    return 0;
 }
 
 static int cmd_inspect(const char *server_bin) {
@@ -250,8 +278,10 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
     if (argc < 2) {
         fprintf(stderr,
-                "usage: mcpkit-cli inspect <server-bin>\n"
+                "usage: mcpkit-cli discover <server-bin>\n"
+                "       mcpkit-cli inspect <server-bin>\n"
                 "       mcpkit-cli call <server-bin> <tool> [args-json]\n"
+                "       mcpkit-cli listen <server-bin> [filter] [timeout_sec]\n"
                 "       mcpkit-cli validate <file>\n"
                 "       mcpkit-cli test <server-bin>\n");
         return 2;
@@ -259,6 +289,9 @@ int main(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr, "mcpkit-cli: missing argument\n");
         return 2;
+    }
+    if (strcmp(argv[1], "discover") == 0) {
+        return cmd_discover(argv[2]);
     }
     if (strcmp(argv[1], "inspect") == 0) {
         return cmd_inspect(argv[2]);
