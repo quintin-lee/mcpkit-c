@@ -233,6 +233,14 @@ mcp_status_t mcp_client_ping(mcp_context_t *ctx, mcp_client_t *client) {
     return mcp_client_request(ctx, client, "ping", NULL, NULL);
 }
 
+mcp_status_t mcp_client_discover(mcp_context_t *ctx, mcp_client_t *client,
+                                 mcp_json_value_t **result_out) {
+    if (client == NULL || result_out == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    return mcp_client_request(ctx, client, "server/discover", NULL, result_out);
+}
+
 mcp_status_t mcp_client_list_tools(mcp_context_t *ctx, mcp_client_t *client,
                                    mcp_json_value_t **tools_out) {
     if (client == NULL || tools_out == NULL) {

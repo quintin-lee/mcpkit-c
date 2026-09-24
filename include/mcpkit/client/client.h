@@ -132,6 +132,20 @@ mcp_status_t mcp_client_request(mcp_context_t *ctx, mcp_client_t *client,
 mcp_status_t mcp_client_ping(mcp_context_t *ctx, mcp_client_t *client);
 
 /**
+ * @brief Sends server/discover request to inspect server capabilities statelessly.
+ *
+ * Can be sent before or after initialize. Result contains serverName,
+ * serverVersion, protocolVersion, capabilities, etc.
+ *
+ * @param ctx        Context; may be NULL.
+ * @param client     Target client.
+ * @param result_out Receives the caller-owned cloned result JSON object on MCP_OK.
+ * @return MCP_OK on success; MCP_ERR_* on transport or protocol error.
+ */
+mcp_status_t mcp_client_discover(mcp_context_t *ctx, mcp_client_t *client,
+                                 mcp_json_value_t **result_out);
+
+/**
  * @brief Sends tools/list.
  * @param ctx Context; may be NULL.
  * @param client Target client.

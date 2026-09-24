@@ -314,6 +314,33 @@ int main(void) {
     CHECK(strstr(fake2.sent, "\"method\":\"notifications/roots/list_changed\"") != NULL);
     CHECK(strstr(fake2.sent, "\"id\":") == NULL);
 
+    // 8. server/discover
+    static const char *kDiscover[] = {
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"serverName\":\"disc-test\",\"serverVersion\":\"1.0\",\"protocolVersion\":\"2026-07-28\"}}"
+    };
+    fake_t fake_disc;
+    memset(&fake_disc, 0, sizeof(fake_disc));
+    fake_disc.script = kDiscover;
+    fake_disc.nscript = 1;
+    mcp_transport_t *t_disc = mcp_transport_create(ctx, &kFake, &fake_disc);
+    CHECK(t_disc != NULL);
+    mcp_client_t *c_disc = mcp_client_create(ctx, t_disc);
+    CHECK(c_disc != NULL);
+
+    CHECK(mcp_client_discover(ctx, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_discover(ctx, c_disc, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    mcp_json_value_t *disc_res = NULL;
+    CHECK(mcp_client_discover(ctx, c_disc, &disc_res) == MCP_OK);
+    CHECK(disc_res != NULL);
+    const char *dname = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, disc_res, "serverName"), &dname) == MCP_OK);
+    CHECK(strcmp(dname, "disc-test") == 0);
+    mcp_json_destroy(ctx, disc_res);
+    CHECK(strstr(fake_disc.sent, "\"method\":\"server/discover\"") != NULL);
+
+    mcp_client_destroy(ctx, c_disc);
+    mcp_transport_destroy(ctx, t_disc);
+
     mcp_client_destroy(ctx, c2);
     mcp_transport_destroy(ctx, t2);
     mcp_client_destroy(ctx, NULL);
