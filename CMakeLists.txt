@@ -46,6 +46,7 @@ set(MCPKIT_CORE_SOURCES
   src/protocol/mrtr_state.c
   src/protocol/tasks.c
   src/protocol/skills.c
+  src/protocol/content.c
   src/server/server.c
   src/server/registry.c
   src/server/session.c
