@@ -16,12 +16,20 @@
 
 #define MAX_RAW_CAPTURES 64
 
+typedef enum {
+    MCP_URI_MOD_NONE = 0,
+    MCP_URI_MOD_PREFIX,
+    MCP_URI_MOD_EXPLODE
+} mcp_uri_modifier_t;
+
 typedef struct {
     const char *name_start;
     size_t name_len;
     const char *val_start;
     size_t val_len;
     bool is_reserved;
+    char op;
+    mcp_uri_modifier_t mod;
 } raw_capture_t;
 
 typedef struct {
@@ -77,11 +85,6 @@ static char *url_decode(mcp_context_t *ctx, const char *src, size_t len) {
     return out;
 }
 
-typedef enum {
-    MCP_URI_MOD_NONE = 0,
-    MCP_URI_MOD_PREFIX,
-    MCP_URI_MOD_EXPLODE
-} mcp_uri_modifier_t;
 
 typedef struct {
     char op;            /* 0, '+', '#', '/', '.', '?' */
@@ -208,10 +211,10 @@ static bool match_step(const char *p, const char *u, raw_captures_t *caps) {
 
     // If next_p == '\0', variable consumes rest of u_val
     if (*next_p == '\0') {
-        if (!expr.is_reserved && strchr(u_val, '/') != NULL) {
+        if (!expr.is_reserved && expr.mod != MCP_URI_MOD_EXPLODE && strchr(u_val, '/') != NULL) {
             return false;
         }
-        if (expr.op == '?' && strchr(u_val, '&') != NULL) {
+        if (expr.op == '?' && expr.mod != MCP_URI_MOD_EXPLODE && strchr(u_val, '&') != NULL) {
             return false;
         }
         size_t rest_len = strlen(u_val);
@@ -224,7 +227,9 @@ static bool match_step(const char *p, const char *u, raw_captures_t *caps) {
                 .name_len = expr.name_len,
                 .val_start = u_val,
                 .val_len = rest_len,
-                .is_reserved = expr.is_reserved
+                .is_reserved = expr.is_reserved,
+                .op = expr.op,
+                .mod = expr.mod
             };
             return true;
         }
@@ -238,10 +243,10 @@ static bool match_step(const char *p, const char *u, raw_captures_t *caps) {
         max_len = expr.prefix_len;
     }
     for (size_t len = 0; len <= max_len; len++) {
-        if (!expr.is_reserved && len > 0 && u_val[len - 1] == '/') {
+        if (!expr.is_reserved && expr.mod != MCP_URI_MOD_EXPLODE && len > 0 && u_val[len - 1] == '/') {
             break;
         }
-        if (expr.op == '?' && len > 0 && (u_val[len - 1] == '&' || u_val[len - 1] == '#')) {
+        if (expr.op == '?' && expr.mod != MCP_URI_MOD_EXPLODE && len > 0 && (u_val[len - 1] == '&' || u_val[len - 1] == '#')) {
             break;
         }
         size_t saved_count = caps->count;
@@ -251,7 +256,9 @@ static bool match_step(const char *p, const char *u, raw_captures_t *caps) {
                 .name_len = expr.name_len,
                 .val_start = u_val,
                 .val_len = len,
-                .is_reserved = expr.is_reserved
+                .is_reserved = expr.is_reserved,
+                .op = expr.op,
+                .mod = expr.mod
             };
             if (match_step(next_p, u_val + len, caps)) {
                 return true;
@@ -323,6 +330,58 @@ mcp_status_t mcp_uri_template_match(mcp_context_t *ctx,
         }
         memcpy(name, caps.items[i].name_start, nlen);
         name[nlen] = '\0';
+
+        if (caps.items[i].mod == MCP_URI_MOD_EXPLODE) {
+            mcp_json_value_t *arr = mcp_json_array_new(ctx);
+            if (arr == NULL) {
+                mcp_json_destroy(ctx, obj);
+                return MCP_ERR_NOMEM;
+            }
+            const char *val_s = caps.items[i].val_start;
+            size_t val_l = caps.items[i].val_len;
+            char delim = ',';
+            if (caps.items[i].op == '/') delim = '/';
+            else if (caps.items[i].op == '?') delim = '&';
+            else if (caps.items[i].op == '.') delim = '.';
+
+            size_t start = 0;
+            while (start <= val_l) {
+                size_t end = start;
+                while (end < val_l && val_s[end] != delim) {
+                    end++;
+                }
+                const char *tok_s = val_s + start;
+                size_t tok_l = end - start;
+                if (caps.items[i].op == '?' && start > 0) {
+                    if (tok_l >= nlen + 1 && strncmp(tok_s, name, nlen) == 0 && tok_s[nlen] == '=') {
+                        tok_s += nlen + 1;
+                        tok_l -= (nlen + 1);
+                    }
+                }
+                char *decoded = url_decode(ctx, tok_s, tok_l);
+                if (decoded == NULL) {
+                    mcp_json_destroy(ctx, arr);
+                    mcp_json_destroy(ctx, obj);
+                    return MCP_ERR_NOMEM;
+                }
+                mcp_json_value_t *item_v = mcp_json_string_new(ctx, decoded);
+                alloc->free_fn(decoded, alloc->userdata);
+                if (item_v == NULL || mcp_json_array_append(ctx, arr, item_v) != MCP_OK) {
+                    mcp_json_destroy(ctx, item_v);
+                    mcp_json_destroy(ctx, arr);
+                    mcp_json_destroy(ctx, obj);
+                    return MCP_ERR_NOMEM;
+                }
+                if (end >= val_l) break;
+                start = end + 1;
+            }
+            if (mcp_json_object_set_take(ctx, obj, name, arr) != MCP_OK) {
+                mcp_json_destroy(ctx, arr);
+                mcp_json_destroy(ctx, obj);
+                return MCP_ERR_NOMEM;
+            }
+            continue;
+        }
 
         char *decoded = url_decode(ctx, caps.items[i].val_start, caps.items[i].val_len);
         if (decoded == NULL) {

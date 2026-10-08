@@ -254,6 +254,43 @@ int main(void) {
     mcp_json_destroy(ctx, empty_vars);
     mcp_json_destroy(ctx, arr_vars);
 
+    /* 13. Level 4 explode modifier reverse matching */
+    mcp_json_value_t *m_arr = NULL;
+    CHECK(mcp_uri_template_match(ctx, "repo://root{/path*}", "repo://root/src/protocol/uri", &m_arr) == MCP_OK);
+    CHECK(m_arr != NULL);
+    const mcp_json_value_t *arr_val = mcp_json_object_get(ctx, m_arr, "path");
+    CHECK(arr_val != NULL && mcp_json_type(ctx, arr_val) == MCP_JSON_ARRAY);
+    CHECK(mcp_json_array_size(ctx, arr_val) == 3);
+    const char *seg0 = NULL, *seg1 = NULL, *seg2 = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_array_get(ctx, arr_val, 0), &seg0) == MCP_OK && strcmp(seg0, "src") == 0);
+    CHECK(mcp_json_string_value(ctx, mcp_json_array_get(ctx, arr_val, 1), &seg1) == MCP_OK && strcmp(seg1, "protocol") == 0);
+    CHECK(mcp_json_string_value(ctx, mcp_json_array_get(ctx, arr_val, 2), &seg2) == MCP_OK && strcmp(seg2, "uri") == 0);
+    mcp_json_destroy(ctx, m_arr);
+    m_arr = NULL;
+
+    // Simple explode comma separated
+    CHECK(mcp_uri_template_match(ctx, "tags/{list*}", "tags/red,green,blue", &m_arr) == MCP_OK);
+    CHECK(m_arr != NULL);
+    arr_val = mcp_json_object_get(ctx, m_arr, "list");
+    CHECK(arr_val != NULL && mcp_json_type(ctx, arr_val) == MCP_JSON_ARRAY);
+    CHECK(mcp_json_array_size(ctx, arr_val) == 3);
+    CHECK(mcp_json_string_value(ctx, mcp_json_array_get(ctx, arr_val, 0), &seg0) == MCP_OK && strcmp(seg0, "red") == 0);
+    CHECK(mcp_json_string_value(ctx, mcp_json_array_get(ctx, arr_val, 1), &seg1) == MCP_OK && strcmp(seg1, "green") == 0);
+    CHECK(mcp_json_string_value(ctx, mcp_json_array_get(ctx, arr_val, 2), &seg2) == MCP_OK && strcmp(seg2, "blue") == 0);
+    mcp_json_destroy(ctx, m_arr);
+    m_arr = NULL;
+
+    // Form query explode matching
+    CHECK(mcp_uri_template_match(ctx, "search{?filter*}", "search?filter=one&filter=two", &m_arr) == MCP_OK);
+    CHECK(m_arr != NULL);
+    arr_val = mcp_json_object_get(ctx, m_arr, "filter");
+    CHECK(arr_val != NULL && mcp_json_type(ctx, arr_val) == MCP_JSON_ARRAY);
+    CHECK(mcp_json_array_size(ctx, arr_val) == 2);
+    CHECK(mcp_json_string_value(ctx, mcp_json_array_get(ctx, arr_val, 0), &seg0) == MCP_OK && strcmp(seg0, "one") == 0);
+    CHECK(mcp_json_string_value(ctx, mcp_json_array_get(ctx, arr_val, 1), &seg1) == MCP_OK && strcmp(seg1, "two") == 0);
+    mcp_json_destroy(ctx, m_arr);
+    m_arr = NULL;
+
     mcp_json_destroy(ctx, l3_exp);
     mcp_json_destroy(ctx, exp_vars);
     mcp_context_destroy(ctx);
