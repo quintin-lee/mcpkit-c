@@ -929,3 +929,99 @@ mcp_status_t mcp_oauth_build_token_exchange_request(mcp_context_t *ctx,
     return MCP_OK;
 }
 
+void mcp_oauth_token_exchange_response_cleanup(mcp_context_t *ctx,
+                                               mcp_oauth_token_exchange_response_t *resp) {
+    if (resp == NULL) {
+        return;
+    }
+    mcp_oauth_free_string(ctx, resp->access_token);
+    mcp_oauth_free_string(ctx, resp->issued_token_type);
+    mcp_oauth_free_string(ctx, resp->token_type);
+    mcp_oauth_free_string(ctx, resp->refresh_token);
+    mcp_oauth_free_string(ctx, resp->scope);
+    memset(resp, 0, sizeof(*resp));
+}
+
+mcp_status_t mcp_oauth_token_exchange_response_parse(mcp_context_t *ctx,
+                                                     const char *json_str,
+                                                     size_t len,
+                                                     mcp_oauth_token_exchange_response_t *resp_out) {
+    if (json_str == NULL || resp_out == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    memset(resp_out, 0, sizeof(*resp_out));
+
+    mcp_json_value_t *root = mcp_json_parse(ctx, json_str, len);
+    if (root == NULL || mcp_json_type(ctx, root) != MCP_JSON_OBJECT) {
+        if (root != NULL) {
+            mcp_json_destroy(ctx, root);
+        }
+        return MCP_ERR_PROTOCOL;
+    }
+
+    const mcp_json_value_t *v_acc = mcp_json_object_get(ctx, root, "access_token");
+    const mcp_json_value_t *v_iss = mcp_json_object_get(ctx, root, "issued_token_type");
+    const mcp_json_value_t *v_typ = mcp_json_object_get(ctx, root, "token_type");
+    if (v_acc == NULL || v_iss == NULL || v_typ == NULL ||
+        mcp_json_type(ctx, v_acc) != MCP_JSON_STRING ||
+        mcp_json_type(ctx, v_iss) != MCP_JSON_STRING ||
+        mcp_json_type(ctx, v_typ) != MCP_JSON_STRING) {
+        mcp_json_destroy(ctx, root);
+        return MCP_ERR_PROTOCOL;
+    }
+
+    const char *s_acc = NULL;
+    const char *s_iss = NULL;
+    const char *s_typ = NULL;
+    mcp_json_string_value(ctx, v_acc, &s_acc);
+    mcp_json_string_value(ctx, v_iss, &s_iss);
+    mcp_json_string_value(ctx, v_typ, &s_typ);
+
+    resp_out->access_token = auth_strdup(ctx, s_acc);
+    resp_out->issued_token_type = auth_strdup(ctx, s_iss);
+    resp_out->token_type = auth_strdup(ctx, s_typ);
+
+    if (resp_out->access_token == NULL ||
+        resp_out->issued_token_type == NULL ||
+        resp_out->token_type == NULL) {
+        mcp_json_destroy(ctx, root);
+        mcp_oauth_token_exchange_response_cleanup(ctx, resp_out);
+        return MCP_ERR_NOMEM;
+    }
+
+    const mcp_json_value_t *v_exp = mcp_json_object_get(ctx, root, "expires_in");
+    if (v_exp != NULL && mcp_json_type(ctx, v_exp) == MCP_JSON_NUMBER) {
+        double d = 0;
+        if (mcp_json_number_value(ctx, v_exp, &d) == MCP_OK && d >= 0) {
+            resp_out->expires_in = (uint32_t)d;
+        }
+    }
+
+    const mcp_json_value_t *v_ref = mcp_json_object_get(ctx, root, "refresh_token");
+    if (v_ref != NULL && mcp_json_type(ctx, v_ref) == MCP_JSON_STRING) {
+        const char *s_ref = NULL;
+        mcp_json_string_value(ctx, v_ref, &s_ref);
+        resp_out->refresh_token = auth_strdup(ctx, s_ref);
+        if (resp_out->refresh_token == NULL) {
+            mcp_json_destroy(ctx, root);
+            mcp_oauth_token_exchange_response_cleanup(ctx, resp_out);
+            return MCP_ERR_NOMEM;
+        }
+    }
+
+    const mcp_json_value_t *v_scp = mcp_json_object_get(ctx, root, "scope");
+    if (v_scp != NULL && mcp_json_type(ctx, v_scp) == MCP_JSON_STRING) {
+        const char *s_scp = NULL;
+        mcp_json_string_value(ctx, v_scp, &s_scp);
+        resp_out->scope = auth_strdup(ctx, s_scp);
+        if (resp_out->scope == NULL) {
+            mcp_json_destroy(ctx, root);
+            mcp_oauth_token_exchange_response_cleanup(ctx, resp_out);
+            return MCP_ERR_NOMEM;
+        }
+    }
+
+    mcp_json_destroy(ctx, root);
+    return MCP_OK;
+}
+

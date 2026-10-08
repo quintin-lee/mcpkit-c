@@ -286,6 +286,33 @@ mcp_status_t mcp_oauth_build_token_exchange_request(mcp_context_t *ctx,
                                                     char **body_out);
 
 /**
+ * @brief Parses an RFC 8693 OAuth 2.0 Token Exchange response JSON string.
+ *
+ * @param ctx       Context; may be NULL.
+ * @param json_str  JSON string returned by the token endpoint.
+ * @param len       Length of json_str.
+ * @param resp_out  Receives populated token exchange response. Caller frees via mcp_oauth_token_exchange_response_cleanup().
+ * @return MCP_OK on success;
+ *         MCP_ERR_INVALID_ARGUMENT on NULL args;
+ *         MCP_ERR_PROTOCOL if access_token, issued_token_type, or token_type is missing/invalid,
+ *                          or if JSON parsing fails;
+ *         MCP_ERR_NOMEM on memory allocation failure.
+ */
+mcp_status_t mcp_oauth_token_exchange_response_parse(mcp_context_t *ctx,
+                                                     const char *json_str,
+                                                     size_t len,
+                                                     mcp_oauth_token_exchange_response_t *resp_out);
+
+/**
+ * @brief Frees allocated strings in mcp_oauth_token_exchange_response_t and zeroes the struct.
+ *
+ * @param ctx   Context; may be NULL.
+ * @param resp  Token exchange response structure to clean up.
+ */
+void mcp_oauth_token_exchange_response_cleanup(mcp_context_t *ctx,
+                                               mcp_oauth_token_exchange_response_t *resp);
+
+/**
  * @brief Frees a string allocated by mcp_oauth_build_* functions.
  */
 void mcp_oauth_free_string(mcp_context_t *ctx, char *str);

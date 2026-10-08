@@ -223,6 +223,37 @@ int main(void) {
     bad_req.actor_token = "actor";
     CHECK(mcp_oauth_build_token_exchange_request(ctx, &bad_req, &ex_body) == MCP_ERR_INVALID_ARGUMENT);
 
+    /* 10. RFC 8693 Token Exchange Response Parser */
+    const char *resp_json =
+        "{\"access_token\":\"eyJhbGciOi...\",\"issued_token_type\":\"urn:ietf:params:oauth:token-type:access_token\","
+        "\"token_type\":\"Bearer\",\"expires_in\":3600,\"scope\":\"tools:read\",\"refresh_token\":\"r-12345\"}";
+    mcp_oauth_token_exchange_response_t ex_resp;
+    memset(&ex_resp, 0, sizeof(ex_resp));
+    CHECK(mcp_oauth_token_exchange_response_parse(ctx, resp_json, strlen(resp_json), &ex_resp) == MCP_OK);
+    CHECK(ex_resp.access_token != NULL && strcmp(ex_resp.access_token, "eyJhbGciOi...") == 0);
+    CHECK(ex_resp.issued_token_type != NULL && strcmp(ex_resp.issued_token_type, "urn:ietf:params:oauth:token-type:access_token") == 0);
+    CHECK(ex_resp.token_type != NULL && strcmp(ex_resp.token_type, "Bearer") == 0);
+    CHECK(ex_resp.expires_in == 3600);
+    CHECK(ex_resp.scope != NULL && strcmp(ex_resp.scope, "tools:read") == 0);
+    CHECK(ex_resp.refresh_token != NULL && strcmp(ex_resp.refresh_token, "r-12345") == 0);
+    mcp_oauth_token_exchange_response_cleanup(ctx, &ex_resp);
+    CHECK(ex_resp.access_token == NULL);
+
+    /* Negative response parsing tests */
+    const char *missing_issued = "{\"access_token\":\"abc\",\"token_type\":\"Bearer\"}";
+    CHECK(mcp_oauth_token_exchange_response_parse(ctx, missing_issued, strlen(missing_issued), &ex_resp) == MCP_ERR_PROTOCOL);
+
+    const char *missing_access = "{\"issued_token_type\":\"urn:ietf:params:oauth:token-type:access_token\",\"token_type\":\"Bearer\"}";
+    CHECK(mcp_oauth_token_exchange_response_parse(ctx, missing_access, strlen(missing_access), &ex_resp) == MCP_ERR_PROTOCOL);
+
+    const char *missing_type = "{\"access_token\":\"abc\",\"issued_token_type\":\"urn:ietf:params:oauth:token-type:access_token\"}";
+    CHECK(mcp_oauth_token_exchange_response_parse(ctx, missing_type, strlen(missing_type), &ex_resp) == MCP_ERR_PROTOCOL);
+
+    const char *bad_json = "not-json";
+    CHECK(mcp_oauth_token_exchange_response_parse(ctx, bad_json, strlen(bad_json), &ex_resp) == MCP_ERR_PROTOCOL);
+    CHECK(mcp_oauth_token_exchange_response_parse(ctx, NULL, 0, &ex_resp) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_oauth_token_exchange_response_parse(ctx, resp_json, strlen(resp_json), NULL) == MCP_ERR_INVALID_ARGUMENT);
+
     mcp_context_destroy(ctx);
     printf("test_auth_client OK\n");
     return 0;
