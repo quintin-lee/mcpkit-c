@@ -1,13 +1,17 @@
 /**
  * @file uri_template.h
- * @brief RFC 6570 URI Template matching and expansion (Level 1 & 2).
+ * @brief RFC 6570 URI Template matching and expansion (Level 1, 2, 3 & 4).
  *
  * Implements URI template matching against concrete URIs to extract variables,
  * and URI template expansion to generate concrete URIs from variable values.
  *
  * Supports:
  *  - Level 1: Simple string expansion `{var}` (matches path segment, unreserved chars).
- *  - Level 2: Reserved expansion `{+var}` (matches path segment including reserved characters like `/`).
+ *  - Level 2: Reserved expansion `{+var}`, fragment expansion `{#var}`.
+ *  - Level 3: Multiple operators including path segment `{/var}`, dot label `{.var}`,
+ *             form-style query `{?var}` with prefix suppression when undefined.
+ *  - Level 4: Modifiers including prefix truncation `{var:len}` and explode composite
+ *             array expansion/matching `{list*}`, `{/list*}`, `{?list*}`.
  *
  * @ingroup mcpkit-protocol
  */
