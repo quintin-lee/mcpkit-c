@@ -16,7 +16,7 @@
 - Modify: `include/mcpkit/core/auth.h:20-50`
 - Test: `tests/unit/test_auth_client.c:1-30`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/unit/test_auth_client.c`, add an assertion checking the presence of the RFC 8693 grant type macro:
 
@@ -26,12 +26,12 @@ In `tests/unit/test_auth_client.c`, add an assertion checking the presence of th
     CHECK(strcmp(MCP_OAUTH_TOKEN_TYPE_ACCESS_TOKEN, "urn:ietf:params:oauth:token-type:access_token") == 0);
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cmake --build build && ctest --test-dir build -R test_auth_client --output-on-failure`  
 Expected: Compilation failure due to undeclared identifier `MCP_OAUTH_GRANT_TYPE_TOKEN_EXCHANGE`.
 
-- [ ] **Step 3: Define constants and structures in header**
+- [x] **Step 3: Define constants and structures in header**
 
 In `include/mcpkit/core/auth.h`, add:
 
@@ -68,12 +68,12 @@ typedef struct mcp_oauth_token_exchange_response {
 } mcp_oauth_token_exchange_response_t;
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cmake --build build && ctest --test-dir build -R test_auth_client --output-on-failure`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add include/mcpkit/core/auth.h tests/unit/test_auth_client.c
@@ -89,7 +89,7 @@ git commit -m "feat(auth): declare RFC 8693 Token Exchange constants and structu
 - Modify: `src/core/auth.c:480-550`
 - Test: `tests/unit/test_auth_client.c`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/unit/test_auth_client.c`, add tests for `mcp_oauth_build_token_exchange_request`:
 
@@ -135,12 +135,12 @@ In `tests/unit/test_auth_client.c`, add tests for `mcp_oauth_build_token_exchang
     CHECK(mcp_oauth_build_token_exchange_request(ctx, &bad_req, &ex_body) == MCP_ERR_INVALID_ARGUMENT);
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cmake --build build && ctest --test-dir build -R test_auth_client --output-on-failure`  
 Expected: Compilation failure due to undeclared function `mcp_oauth_build_token_exchange_request`.
 
-- [ ] **Step 3: Implement request builder**
+- [x] **Step 3: Implement request builder**
 
 Declare `mcp_oauth_build_token_exchange_request` in `include/mcpkit/core/auth.h` and implement in `src/core/auth.c`:
 - Validate `req != NULL && body_out != NULL`.
@@ -150,12 +150,12 @@ Declare `mcp_oauth_build_token_exchange_request` in `include/mcpkit/core/auth.h`
   - Validate `req->actor_token_type != NULL && req->actor_token_type[0] != '\0'`.
 - URL-encode all fields and assemble `application/x-www-form-urlencoded` string starting with `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cmake --build build && ctest --test-dir build -R test_auth_client --output-on-failure`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add include/mcpkit/core/auth.h src/core/auth.c tests/unit/test_auth_client.c
@@ -171,7 +171,7 @@ git commit -m "feat(auth): implement RFC 8693 Token Exchange request builder"
 - Modify: `src/core/auth.c:550-620`
 - Test: `tests/unit/test_auth_client.c`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/unit/test_auth_client.c`, add tests for `mcp_oauth_token_exchange_response_parse` and cleanup:
 
@@ -203,12 +203,12 @@ In `tests/unit/test_auth_client.c`, add tests for `mcp_oauth_token_exchange_resp
     CHECK(mcp_oauth_token_exchange_response_parse(ctx, bad_json, strlen(bad_json), &ex_resp) == MCP_ERR_PROTOCOL);
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cmake --build build && ctest --test-dir build -R test_auth_client --output-on-failure`  
 Expected: Compilation failure due to undeclared function `mcp_oauth_token_exchange_response_parse`.
 
-- [ ] **Step 3: Implement response parser and cleanup**
+- [x] **Step 3: Implement response parser and cleanup**
 
 Declare in `include/mcpkit/core/auth.h` and implement in `src/core/auth.c`:
 - Validate `json_str != NULL && resp_out != NULL`.
@@ -217,12 +217,12 @@ Declare in `include/mcpkit/core/auth.h` and implement in `src/core/auth.c`:
 - Extract optional fields: `expires_in` (number), `scope` (string), `refresh_token` (string).
 - Implement `mcp_oauth_token_exchange_response_cleanup()` to free all allocated strings and `memset(resp, 0, sizeof(*resp))`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cmake --build build && ctest --test-dir build -R test_auth_client --output-on-failure`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add include/mcpkit/core/auth.h src/core/auth.c tests/unit/test_auth_client.c
@@ -236,16 +236,16 @@ git commit -m "feat(auth): implement RFC 8693 Token Exchange response parser and
 **Files:**
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: Update CHANGELOG**
+- [x] **Step 1: Update CHANGELOG**
 
 In `CHANGELOG.md`, document RFC 8693 OAuth 2.0 Token Exchange support under `[Unreleased]` with references to SEP-990 and RFC 8693.
 
-- [ ] **Step 2: Run full project test suite**
+- [x] **Step 2: Run full project test suite**
 
 Run: `ctest --test-dir build --output-on-failure`  
 Expected: 59/59 tests pass (100% pass rate).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add CHANGELOG.md
