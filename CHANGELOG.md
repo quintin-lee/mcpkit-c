@@ -6,6 +6,12 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ### Added
 
+- MCP 2026-07-28 Specification Alignment & Extensions:
+  - Client ID Metadata Documents (SEP-991 / draft-ietf-oauth-client-id-metadata-document): Added `mcp_oauth_client_metadata_t` parser (`mcp_oauth_client_metadata_parse()`), validator (`mcp_oauth_client_metadata_validate()`), serializer (`mcp_oauth_client_metadata_serialize()`), and memory cleanup in `mcpkit/core/auth.h` and `src/core/auth.c`.
+  - RFC 9207 Authorization Response Issuer Validation (SEP-2468): Added `mcp_oauth_validate_issuer()` in `mcpkit/core/auth.h` and parsed `client_id_metadata_document_supported` in RFC 8414 metadata discovery.
+  - Tool Output Schema (SEP-2106) & Structured Content (SEP-1613): Added `outputSchema` support for tools (`mcp_tool_set_output_schema()`, `mcp_tool_output_schema()`), exposure in `tools/list`, and automated output validation of `structuredContent` in `tools/call` (`mcp_tool_result_set_structured_content()`, `mcp_tool_result_get_structured_content()`).
+  - URL Mode Elicitation Helpers (SEP-1036): Added `mcp_mrtr_elicit_request_url_mode_new()` and `mcp_mrtr_elicit_request_get_url()` in `mcpkit/protocol/mrtr.h`, removing deprecated `elicitationId` and correlating via parent `requestState`.
+  - RFC 6570 Level 3 URI Template Support: Added matching and expansion for path segments `{/var}`, fragments `{#var}`, labels `{.var}`, and query parameters `{?var}` with clean prefix suppression for undefined variables in `mcpkit/protocol/uri_template.h` and `src/protocol/uri_template.c`.
 - Sampling with Tools (SEP-1577):
   - Added protocol data structures, parameter builders, and inspection helpers (`mcp_sampling_params_new()`, `mcp_sampling_params_add_tool()`, `mcp_sampling_params_set_tool_choice()`, `mcp_sampling_params_get_tool_count()`, `mcp_sampling_params_get_tool_at()`, `mcp_sampling_params_get_tool_choice()`) in `mcpkit/protocol/sampling.h` and `src/protocol/sampling.c`.
   - Added constructors for `tool_use` (`mcp_sampling_content_tool_use_new()`) and `tool_result` (`mcp_sampling_content_tool_result_new()`) content blocks.
