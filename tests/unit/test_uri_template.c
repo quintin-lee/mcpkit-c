@@ -206,6 +206,54 @@ int main(void) {
     // Overlong value should not match prefix length constraint
     CHECK(mcp_uri_template_match(ctx, "items/{word:4}/end", "items/antigravity/end", &pfx_matched) == MCP_ERR_NOT_FOUND);
 
+    /* 12. Level 4 explode modifier {*var} expansion */
+    mcp_json_value_t *arr_vars = mcp_json_object_new(ctx);
+    mcp_json_value_t *list = mcp_json_array_new(ctx);
+    CHECK(mcp_json_array_append(ctx, list, mcp_json_string_new(ctx, "alpha")) == MCP_OK);
+    CHECK(mcp_json_array_append(ctx, list, mcp_json_string_new(ctx, "beta")) == MCP_OK);
+    CHECK(mcp_json_array_append(ctx, list, mcp_json_string_new(ctx, "gamma")) == MCP_OK);
+    CHECK(mcp_json_object_set_take(ctx, arr_vars, "list", list) == MCP_OK);
+
+    char *exp_arr = NULL;
+    // Path segment {/list*}
+    CHECK(mcp_uri_template_expand(ctx, "repo://root{/list*}", arr_vars, &exp_arr) == MCP_OK);
+    CHECK(exp_arr != NULL);
+    CHECK(strcmp(exp_arr, "repo://root/alpha/beta/gamma") == 0);
+    mcp_uri_template_free_string(ctx, exp_arr);
+    exp_arr = NULL;
+
+    // Form query {?list*}
+    CHECK(mcp_uri_template_expand(ctx, "search{?list*}", arr_vars, &exp_arr) == MCP_OK);
+    CHECK(exp_arr != NULL);
+    CHECK(strcmp(exp_arr, "search?list=alpha&list=beta&list=gamma") == 0);
+    mcp_uri_template_free_string(ctx, exp_arr);
+    exp_arr = NULL;
+
+    // Label {.list*}
+    CHECK(mcp_uri_template_expand(ctx, "archive{.list*}", arr_vars, &exp_arr) == MCP_OK);
+    CHECK(exp_arr != NULL);
+    CHECK(strcmp(exp_arr, "archive.alpha.beta.gamma") == 0);
+    mcp_uri_template_free_string(ctx, exp_arr);
+    exp_arr = NULL;
+
+    // Simple {list*}
+    CHECK(mcp_uri_template_expand(ctx, "tags/{list*}", arr_vars, &exp_arr) == MCP_OK);
+    CHECK(exp_arr != NULL);
+    CHECK(strcmp(exp_arr, "tags/alpha,beta,gamma") == 0);
+    mcp_uri_template_free_string(ctx, exp_arr);
+    exp_arr = NULL;
+
+    // Empty array suppresses prefix
+    mcp_json_value_t *empty_vars = mcp_json_object_new(ctx);
+    CHECK(mcp_json_object_set_take(ctx, empty_vars, "empty", mcp_json_array_new(ctx)) == MCP_OK);
+    CHECK(mcp_uri_template_expand(ctx, "search{?empty*}", empty_vars, &exp_arr) == MCP_OK);
+    CHECK(exp_arr != NULL);
+    CHECK(strcmp(exp_arr, "search") == 0);
+    mcp_uri_template_free_string(ctx, exp_arr);
+    exp_arr = NULL;
+    mcp_json_destroy(ctx, empty_vars);
+    mcp_json_destroy(ctx, arr_vars);
+
     mcp_json_destroy(ctx, l3_exp);
     mcp_json_destroy(ctx, exp_vars);
     mcp_context_destroy(ctx);

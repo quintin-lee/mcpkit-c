@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mcpkit/json/array.h"
 #include "mcpkit/json/object.h"
 #include "mcpkit/json/value.h"
 
@@ -342,6 +343,81 @@ mcp_status_t mcp_uri_template_match(mcp_context_t *ctx,
     return MCP_OK;
 }
 
+static mcp_status_t append_raw_str(mcp_context_t *ctx,
+                                   char **buf_ptr, size_t *len_ptr, size_t *cap_ptr,
+                                   const char *raw, size_t raw_len) {
+    const mcp_allocator_t *alloc = mcp_context_allocator(ctx);
+    char *buf = *buf_ptr;
+    size_t len = *len_ptr;
+    size_t cap = *cap_ptr;
+
+    while (len + raw_len >= cap) {
+        size_t new_cap = cap * 2;
+        char *new_buf = alloc->realloc_fn(buf, new_cap, alloc->userdata);
+        if (new_buf == NULL) return MCP_ERR_NOMEM;
+        buf = new_buf;
+        cap = new_cap;
+    }
+    memcpy(buf + len, raw, raw_len);
+    len += raw_len;
+    buf[len] = '\0';
+
+    *buf_ptr = buf;
+    *len_ptr = len;
+    *cap_ptr = cap;
+    return MCP_OK;
+}
+
+static mcp_status_t append_encoded_str(mcp_context_t *ctx,
+                                      char **buf_ptr, size_t *len_ptr, size_t *cap_ptr,
+                                      const char *str, bool is_reserved,
+                                      mcp_uri_modifier_t mod, size_t prefix_len) {
+    const mcp_allocator_t *alloc = mcp_context_allocator(ctx);
+    char *buf = *buf_ptr;
+    size_t len = *len_ptr;
+    size_t cap = *cap_ptr;
+
+    size_t char_count = 0;
+    for (const char *s = str; *s != '\0'; s++) {
+        if (((unsigned char)(*s) & 0xC0) != 0x80) {
+            if (mod == MCP_URI_MOD_PREFIX && char_count >= prefix_len) {
+                break;
+            }
+            char_count++;
+        }
+        char c = *s;
+        bool allowed = is_unreserved(c) || (is_reserved && is_reserved_char(c));
+        if (allowed) {
+            if (len + 1 >= cap) {
+                size_t new_cap = cap * 2;
+                char *new_buf = alloc->realloc_fn(buf, new_cap, alloc->userdata);
+                if (new_buf == NULL) return MCP_ERR_NOMEM;
+                buf = new_buf;
+                cap = new_cap;
+            }
+            buf[len++] = c;
+        } else {
+            if (len + 3 >= cap) {
+                size_t new_cap = cap * 2 + 16;
+                char *new_buf = alloc->realloc_fn(buf, new_cap, alloc->userdata);
+                if (new_buf == NULL) return MCP_ERR_NOMEM;
+                buf = new_buf;
+                cap = new_cap;
+            }
+            static const char hex[] = "0123456789ABCDEF";
+            buf[len++] = '%';
+            buf[len++] = hex[(unsigned char)c >> 4];
+            buf[len++] = hex[(unsigned char)c & 0x0F];
+        }
+        buf[len] = '\0';
+    }
+
+    *buf_ptr = buf;
+    *len_ptr = len;
+    *cap_ptr = cap;
+    return MCP_OK;
+}
+
 mcp_status_t mcp_uri_template_expand(mcp_context_t *ctx,
                                      const char *pattern,
                                      const mcp_json_value_t *variables,
@@ -363,18 +439,10 @@ mcp_status_t mcp_uri_template_expand(mcp_context_t *ctx,
     const char *p = pattern;
     while (*p != '\0') {
         if (*p != '{') {
-            if (len + 1 >= cap) {
-                size_t new_cap = cap * 2;
-                char *new_buf = alloc->realloc_fn(buf, new_cap, alloc->userdata);
-                if (new_buf == NULL) {
-                    alloc->free_fn(buf, alloc->userdata);
-                    return MCP_ERR_NOMEM;
-                }
-                buf = new_buf;
-                cap = new_cap;
+            if (append_raw_str(ctx, &buf, &len, &cap, p++, 1) != MCP_OK) {
+                alloc->free_fn(buf, alloc->userdata);
+                return MCP_ERR_NOMEM;
             }
-            buf[len++] = *p++;
-            buf[len] = '\0';
             continue;
         }
 
@@ -400,102 +468,156 @@ mcp_status_t mcp_uri_template_expand(mcp_context_t *ctx,
 
         p = end + 1;
 
-        const char *val_str = NULL;
-        char num_buf[64];
-        if (variables != NULL) {
-            const mcp_json_value_t *v = mcp_json_object_get(ctx, variables, name);
-            if (v != NULL) {
-                if (mcp_json_string_value(ctx, v, &val_str) != MCP_OK || val_str == NULL) {
-                    if (mcp_json_type(ctx, v) == MCP_JSON_NUMBER) {
-                        double d = 0;
-                        if (mcp_json_number_value(ctx, v, &d) == MCP_OK) {
-                            snprintf(num_buf, sizeof(num_buf), "%g", d);
-                            val_str = num_buf;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (val_str == NULL) {
+        const mcp_json_value_t *v = (variables != NULL) ? mcp_json_object_get(ctx, variables, name) : NULL;
+        if (v == NULL) {
             // undefined variable expands to empty string
             continue;
         }
 
-        if (expr.prefix[0] != '\0') {
-            size_t plen = strlen(expr.prefix);
-            while (len + plen >= cap) {
-                size_t new_cap = cap * 2;
-                char *new_buf = alloc->realloc_fn(buf, new_cap, alloc->userdata);
-                if (new_buf == NULL) {
-                    alloc->free_fn(buf, alloc->userdata);
-                    return MCP_ERR_NOMEM;
-                }
-                buf = new_buf;
-                cap = new_cap;
+        if (mcp_json_type(ctx, v) == MCP_JSON_ARRAY) {
+            size_t arr_size = mcp_json_array_size(ctx, v);
+            if (arr_size == 0) {
+                continue;
             }
-            memcpy(buf + len, expr.prefix, plen);
-            len += plen;
-            buf[len] = '\0';
+            if (expr.mod == MCP_URI_MOD_EXPLODE) {
+                for (size_t i = 0; i < arr_size; i++) {
+                    const mcp_json_value_t *item = mcp_json_array_get(ctx, v, i);
+                    const char *item_str = NULL;
+                    char item_num_buf[64];
+                    if (item != NULL) {
+                        if (mcp_json_string_value(ctx, item, &item_str) != MCP_OK || item_str == NULL) {
+                            if (mcp_json_type(ctx, item) == MCP_JSON_NUMBER) {
+                                double d = 0;
+                                if (mcp_json_number_value(ctx, item, &d) == MCP_OK) {
+                                    snprintf(item_num_buf, sizeof(item_num_buf), "%g", d);
+                                    item_str = item_num_buf;
+                                }
+                            }
+                        }
+                    }
+                    if (item_str == NULL) item_str = "";
+
+                    if (expr.op == '?') {
+                        const char *del = (i == 0) ? "?" : "&";
+                        if (append_raw_str(ctx, &buf, &len, &cap, del, 1) != MCP_OK ||
+                            append_raw_str(ctx, &buf, &len, &cap, name, strlen(name)) != MCP_OK ||
+                            append_raw_str(ctx, &buf, &len, &cap, "=", 1) != MCP_OK ||
+                            append_encoded_str(ctx, &buf, &len, &cap, item_str, expr.is_reserved, expr.mod, expr.prefix_len) != MCP_OK) {
+                            alloc->free_fn(buf, alloc->userdata);
+                            return MCP_ERR_NOMEM;
+                        }
+                    } else if (expr.op == '/') {
+                        if (append_raw_str(ctx, &buf, &len, &cap, "/", 1) != MCP_OK ||
+                            append_encoded_str(ctx, &buf, &len, &cap, item_str, expr.is_reserved, expr.mod, expr.prefix_len) != MCP_OK) {
+                            alloc->free_fn(buf, alloc->userdata);
+                            return MCP_ERR_NOMEM;
+                        }
+                    } else if (expr.op == '.') {
+                        if (append_raw_str(ctx, &buf, &len, &cap, ".", 1) != MCP_OK ||
+                            append_encoded_str(ctx, &buf, &len, &cap, item_str, expr.is_reserved, expr.mod, expr.prefix_len) != MCP_OK) {
+                            alloc->free_fn(buf, alloc->userdata);
+                            return MCP_ERR_NOMEM;
+                        }
+                    } else {
+                        // simple, +, #
+                        if (i == 0 && expr.op == '#') {
+                            if (append_raw_str(ctx, &buf, &len, &cap, "#", 1) != MCP_OK) {
+                                alloc->free_fn(buf, alloc->userdata);
+                                return MCP_ERR_NOMEM;
+                            }
+                        }
+                        if (i > 0) {
+                            if (append_raw_str(ctx, &buf, &len, &cap, ",", 1) != MCP_OK) {
+                                alloc->free_fn(buf, alloc->userdata);
+                                return MCP_ERR_NOMEM;
+                            }
+                        }
+                        if (append_encoded_str(ctx, &buf, &len, &cap, item_str, expr.is_reserved, expr.mod, expr.prefix_len) != MCP_OK) {
+                            alloc->free_fn(buf, alloc->userdata);
+                            return MCP_ERR_NOMEM;
+                        }
+                    }
+                }
+            } else {
+                // Non-exploded array
+                if (expr.prefix[0] != '\0') {
+                    if (append_raw_str(ctx, &buf, &len, &cap, expr.prefix, strlen(expr.prefix)) != MCP_OK) {
+                        alloc->free_fn(buf, alloc->userdata);
+                        return MCP_ERR_NOMEM;
+                    }
+                }
+                if (expr.is_query) {
+                    if (append_raw_str(ctx, &buf, &len, &cap, name, strlen(name)) != MCP_OK ||
+                        append_raw_str(ctx, &buf, &len, &cap, "=", 1) != MCP_OK) {
+                        alloc->free_fn(buf, alloc->userdata);
+                        return MCP_ERR_NOMEM;
+                    }
+                }
+                for (size_t i = 0; i < arr_size; i++) {
+                    const mcp_json_value_t *item = mcp_json_array_get(ctx, v, i);
+                    const char *item_str = NULL;
+                    char item_num_buf[64];
+                    if (item != NULL) {
+                        if (mcp_json_string_value(ctx, item, &item_str) != MCP_OK || item_str == NULL) {
+                            if (mcp_json_type(ctx, item) == MCP_JSON_NUMBER) {
+                                double d = 0;
+                                if (mcp_json_number_value(ctx, item, &d) == MCP_OK) {
+                                    snprintf(item_num_buf, sizeof(item_num_buf), "%g", d);
+                                    item_str = item_num_buf;
+                                }
+                            }
+                        }
+                    }
+                    if (item_str == NULL) item_str = "";
+                    if (i > 0) {
+                        if (append_raw_str(ctx, &buf, &len, &cap, ",", 1) != MCP_OK) {
+                            alloc->free_fn(buf, alloc->userdata);
+                            return MCP_ERR_NOMEM;
+                        }
+                    }
+                    if (append_encoded_str(ctx, &buf, &len, &cap, item_str, expr.is_reserved, expr.mod, expr.prefix_len) != MCP_OK) {
+                        alloc->free_fn(buf, alloc->userdata);
+                        return MCP_ERR_NOMEM;
+                    }
+                }
+            }
+            continue;
+        }
+
+        // Scalar value (string or number)
+        const char *val_str = NULL;
+        char num_buf[64];
+        if (mcp_json_string_value(ctx, v, &val_str) != MCP_OK || val_str == NULL) {
+            if (mcp_json_type(ctx, v) == MCP_JSON_NUMBER) {
+                double d = 0;
+                if (mcp_json_number_value(ctx, v, &d) == MCP_OK) {
+                    snprintf(num_buf, sizeof(num_buf), "%g", d);
+                    val_str = num_buf;
+                }
+            }
+        }
+        if (val_str == NULL) {
+            continue;
+        }
+
+        if (expr.prefix[0] != '\0') {
+            if (append_raw_str(ctx, &buf, &len, &cap, expr.prefix, strlen(expr.prefix)) != MCP_OK) {
+                alloc->free_fn(buf, alloc->userdata);
+                return MCP_ERR_NOMEM;
+            }
         }
 
         if (expr.is_query) {
-            size_t nlen = strlen(name);
-            while (len + nlen + 1 >= cap) {
-                size_t new_cap = cap * 2;
-                char *new_buf = alloc->realloc_fn(buf, new_cap, alloc->userdata);
-                if (new_buf == NULL) {
-                    alloc->free_fn(buf, alloc->userdata);
-                    return MCP_ERR_NOMEM;
-                }
-                buf = new_buf;
-                cap = new_cap;
+            if (append_raw_str(ctx, &buf, &len, &cap, name, strlen(name)) != MCP_OK ||
+                append_raw_str(ctx, &buf, &len, &cap, "=", 1) != MCP_OK) {
+                alloc->free_fn(buf, alloc->userdata);
+                return MCP_ERR_NOMEM;
             }
-            memcpy(buf + len, name, nlen);
-            len += nlen;
-            buf[len++] = '=';
-            buf[len] = '\0';
         }
 
-        size_t char_count = 0;
-        for (const char *s = val_str; *s != '\0'; s++) {
-            if (((unsigned char)(*s) & 0xC0) != 0x80) {
-                if (expr.mod == MCP_URI_MOD_PREFIX && char_count >= expr.prefix_len) {
-                    break;
-                }
-                char_count++;
-            }
-            char c = *s;
-            bool allowed = is_unreserved(c) || (expr.is_reserved && is_reserved_char(c));
-            if (allowed) {
-                if (len + 1 >= cap) {
-                    size_t new_cap = cap * 2;
-                    char *new_buf = alloc->realloc_fn(buf, new_cap, alloc->userdata);
-                    if (new_buf == NULL) {
-                        alloc->free_fn(buf, alloc->userdata);
-                        return MCP_ERR_NOMEM;
-                    }
-                    buf = new_buf;
-                    cap = new_cap;
-                }
-                buf[len++] = c;
-            } else {
-                if (len + 3 >= cap) {
-                    size_t new_cap = cap * 2 + 16;
-                    char *new_buf = alloc->realloc_fn(buf, new_cap, alloc->userdata);
-                    if (new_buf == NULL) {
-                        alloc->free_fn(buf, alloc->userdata);
-                        return MCP_ERR_NOMEM;
-                    }
-                    buf = new_buf;
-                    cap = new_cap;
-                }
-                static const char hex[] = "0123456789ABCDEF";
-                buf[len++] = '%';
-                buf[len++] = hex[(unsigned char)c >> 4];
-                buf[len++] = hex[(unsigned char)c & 0x0F];
-            }
-            buf[len] = '\0';
+        if (append_encoded_str(ctx, &buf, &len, &cap, val_str, expr.is_reserved, expr.mod, expr.prefix_len) != MCP_OK) {
+            alloc->free_fn(buf, alloc->userdata);
+            return MCP_ERR_NOMEM;
         }
     }
 
