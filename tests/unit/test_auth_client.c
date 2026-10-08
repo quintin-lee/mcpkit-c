@@ -183,6 +183,46 @@ int main(void) {
     const char *bad_doc_missing = "{\"client_id\":\"https://example.com/c.json\"}";
     CHECK(mcp_oauth_client_metadata_parse(ctx, bad_doc_missing, strlen(bad_doc_missing), &cm) == MCP_ERR_PROTOCOL);
 
+    /* 9. RFC 8693 Token Exchange Request Builder */
+    mcp_oauth_token_exchange_req_t ex_req = {
+        .subject_token = "idp-subject-token-xyz",
+        .subject_token_type = MCP_OAUTH_TOKEN_TYPE_JWT,
+    };
+    char *ex_body = NULL;
+    CHECK(mcp_oauth_build_token_exchange_request(ctx, &ex_req, &ex_body) == MCP_OK);
+    CHECK(ex_body != NULL);
+    CHECK(strstr(ex_body, "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange") != NULL);
+    CHECK(strstr(ex_body, "subject_token=idp-subject-token-xyz") != NULL);
+    CHECK(strstr(ex_body, "subject_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Ajwt") != NULL);
+    mcp_oauth_free_string(ctx, ex_body);
+    ex_body = NULL;
+
+    /* Full Token Exchange request with delegation */
+    ex_req.actor_token = "actor-token-abc";
+    ex_req.actor_token_type = MCP_OAUTH_TOKEN_TYPE_ACCESS_TOKEN;
+    ex_req.resource = "https://mcp.example.com/api";
+    ex_req.audience = "mcp-service";
+    ex_req.scope = "tools:read tools:write";
+    ex_req.requested_token_type = MCP_OAUTH_TOKEN_TYPE_ACCESS_TOKEN;
+    CHECK(mcp_oauth_build_token_exchange_request(ctx, &ex_req, &ex_body) == MCP_OK);
+    CHECK(strstr(ex_body, "actor_token=actor-token-abc") != NULL);
+    CHECK(strstr(ex_body, "actor_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token") != NULL);
+    CHECK(strstr(ex_body, "resource=https%3A%2F%2Fmcp.example.com%2Fapi") != NULL);
+    CHECK(strstr(ex_body, "audience=mcp-service") != NULL);
+    CHECK(strstr(ex_body, "scope=tools%3Aread%20tools%3Awrite") != NULL);
+    CHECK(strstr(ex_body, "requested_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token") != NULL);
+    mcp_oauth_free_string(ctx, ex_body);
+    ex_body = NULL;
+
+    /* Negative tests */
+    mcp_oauth_token_exchange_req_t bad_req = { 0 };
+    CHECK(mcp_oauth_build_token_exchange_request(ctx, &bad_req, &ex_body) == MCP_ERR_INVALID_ARGUMENT);
+    bad_req.subject_token = "token";
+    CHECK(mcp_oauth_build_token_exchange_request(ctx, &bad_req, &ex_body) == MCP_ERR_INVALID_ARGUMENT);
+    bad_req.subject_token_type = MCP_OAUTH_TOKEN_TYPE_JWT;
+    bad_req.actor_token = "actor";
+    CHECK(mcp_oauth_build_token_exchange_request(ctx, &bad_req, &ex_body) == MCP_ERR_INVALID_ARGUMENT);
+
     mcp_context_destroy(ctx);
     printf("test_auth_client OK\n");
     return 0;

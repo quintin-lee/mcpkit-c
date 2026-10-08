@@ -270,6 +270,22 @@ mcp_status_t mcp_oauth_build_client_credentials_request(mcp_context_t *ctx,
                                                         char **body_out);
 
 /**
+ * @brief Builds application/x-www-form-urlencoded body for RFC 8693 Token Exchange.
+ *
+ * @param ctx       Context; may be NULL.
+ * @param req       Populated request descriptor (non-NULL).
+ * @param body_out  Receives newly allocated URL-encoded request body on MCP_OK.
+ *                  Caller frees with mcp_oauth_free_string().
+ * @return MCP_OK on success;
+ *         MCP_ERR_INVALID_ARGUMENT if req, subject_token, subject_token_type, or body_out is NULL/invalid,
+ *                                  or if actor_token is set without actor_token_type;
+ *         MCP_ERR_NOMEM on allocation failure.
+ */
+mcp_status_t mcp_oauth_build_token_exchange_request(mcp_context_t *ctx,
+                                                    const mcp_oauth_token_exchange_req_t *req,
+                                                    char **body_out);
+
+/**
  * @brief Frees a string allocated by mcp_oauth_build_* functions.
  */
 void mcp_oauth_free_string(mcp_context_t *ctx, char *str);
