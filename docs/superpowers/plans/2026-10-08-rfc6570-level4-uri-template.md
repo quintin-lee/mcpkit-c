@@ -16,7 +16,7 @@
 - Modify: `src/protocol/uri_template.c:79-115`
 - Test: `tests/unit/test_uri_template.c:13-25`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/unit/test_uri_template.c`, add negative syntax tests for malformed Level 4 modifiers:
 
@@ -29,12 +29,12 @@ In `tests/unit/test_uri_template.c`, add negative syntax tests for malformed Lev
     CHECK(mcp_uri_template_match(ctx, "file:///{:3}", "file:///a", NULL) == MCP_ERR_INVALID_ARGUMENT);
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `ctest --test-dir build -R test_uri_template --output-on-failure`  
 Expected: FAIL (currently `{var:}` or `{var:abc}` are treated as literal variable names without validation).
 
-- [ ] **Step 3: Implement minimal parser validation**
+- [x] **Step 3: Implement minimal parser validation**
 
 In `src/protocol/uri_template.c`, update `parsed_var_expr_t` and `parse_var_expr`:
 
@@ -124,12 +124,12 @@ static bool parse_var_expr(const char *start, const char *end, parsed_var_expr_t
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cmake --build build && ctest --test-dir build -R test_uri_template --output-on-failure`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/protocol/uri_template.c tests/unit/test_uri_template.c
@@ -144,7 +144,7 @@ git commit -m "feat(uri_template): parse and validate RFC 6570 Level 4 modifier 
 - Modify: `src/protocol/uri_template.c:160-205,340-410`
 - Test: `tests/unit/test_uri_template.c:130-160`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/unit/test_uri_template.c`, add tests for prefix expansion and matching:
 
@@ -176,12 +176,12 @@ In `tests/unit/test_uri_template.c`, add tests for prefix expansion and matching
     mcp_json_destroy(ctx, pfx_matched);
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `ctest --test-dir build -R test_uri_template --output-on-failure`  
 Expected: FAIL.
 
-- [ ] **Step 3: Implement prefix modifier logic**
+- [x] **Step 3: Implement prefix modifier logic**
 
 In `src/protocol/uri_template.c`:
 1. In `mcp_uri_template_expand`: when `expr.mod == MCP_URI_MOD_PREFIX`, truncate string traversal:
@@ -203,12 +203,12 @@ In `src/protocol/uri_template.c`:
     }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cmake --build build && ctest --test-dir build -R test_uri_template --output-on-failure`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/protocol/uri_template.c tests/unit/test_uri_template.c
@@ -223,7 +223,7 @@ git commit -m "feat(uri_template): implement RFC 6570 Level 4 prefix modifier ex
 - Modify: `src/protocol/uri_template.c:340-420`
 - Test: `tests/unit/test_uri_template.c`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/unit/test_uri_template.c`, add tests for array explode expansion:
 
@@ -259,12 +259,12 @@ In `tests/unit/test_uri_template.c`, add tests for array explode expansion:
     mcp_json_destroy(ctx, arr_vars);
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `ctest --test-dir build -R test_uri_template --output-on-failure`  
 Expected: FAIL (JSON array currently omitted or treated as NULL string).
 
-- [ ] **Step 3: Implement Array Explode Expansion**
+- [x] **Step 3: Implement Array Explode Expansion**
 
 In `src/protocol/uri_template.c`, handle `mcp_json_type(ctx, v) == MCP_JSON_ARRAY`:
 - If `expr.mod == MCP_URI_MOD_EXPLODE`:
@@ -274,12 +274,12 @@ In `src/protocol/uri_template.c`, handle `mcp_json_type(ctx, v) == MCP_JSON_ARRA
   - For `expr.op == 0 || expr.op == '+' || expr.op == '#'`: iterate items, write `,` between items.
 - If `v` is empty array (`count == 0`), suppress leading prefix.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cmake --build build && ctest --test-dir build -R test_uri_template --output-on-failure`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/protocol/uri_template.c tests/unit/test_uri_template.c
@@ -294,7 +294,7 @@ git commit -m "feat(uri_template): implement RFC 6570 Level 4 explode array expa
 - Modify: `src/protocol/uri_template.c:160-290`
 - Test: `tests/unit/test_uri_template.c`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/unit/test_uri_template.c`, add tests for reverse matching exploded paths and query parameters:
 
@@ -322,12 +322,12 @@ In `tests/unit/test_uri_template.c`, add tests for reverse matching exploded pat
     mcp_json_destroy(ctx, m_arr);
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `ctest --test-dir build -R test_uri_template --output-on-failure`  
 Expected: FAIL.
 
-- [ ] **Step 3: Implement Explode Reverse Matching**
+- [x] **Step 3: Implement Explode Reverse Matching**
 
 In `src/protocol/uri_template.c`:
 1. In `raw_capture_t`, record `mod` and `op`.
@@ -339,12 +339,12 @@ In `src/protocol/uri_template.c`:
      - Set into object via `mcp_json_object_set_take(ctx, obj, name, arr)`.
    - Else populate `mcp_json_string_t` as before.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cmake --build build && ctest --test-dir build -R test_uri_template --output-on-failure`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/protocol/uri_template.c tests/unit/test_uri_template.c
@@ -359,17 +359,17 @@ git commit -m "feat(uri_template): implement RFC 6570 Level 4 explode reverse ma
 - Modify: `include/mcpkit/protocol/uri_template.h:1-25`
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: Update API Documentation & CHANGELOG**
+- [x] **Step 1: Update API Documentation & CHANGELOG**
 
 Update `include/mcpkit/protocol/uri_template.h` to declare Level 4 support (`:len` prefix and `*` explode modifier).  
 Update `CHANGELOG.md` to document the completed RFC 6570 Level 4 capabilities under the current release notes.
 
-- [ ] **Step 2: Run full project test suite**
+- [x] **Step 2: Run full project test suite**
 
 Run: `ctest --test-dir build --output-on-failure`  
 Expected: 59/59 tests pass (100% pass rate).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add include/mcpkit/protocol/uri_template.h CHANGELOG.md
