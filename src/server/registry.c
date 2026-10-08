@@ -35,6 +35,7 @@ mcp_tool_t *mcp_tool_new(mcp_context_t *ctx, const char *name, const char *descr
         return NULL;
     }
     tool->schema = input_schema;
+    tool->output_schema = NULL;
     tool->handler = handler;
     tool->handler_v2 = NULL;
     tool->user_data = user_data;
@@ -50,6 +51,7 @@ void mcp_tool_destroy(mcp_context_t *ctx, mcp_tool_t *tool) {
     srv_free(ctx, tool->name);
     srv_free(ctx, tool->description);
     mcp_json_destroy(ctx, tool->schema);
+    mcp_json_destroy(ctx, tool->output_schema);
     srv_free(ctx, tool);
 }
 
@@ -75,12 +77,49 @@ mcp_tool_t *mcp_tool_new_v2(mcp_context_t *ctx, const char *name, const char *de
         return NULL;
     }
     tool->schema = input_schema;
+    tool->output_schema = NULL;
     tool->handler = NULL;
     tool->handler_v2 = handler;
     tool->user_data = user_data;
     tool->vis = MCP_TOOL_VIS_BOTH;
     tool->required = 0;
     return tool;
+}
+
+mcp_status_t mcp_tool_set_output_schema(mcp_context_t *ctx, mcp_tool_t *tool,
+                                       mcp_json_value_t *output_schema) {
+    if (tool == NULL) {
+        if (output_schema != NULL) {
+            mcp_json_destroy(ctx, output_schema);
+        }
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (tool->output_schema != NULL) {
+        mcp_json_destroy(ctx, tool->output_schema);
+    }
+    tool->output_schema = output_schema;
+    return MCP_OK;
+}
+
+const mcp_json_value_t *mcp_tool_output_schema(const mcp_tool_t *tool) {
+    if (tool == NULL) return NULL;
+    return tool->output_schema;
+}
+
+mcp_status_t mcp_tool_result_set_structured_content(mcp_context_t *ctx,
+                                                    mcp_json_value_t *result,
+                                                    mcp_json_value_t *val) {
+    if (result == NULL || val == NULL) {
+        if (val != NULL) mcp_json_destroy(ctx, val);
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    return mcp_json_object_set_take(ctx, result, "structuredContent", val);
+}
+
+const mcp_json_value_t *mcp_tool_result_get_structured_content(mcp_context_t *ctx,
+                                                               const mcp_json_value_t *result) {
+    if (result == NULL) return NULL;
+    return mcp_json_object_get(ctx, result, "structuredContent");
 }
 
 mcp_status_t mcp_tool_set_visibility(mcp_context_t *ctx, mcp_tool_t *tool,

@@ -83,6 +83,40 @@ static void test_elicit_request_with_schema(void) {
     mcp_json_destroy(NULL, req);
 }
 
+static void test_elicit_request_url_mode(void) {
+    printf("  test_elicit_request_url_mode\n");
+
+    mcp_json_value_t *req =
+        mcp_mrtr_elicit_request_url_mode_new(NULL, "Please authorize at GitHub", "https://github.com/login/oauth/authorize");
+    CHECK(req != NULL);
+    if (req == NULL) return;
+
+    const char *url = mcp_mrtr_elicit_request_get_url(NULL, req);
+    CHECK(url != NULL && strcmp(url, "https://github.com/login/oauth/authorize") == 0);
+
+    const mcp_json_value_t *mode = mcp_json_object_get(NULL, req, "mode");
+    CHECK(mode != NULL);
+    const char *mode_str = NULL;
+    CHECK(mcp_json_string_value(NULL, mode, &mode_str) == MCP_OK);
+    CHECK(mode_str != NULL && strcmp(mode_str, "url") == 0);
+
+    const mcp_json_value_t *msg = mcp_json_object_get(NULL, req, "message");
+    CHECK(msg != NULL);
+    const char *msg_str = NULL;
+    CHECK(mcp_json_string_value(NULL, msg, &msg_str) == MCP_OK);
+    CHECK(msg_str != NULL && strcmp(msg_str, "Please authorize at GitHub") == 0);
+
+    /* elicitationId must NOT be present (removed in 2026-07-28) */
+    CHECK(mcp_json_object_get(NULL, req, "elicitationId") == NULL);
+
+    mcp_json_destroy(NULL, req);
+
+    /* Negative tests */
+    CHECK(mcp_mrtr_elicit_request_url_mode_new(NULL, NULL, "https://example.com") == NULL);
+    CHECK(mcp_mrtr_elicit_request_url_mode_new(NULL, "auth", NULL) == NULL);
+    CHECK(mcp_mrtr_elicit_request_get_url(NULL, NULL) == NULL);
+}
+
 static void test_input_required_new(void) {
     printf("  test_input_required_new\n");
 
@@ -927,6 +961,7 @@ int main(void) {
     printf("=== test_mrtr: Part 1 — Protocol helpers ===\n");
     test_elicit_request_new();
     test_elicit_request_with_schema();
+    test_elicit_request_url_mode();
     test_input_required_new();
     test_input_required_no_state();
     test_input_required_state_only();

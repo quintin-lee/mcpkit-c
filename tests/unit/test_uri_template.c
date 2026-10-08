@@ -93,6 +93,83 @@ int main(void) {
     mcp_uri_template_free_string(ctx, expanded);
     expanded = NULL;
 
+    /* 9. Level 3 operators: matching */
+    mcp_json_value_t *l3_vars = NULL;
+
+    // Path segment {/var}
+    CHECK(mcp_uri_template_match(ctx, "repo://root{/sub}", "repo://root/branch", &l3_vars) == MCP_OK);
+    CHECK(l3_vars != NULL);
+    const char *sub_val = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, l3_vars, "sub"), &sub_val) == MCP_OK);
+    CHECK(strcmp(sub_val, "branch") == 0);
+    mcp_json_destroy(ctx, l3_vars);
+    l3_vars = NULL;
+
+    // Fragment {#var}
+    CHECK(mcp_uri_template_match(ctx, "doc://guide{#sec}", "doc://guide#intro", &l3_vars) == MCP_OK);
+    CHECK(l3_vars != NULL);
+    const char *sec_val = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, l3_vars, "sec"), &sec_val) == MCP_OK);
+    CHECK(strcmp(sec_val, "intro") == 0);
+    mcp_json_destroy(ctx, l3_vars);
+    l3_vars = NULL;
+
+    // Label {.var}
+    CHECK(mcp_uri_template_match(ctx, "archive{.fmt}", "archive.zip", &l3_vars) == MCP_OK);
+    CHECK(l3_vars != NULL);
+    const char *fmt_val = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, l3_vars, "fmt"), &fmt_val) == MCP_OK);
+    CHECK(strcmp(fmt_val, "zip") == 0);
+    mcp_json_destroy(ctx, l3_vars);
+    l3_vars = NULL;
+
+    // Query {?var}
+    CHECK(mcp_uri_template_match(ctx, "search://items{?query}", "search://items?query=mcp%20tool", &l3_vars) == MCP_OK);
+    CHECK(l3_vars != NULL);
+    const char *q_val = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, l3_vars, "query"), &q_val) == MCP_OK);
+    CHECK(strcmp(q_val, "mcp tool") == 0);
+    mcp_json_destroy(ctx, l3_vars);
+    l3_vars = NULL;
+
+    /* 10. Level 3 operators: expansion */
+    mcp_json_value_t *l3_exp = mcp_json_object_new(ctx);
+    CHECK(mcp_json_object_set_take(ctx, l3_exp, "sub", mcp_json_string_new(ctx, "main")) == MCP_OK);
+    CHECK(mcp_json_object_set_take(ctx, l3_exp, "sec", mcp_json_string_new(ctx, "heading/1")) == MCP_OK);
+    CHECK(mcp_json_object_set_take(ctx, l3_exp, "fmt", mcp_json_string_new(ctx, "json")) == MCP_OK);
+    CHECK(mcp_json_object_set_take(ctx, l3_exp, "query", mcp_json_string_new(ctx, "mcp test")) == MCP_OK);
+
+    // Expand {/sub}
+    CHECK(mcp_uri_template_expand(ctx, "repo://root{/sub}", l3_exp, &expanded) == MCP_OK);
+    CHECK(strcmp(expanded, "repo://root/main") == 0);
+    mcp_uri_template_free_string(ctx, expanded);
+    expanded = NULL;
+
+    // Expand {#sec} (reserved chars allowed in fragment)
+    CHECK(mcp_uri_template_expand(ctx, "doc://guide{#sec}", l3_exp, &expanded) == MCP_OK);
+    CHECK(strcmp(expanded, "doc://guide#heading/1") == 0);
+    mcp_uri_template_free_string(ctx, expanded);
+    expanded = NULL;
+
+    // Expand {.fmt}
+    CHECK(mcp_uri_template_expand(ctx, "archive{.fmt}", l3_exp, &expanded) == MCP_OK);
+    CHECK(strcmp(expanded, "archive.json") == 0);
+    mcp_uri_template_free_string(ctx, expanded);
+    expanded = NULL;
+
+    // Expand {?query}
+    CHECK(mcp_uri_template_expand(ctx, "search://items{?query}", l3_exp, &expanded) == MCP_OK);
+    CHECK(strcmp(expanded, "search://items?query=mcp%20test") == 0);
+    mcp_uri_template_free_string(ctx, expanded);
+    expanded = NULL;
+
+    // Undefined variable with Level 3 operators omits prefix completely
+    CHECK(mcp_uri_template_expand(ctx, "search://items{?missing}", l3_exp, &expanded) == MCP_OK);
+    CHECK(strcmp(expanded, "search://items") == 0);
+    mcp_uri_template_free_string(ctx, expanded);
+    expanded = NULL;
+
+    mcp_json_destroy(ctx, l3_exp);
     mcp_json_destroy(ctx, exp_vars);
     mcp_context_destroy(ctx);
 

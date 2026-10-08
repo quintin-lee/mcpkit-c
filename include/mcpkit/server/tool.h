@@ -186,4 +186,51 @@ mcp_tool_t *mcp_tool_new_v2(mcp_context_t *ctx, const char *name,
                              mcp_tool_handler_v2_fn handler,
                              void *user_data);
 
+/**
+ * @brief Sets an output schema for the tool (SEP-2106).
+ *
+ * The tool TAKES ownership of `output_schema` on MCP_OK. If tool already has an
+ * output schema, the previous one is destroyed.
+ *
+ * @param ctx           Context; may be NULL.
+ * @param tool          Target tool.
+ * @param output_schema Optional JSON Schema object; TAKEN on MCP_OK. May be NULL.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if tool is NULL.
+ */
+mcp_status_t mcp_tool_set_output_schema(mcp_context_t *ctx, mcp_tool_t *tool,
+                                       mcp_json_value_t *output_schema);
+
+/**
+ * @brief Returns the output schema of the tool (borrowed).
+ *
+ * @param tool Target tool.
+ * @return Borrowed pointer to output schema, or NULL if none set or tool is NULL.
+ */
+const mcp_json_value_t *mcp_tool_output_schema(const mcp_tool_t *tool);
+
+/**
+ * @brief Sets the structuredContent field on a tool call result object (SEP-1613).
+ *
+ * Takes ownership of `val` on all paths.
+ *
+ * @param ctx    Context; may be NULL.
+ * @param result Target result JSON object.
+ * @param val    Structured content JSON value; TAKEN on all paths.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT or MCP_ERR_NOMEM on failure.
+ */
+mcp_status_t mcp_tool_result_set_structured_content(mcp_context_t *ctx,
+                                                    mcp_json_value_t *result,
+                                                    mcp_json_value_t *val);
+
+/**
+ * @brief Returns a borrowed pointer to structuredContent in a tool call result.
+ *
+ * @param ctx    Context; may be NULL.
+ * @param result Result JSON object.
+ * @return Borrowed pointer to structuredContent, or NULL if absent.
+ */
+const mcp_json_value_t *mcp_tool_result_get_structured_content(mcp_context_t *ctx,
+                                                               const mcp_json_value_t *result);
+
 #endif
+

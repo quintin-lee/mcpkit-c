@@ -59,7 +59,8 @@ int main(void) {
         "  \"token_endpoint\": \"https://auth.example.com/oauth/token\","
         "  \"registration_endpoint\": \"https://auth.example.com/oauth/register\","
         "  \"jwks_uri\": \"https://auth.example.com/.well-known/jwks.json\","
-        "  \"code_challenge_methods_supported\": [\"S256\", \"plain\"]"
+        "  \"code_challenge_methods_supported\": [\"S256\", \"plain\"],"
+        "  \"client_id_metadata_document_supported\": true"
         "}";
 
     mcp_json_value_t *meta_v = mcp_json_parse(ctx, meta_json_str, strlen(meta_json_str));
@@ -73,6 +74,7 @@ int main(void) {
     CHECK(strcmp(meta.registration_endpoint, "https://auth.example.com/oauth/register") == 0);
     CHECK(strcmp(meta.jwks_uri, "https://auth.example.com/.well-known/jwks.json") == 0);
     CHECK(meta.supports_pkce_s256 == true);
+    CHECK(meta.client_id_metadata_document_supported == true);
 
     mcp_json_destroy(ctx, meta_v);
 

@@ -428,6 +428,16 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
                 return NULL;
             }
         }
+        if (t->output_schema != NULL) {
+            mcp_json_value_t *copy = mcp_json_clone(ctx, t->output_schema);
+            if (copy == NULL ||
+                mcp_json_object_set_take(ctx, entry, "outputSchema", copy) != MCP_OK) {
+                mcp_json_destroy(ctx, entry);
+                mcp_json_destroy(ctx, result);
+                mcp_json_destroy(ctx, arr);
+                return NULL;
+            }
+        }
         if (mcp_json_array_append(ctx, arr, entry) != MCP_OK) {
             mcp_json_destroy(ctx, entry);
             mcp_json_destroy(ctx, result);
@@ -551,6 +561,17 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
     /* For InputRequiredResult, skip the "complete" decoration and pass
      * the result through as-is so the client gets the full MRTR payload. */
     if (!mcp_mrtr_is_input_required(ctx, result)) {
+        if (tool->output_schema != NULL) {
+            const mcp_json_value_t *sc = mcp_json_object_get(ctx, result, "structuredContent");
+            if (sc != NULL) {
+                mcp_status_t vst = mcp_schema_validate(ctx, tool->output_schema, sc);
+                if (vst != MCP_OK) {
+                    mcp_json_destroy(ctx, result);
+                    return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS,
+                                    "tools/call: structuredContent failed outputSchema validation");
+                }
+            }
+        }
         if (decorate_result(ctx, srv, result, false) != MCP_OK) {
             mcp_json_destroy(ctx, result);
             return NULL;

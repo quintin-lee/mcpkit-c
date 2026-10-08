@@ -82,6 +82,56 @@ mcp_json_value_t *mcp_mrtr_elicit_request_new(mcp_context_t *ctx,
     return obj;
 }
 
+mcp_json_value_t *mcp_mrtr_elicit_request_url_mode_new(mcp_context_t *ctx,
+                                                        const char *message,
+                                                        const char *url) {
+    if (message == NULL || url == NULL) {
+        return NULL;
+    }
+
+    mcp_json_value_t *obj = mcp_json_object_new(ctx);
+    if (obj == NULL) {
+        return NULL;
+    }
+
+    if (!set_str(ctx, obj, "mode", "url", NULL)) {
+        return NULL;
+    }
+    if (!set_str(ctx, obj, "message", message, NULL)) {
+        return NULL;
+    }
+    if (!set_str(ctx, obj, "url", url, NULL)) {
+        return NULL;
+    }
+
+    return obj;
+}
+
+const char *mcp_mrtr_elicit_request_get_url(mcp_context_t *ctx,
+                                            const mcp_json_value_t *elicit_req) {
+    if (elicit_req == NULL) {
+        return NULL;
+    }
+    const mcp_json_value_t *mv = mcp_json_object_get(ctx, elicit_req, "mode");
+    if (mv != NULL) {
+        const char *mstr = NULL;
+        if (mcp_json_string_value(ctx, mv, &mstr) == MCP_OK && mstr != NULL) {
+            if (strcmp(mstr, "url") != 0) {
+                return NULL;
+            }
+        }
+    }
+    const mcp_json_value_t *uv = mcp_json_object_get(ctx, elicit_req, "url");
+    if (uv == NULL) {
+        return NULL;
+    }
+    const char *url_str = NULL;
+    if (mcp_json_string_value(ctx, uv, &url_str) == MCP_OK) {
+        return url_str;
+    }
+    return NULL;
+}
+
 mcp_json_value_t *mcp_mrtr_result_input_required_new(mcp_context_t *ctx,
                                                       mcp_json_value_t *input_requests,
                                                       const char *request_state) {

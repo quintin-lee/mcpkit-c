@@ -37,7 +37,89 @@ typedef struct mcp_oauth_metadata {
     char registration_endpoint[256];
     char jwks_uri[256];
     bool supports_pkce_s256;
+    bool client_id_metadata_document_supported;
 } mcp_oauth_metadata_t;
+
+/**
+ * @brief Validates an authorization response 'iss' parameter against the expected issuer (RFC 9207 / SEP-2468).
+ *
+ * Per SEP-2468, if the authorization response contains an 'iss' parameter, the client MUST validate
+ * that it matches the recorded issuer identifier. If 'iss' is omitted, validation succeeds.
+ *
+ * @param expected_issuer The recorded issuer URL from discovery (must not be NULL).
+ * @param response_issuer The 'iss' parameter returned in authorization response (may be NULL if omitted).
+ * @return true if valid (matches or response_issuer is NULL); false if response_issuer is present and does not match.
+ */
+bool mcp_oauth_validate_issuer(const char *expected_issuer, const char *response_issuer);
+
+/**
+ * @brief Client ID Metadata Document structure (SEP-991 / PR #2858).
+ *
+ * Used for URL-based client registration in place of deprecated RFC 7591.
+ */
+typedef struct mcp_oauth_client_metadata {
+    char *client_id;                  /**< HTTPS URL of this metadata document (required) */
+    char *client_name;                /**< Human-readable client name (required) */
+    char *client_uri;                 /**< Optional client web page URI */
+    char *logo_uri;                   /**< Optional logo URI */
+    char **redirect_uris;             /**< Array of redirection URIs (required >= 1) */
+    size_t redirect_uris_count;
+    char **grant_types;               /**< Array of allowed grant types, e.g. ["authorization_code"] */
+    size_t grant_types_count;
+    char **response_types;            /**< Array of response types, e.g. ["code"] */
+    size_t response_types_count;
+    char *token_endpoint_auth_method; /**< e.g. "none", "client_secret_post", "private_key_jwt" */
+    char *jwks_uri;                   /**< Optional JWKS URI */
+} mcp_oauth_client_metadata_t;
+
+/**
+ * @brief Parses a Client ID Metadata Document JSON string (SEP-991).
+ *
+ * @param ctx        Context; may be NULL.
+ * @param json_str   JSON string content.
+ * @param len        Length of json_str.
+ * @param meta_out   Receives populated metadata. Caller frees via mcp_oauth_client_metadata_cleanup().
+ * @return MCP_OK on success;
+ *         MCP_ERR_INVALID_ARGUMENT on NULL arguments;
+ *         MCP_ERR_PROTOCOL if JSON is invalid or required fields (client_id, client_name, redirect_uris) are missing.
+ */
+mcp_status_t mcp_oauth_client_metadata_parse(mcp_context_t *ctx,
+                                             const char *json_str,
+                                             size_t len,
+                                             mcp_oauth_client_metadata_t *meta_out);
+
+/**
+ * @brief Validates a Client ID Metadata Document (SEP-991).
+ *
+ * Checks:
+ * - client_id is an HTTPS URL and contains a path component (e.g. https://.../...)
+ * - If expected_url is non-NULL, client_id matches expected_url exactly
+ * - client_name is non-empty
+ * - redirect_uris has at least one valid URI
+ *
+ * @param meta         Parsed client metadata.
+ * @param expected_url Optional expected URL where document was fetched (may be NULL).
+ * @return MCP_OK if valid; MCP_ERR_INVALID_ARGUMENT or MCP_ERR_PROTOCOL on failure.
+ */
+mcp_status_t mcp_oauth_client_metadata_validate(const mcp_oauth_client_metadata_t *meta,
+                                                const char *expected_url);
+
+/**
+ * @brief Serializes a Client ID Metadata Document to JSON (SEP-991).
+ *
+ * @param ctx   Context; may be NULL.
+ * @param meta  Client metadata structure.
+ * @return Heap-allocated JSON string; caller frees with mcp_oauth_free_string().
+ */
+char *mcp_oauth_client_metadata_serialize(mcp_context_t *ctx,
+                                          const mcp_oauth_client_metadata_t *meta);
+
+/**
+ * @brief Frees all allocated memory in mcp_oauth_client_metadata_t.
+ */
+void mcp_oauth_client_metadata_cleanup(mcp_context_t *ctx,
+                                       mcp_oauth_client_metadata_t *meta);
+
 
 /**
  * @brief Computes the RFC 7636 S256 code_challenge for a given code_verifier.

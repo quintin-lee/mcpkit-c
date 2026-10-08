@@ -49,6 +49,29 @@ static mcp_status_t slow_handler(mcp_context_t *c, mcp_session_t *s, const mcp_j
     return *o ? MCP_OK : MCP_ERR_NOMEM;
 }
 
+static mcp_status_t structured_handler(mcp_context_t *c, mcp_session_t *s, const mcp_json_value_t *a,
+                                       void *u, mcp_json_value_t **o) {
+    (void)s;
+    (void)u;
+    bool return_invalid = false;
+    if (a != NULL) {
+        const mcp_json_value_t *inv = mcp_json_object_get(c, a, "fail_output");
+        if (inv != NULL && mcp_json_type(c, inv) == MCP_JSON_BOOL) {
+            mcp_json_bool_value(c, inv, &return_invalid);
+        }
+    }
+    mcp_json_value_t *res = mcp_json_object_new(c);
+    mcp_json_value_t *sc = mcp_json_object_new(c);
+    if (return_invalid) {
+        mcp_json_object_set_take(c, sc, "count", mcp_json_string_new(c, "not-a-number"));
+    } else {
+        mcp_json_object_set_take(c, sc, "count", mcp_json_number_new(c, 42));
+    }
+    mcp_tool_result_set_structured_content(c, res, sc);
+    *o = res;
+    return MCP_OK;
+}
+
 static mcp_status_t static_read(mcp_context_t *c, mcp_session_t *s, const char *uri, void *u,
                                 mcp_json_value_t **o) {
     (void)s;
@@ -483,6 +506,69 @@ int main(void) {
     double sub_id_num = 0;
     CHECK(mcp_json_number_value(ctx, sub_id_v, &sub_id_num) == MCP_OK && sub_id_num == 42.0);
     mcp_message_destroy(ctx, num_r);
+
+    // 4. OutputSchema and structuredContent (SEP-2106 / SEP-1613)
+    const char *out_schema_json =
+        "{"
+        "  \"type\": \"object\","
+        "  \"properties\": {"
+        "    \"count\": { \"type\": \"number\" }"
+        "  },"
+        "  \"required\": [\"count\"]"
+        "}";
+    mcp_json_value_t *out_schema_v = mcp_json_parse(ctx, out_schema_json, strlen(out_schema_json));
+    CHECK(out_schema_v != NULL);
+
+    mcp_tool_t *st_tool = mcp_tool_new(ctx, "structured_tool", "Tool with outputSchema", NULL, structured_handler, NULL);
+    CHECK(st_tool != NULL);
+    CHECK(mcp_tool_output_schema(st_tool) == NULL);
+    CHECK(mcp_tool_set_output_schema(ctx, st_tool, out_schema_v) == MCP_OK);
+    CHECK(mcp_tool_output_schema(st_tool) != NULL);
+    CHECK(mcp_server_add_tool(ctx, srv, st_tool) == MCP_OK);
+
+    // Test tools/list exposes outputSchema
+    mcp_message_t *list_resp = dispatch_new(ctx, srv, s, "out_1", "tools/list", mcp_json_object_new(ctx));
+    const mcp_json_value_t *tools_res = mcp_message_result(ctx, list_resp);
+    CHECK(tools_res != NULL);
+    const mcp_json_value_t *t_arr = mcp_json_object_get(ctx, tools_res, "tools");
+    CHECK(t_arr != NULL);
+    bool found_out_tool = false;
+    size_t n_tools = mcp_json_array_size(ctx, t_arr);
+    for (size_t i = 0; i < n_tools; i++) {
+        const mcp_json_value_t *ti = mcp_json_array_get(ctx, t_arr, i);
+        const mcp_json_value_t *name_v = mcp_json_object_get(ctx, ti, "name");
+        const char *tn = NULL;
+        if (name_v != NULL) mcp_json_string_value(ctx, name_v, &tn);
+        if (tn != NULL && strcmp(tn, "structured_tool") == 0) {
+            found_out_tool = true;
+            const mcp_json_value_t *os = mcp_json_object_get(ctx, ti, "outputSchema");
+            CHECK(os != NULL);
+            const mcp_json_value_t *req_arr = mcp_json_object_get(ctx, os, "required");
+            CHECK(req_arr != NULL && mcp_json_array_size(ctx, req_arr) == 1);
+        }
+    }
+    CHECK(found_out_tool == true);
+    mcp_message_destroy(ctx, list_resp);
+
+    // Test tools/call returning valid structuredContent
+    mcp_message_t *call_ok_resp = dispatch_new(ctx, srv, s, "out_2", "tools/call",
+                                               call_params(ctx, "structured_tool", NULL));
+    const mcp_json_value_t *call_res = mcp_message_result(ctx, call_ok_resp);
+    CHECK(call_res != NULL);
+    const mcp_json_value_t *sc_val = mcp_tool_result_get_structured_content(ctx, call_res);
+    CHECK(sc_val != NULL);
+    const mcp_json_value_t *count_val = mcp_json_object_get(ctx, sc_val, "count");
+    double cnt = 0;
+    CHECK(count_val != NULL && mcp_json_number_value(ctx, count_val, &cnt) == MCP_OK && cnt == 42.0);
+    mcp_message_destroy(ctx, call_ok_resp);
+
+    // Test tools/call returning invalid structuredContent (violating outputSchema)
+    mcp_json_value_t *bad_args = mcp_json_object_new(ctx);
+    CHECK(mcp_json_object_set(ctx, bad_args, "fail_output", mcp_json_bool_new(ctx, true)) == MCP_OK);
+    mcp_message_t *call_err_resp = dispatch_new(ctx, srv, s, "out_3", "tools/call",
+                                                call_params(ctx, "structured_tool", bad_args));
+    CHECK(error_code(ctx, call_err_resp) == MCP_RPC_INVALID_PARAMS);
+    mcp_message_destroy(ctx, call_err_resp);
 
     teardown(ctx, srv);
     return 0;

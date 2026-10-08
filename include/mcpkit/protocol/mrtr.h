@@ -91,6 +91,41 @@ mcp_json_value_t *mcp_mrtr_elicit_request_new(mcp_context_t *ctx,
                                                mcp_json_value_t *schema);
 
 /**
+ * @brief Build a URL mode elicitation-request entry (SEP-1036) for inclusion in
+ *        `inputRequests`.
+ *
+ * Produces:
+ * ```json
+ * {
+ *   "mode": "url",
+ *   "message": "<message>",
+ *   "url": "<url>"
+ * }
+ * ```
+ * Note: Under MCP 2026-07-28, `elicitationId` is removed; correlation across
+ * round-trips is maintained via `requestState` in the parent `InputRequiredResult`.
+ *
+ * @param ctx     Context; may be NULL.
+ * @param message Human-readable message or prompt for user interaction; strdup'd.
+ * @param url     Interactive URL for out-of-band user interaction; strdup'd.
+ * @return Owned JSON object `{ mode: "url", message: "...", url: "..." }` or NULL on OOM.
+ */
+mcp_json_value_t *mcp_mrtr_elicit_request_url_mode_new(mcp_context_t *ctx,
+                                                        const char *message,
+                                                        const char *url);
+
+/**
+ * @brief Extract the URL from a URL-mode elicitation request entry (SEP-1036).
+ *
+ * @param ctx        Context; may be NULL.
+ * @param elicit_req Borrowed JSON object of an elicitation request entry.
+ * @return Borrowed URL string pointer, or NULL if absent or mode != "url".
+ */
+const char *mcp_mrtr_elicit_request_get_url(mcp_context_t *ctx,
+                                            const mcp_json_value_t *elicit_req);
+
+
+/**
  * @brief Build an `InputRequiredResult` JSON object.
  *
  * Produces:
