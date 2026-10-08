@@ -15,6 +15,11 @@ int main(void) {
     CHECK(mcp_uri_template_match(ctx, "file:///a", NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
     CHECK(mcp_uri_template_match(ctx, "file:///{unclosed", "file:///a", NULL) == MCP_ERR_INVALID_ARGUMENT);
     CHECK(mcp_uri_template_match(ctx, "file:///{}", "file:///a", NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_uri_template_match(ctx, "file:///{var:}", "file:///a", NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_uri_template_match(ctx, "file:///{var:abc}", "file:///a", NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_uri_template_match(ctx, "file:///{var:0}", "file:///a", NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_uri_template_match(ctx, "file:///{var:3*}", "file:///a", NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_uri_template_match(ctx, "file:///{:3}", "file:///a", NULL) == MCP_ERR_INVALID_ARGUMENT);
 
     /* 2. Exact match without variables */
     CHECK(mcp_uri_template_match(ctx, "file:///etc/hosts", "file:///etc/hosts", NULL) == MCP_OK);

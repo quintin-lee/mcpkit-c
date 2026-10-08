@@ -76,6 +76,12 @@ static char *url_decode(mcp_context_t *ctx, const char *src, size_t len) {
     return out;
 }
 
+typedef enum {
+    MCP_URI_MOD_NONE = 0,
+    MCP_URI_MOD_PREFIX,
+    MCP_URI_MOD_EXPLODE
+} mcp_uri_modifier_t;
+
 typedef struct {
     char op;            /* 0, '+', '#', '/', '.', '?' */
     const char *name;
@@ -83,16 +89,17 @@ typedef struct {
     bool is_reserved;
     const char *prefix;
     bool is_query;
+    mcp_uri_modifier_t mod;
+    size_t prefix_len;
 } parsed_var_expr_t;
 
 static bool parse_var_expr(const char *start, const char *end, parsed_var_expr_t *out) {
     if (start >= end) return false;
     char first = *start;
+    const char *name_start = start;
     if (first == '+' || first == '#' || first == '/' || first == '.' || first == '?') {
         out->op = first;
-        out->name = start + 1;
-        out->name_len = (size_t)(end - (start + 1));
-        if (out->name_len == 0) return false;
+        name_start = start + 1;
         out->is_reserved = (first == '+' || first == '#');
         out->is_query = (first == '?');
         if (first == '+') out->prefix = "";
@@ -103,14 +110,54 @@ static bool parse_var_expr(const char *start, const char *end, parsed_var_expr_t
         else out->prefix = "";
     } else {
         out->op = 0;
-        out->name = start;
-        out->name_len = (size_t)(end - start);
-        if (out->name_len == 0) return false;
+        name_start = start;
         out->is_reserved = false;
         out->is_query = false;
         out->prefix = "";
     }
-    return true;
+
+    if (name_start >= end) return false;
+
+    // Scan for modifier (* or :len)
+    const char *colon = NULL;
+    for (const char *s = name_start; s < end; s++) {
+        if (*s == ':') {
+            colon = s;
+            break;
+        }
+    }
+
+    out->mod = MCP_URI_MOD_NONE;
+    out->prefix_len = 0;
+
+    if (*(end - 1) == '*') {
+        if (colon != NULL) return false; // Cannot combine :len and *
+        out->mod = MCP_URI_MOD_EXPLODE;
+        out->name = name_start;
+        out->name_len = (size_t)((end - 1) - name_start);
+        if (out->name_len == 0) return false;
+    } else if (colon != NULL) {
+        if (colon == name_start) return false; // No variable name before ':'
+        const char *num_start = colon + 1;
+        if (num_start >= end) return false; // Empty length after ':'
+        size_t len_val = 0;
+        for (const char *s = num_start; s < end; s++) {
+            if (*s < '0' || *s > '9') return false;
+            len_val = len_val * 10 + (size_t)(*s - '0');
+            if (len_val > 999999) return false;
+        }
+        if (len_val == 0) return false; // :0 is invalid in RFC 6570
+        out->mod = MCP_URI_MOD_PREFIX;
+        out->prefix_len = len_val;
+        out->name = name_start;
+        out->name_len = (size_t)(colon - name_start);
+    } else {
+        out->mod = MCP_URI_MOD_NONE;
+        out->name = name_start;
+        out->name_len = (size_t)(end - name_start);
+    }
+
+    return out->name_len > 0;
 }
 
 static bool match_step(const char *p, const char *u, raw_captures_t *caps) {
@@ -227,6 +274,10 @@ mcp_status_t mcp_uri_template_match(mcp_context_t *ctx,
                 return MCP_ERR_INVALID_ARGUMENT;
             }
             if (close == scan + 1) {
+                return MCP_ERR_INVALID_ARGUMENT;
+            }
+            parsed_var_expr_t expr;
+            if (!parse_var_expr(scan + 1, close, &expr)) {
                 return MCP_ERR_INVALID_ARGUMENT;
             }
             scan = close + 1;
