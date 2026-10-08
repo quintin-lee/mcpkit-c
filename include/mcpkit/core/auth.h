@@ -27,6 +27,43 @@ extern "C" {
 #define MCP_PKCE_VERIFIER_MAX_LEN 128
 #define MCP_PKCE_CHALLENGE_LEN    43
 
+/** @brief RFC 8693 OAuth 2.0 Token Exchange grant type */
+#define MCP_OAUTH_GRANT_TYPE_TOKEN_EXCHANGE "urn:ietf:params:oauth:grant-type:token-exchange"
+
+/** @brief RFC 8693 Standard Security Token Types */
+#define MCP_OAUTH_TOKEN_TYPE_ACCESS_TOKEN   "urn:ietf:params:oauth:token-type:access_token"
+#define MCP_OAUTH_TOKEN_TYPE_REFRESH_TOKEN  "urn:ietf:params:oauth:token-type:refresh_token"
+#define MCP_OAUTH_TOKEN_TYPE_ID_TOKEN       "urn:ietf:params:oauth:token-type:id_token"
+#define MCP_OAUTH_TOKEN_TYPE_SAML1          "urn:ietf:params:oauth:token-type:saml1"
+#define MCP_OAUTH_TOKEN_TYPE_SAML2          "urn:ietf:params:oauth:token-type:saml2"
+#define MCP_OAUTH_TOKEN_TYPE_JWT            "urn:ietf:params:oauth:token-type:jwt"
+
+/**
+ * @brief Parameters for an RFC 8693 Token Exchange request.
+ */
+typedef struct mcp_oauth_token_exchange_req {
+    const char *subject_token;        /**< REQUIRED. Subject security token */
+    const char *subject_token_type;   /**< REQUIRED. Type URI of subject_token */
+    const char *actor_token;          /**< OPTIONAL. Actor security token for delegation */
+    const char *actor_token_type;     /**< OPTIONAL. Type URI of actor_token (REQUIRED if actor_token set) */
+    const char *resource;             /**< OPTIONAL. Target service URI */
+    const char *audience;             /**< OPTIONAL. Logical name of target service */
+    const char *scope;                /**< OPTIONAL. Requested scope */
+    const char *requested_token_type; /**< OPTIONAL. Desired token type URI */
+} mcp_oauth_token_exchange_req_t;
+
+/**
+ * @brief Parsed response from an RFC 8693 Token Exchange endpoint.
+ */
+typedef struct mcp_oauth_token_exchange_response {
+    char *access_token;               /**< REQUIRED. Issued security token */
+    char *issued_token_type;          /**< REQUIRED. URI indicating type of issued token */
+    char *token_type;                 /**< REQUIRED. Case-insensitive token type (e.g. "Bearer") */
+    uint32_t expires_in;              /**< OPTIONAL. Lifetime in seconds */
+    char *refresh_token;              /**< OPTIONAL. Refresh token if issued */
+    char *scope;                      /**< OPTIONAL. Granted scope */
+} mcp_oauth_token_exchange_response_t;
+
 /**
  * @brief OAuth 2.0 / 2.1 Authorization Server Metadata (RFC 8414).
  */

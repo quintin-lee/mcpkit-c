@@ -17,6 +17,10 @@ int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
     CHECK(ctx != NULL);
 
+    /* 0. RFC 8693 URN constants check */
+    CHECK(strcmp(MCP_OAUTH_GRANT_TYPE_TOKEN_EXCHANGE, "urn:ietf:params:oauth:grant-type:token-exchange") == 0);
+    CHECK(strcmp(MCP_OAUTH_TOKEN_TYPE_ACCESS_TOKEN, "urn:ietf:params:oauth:token-type:access_token") == 0);
+
     // 1. Parse valid token response
     const char *json_ok =
         "{\"access_token\":\"acc-123\",\"token_type\":\"Bearer\",\"expires_in\":3600,\"refresh_token\":\"ref-456\",\"scope\":\"read write\"}";
