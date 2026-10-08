@@ -174,6 +174,38 @@ int main(void) {
     mcp_uri_template_free_string(ctx, expanded);
     expanded = NULL;
 
+    /* 11. Level 4 prefix modifier {var:len} */
+    mcp_json_value_t *pfx_vars = mcp_json_object_new(ctx);
+    CHECK(mcp_json_object_set_take(ctx, pfx_vars, "word", mcp_json_string_new(ctx, "antigravity")) == MCP_OK);
+    CHECK(mcp_json_object_set_take(ctx, pfx_vars, "short", mcp_json_string_new(ctx, "hi")) == MCP_OK);
+
+    char *pfx_expanded = NULL;
+    CHECK(mcp_uri_template_expand(ctx, "items/{word:4}", pfx_vars, &pfx_expanded) == MCP_OK);
+    CHECK(pfx_expanded != NULL);
+    CHECK(strcmp(pfx_expanded, "items/anti") == 0);
+    mcp_uri_template_free_string(ctx, pfx_expanded);
+    pfx_expanded = NULL;
+
+    CHECK(mcp_uri_template_expand(ctx, "items/{short:5}", pfx_vars, &pfx_expanded) == MCP_OK);
+    CHECK(pfx_expanded != NULL);
+    CHECK(strcmp(pfx_expanded, "items/hi") == 0);
+    mcp_uri_template_free_string(ctx, pfx_expanded);
+    pfx_expanded = NULL;
+    mcp_json_destroy(ctx, pfx_vars);
+
+    // Prefix matching
+    mcp_json_value_t *pfx_matched = NULL;
+    CHECK(mcp_uri_template_match(ctx, "items/{word:4}", "items/anti", &pfx_matched) == MCP_OK);
+    CHECK(pfx_matched != NULL);
+    const char *w_val = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, pfx_matched, "word"), &w_val) == MCP_OK);
+    CHECK(strcmp(w_val, "anti") == 0);
+    mcp_json_destroy(ctx, pfx_matched);
+    pfx_matched = NULL;
+
+    // Overlong value should not match prefix length constraint
+    CHECK(mcp_uri_template_match(ctx, "items/{word:4}/end", "items/antigravity/end", &pfx_matched) == MCP_ERR_NOT_FOUND);
+
     mcp_json_destroy(ctx, l3_exp);
     mcp_json_destroy(ctx, exp_vars);
     mcp_context_destroy(ctx);

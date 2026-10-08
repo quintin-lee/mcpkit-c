@@ -213,12 +213,16 @@ static bool match_step(const char *p, const char *u, raw_captures_t *caps) {
         if (expr.op == '?' && strchr(u_val, '&') != NULL) {
             return false;
         }
+        size_t rest_len = strlen(u_val);
+        if (expr.mod == MCP_URI_MOD_PREFIX && rest_len > expr.prefix_len) {
+            return false;
+        }
         if (caps->count < MAX_RAW_CAPTURES) {
             caps->items[caps->count++] = (raw_capture_t){
                 .name_start = expr.name,
                 .name_len = expr.name_len,
                 .val_start = u_val,
-                .val_len = strlen(u_val),
+                .val_len = rest_len,
                 .is_reserved = expr.is_reserved
             };
             return true;
@@ -228,7 +232,11 @@ static bool match_step(const char *p, const char *u, raw_captures_t *caps) {
 
     // next_p != '\0': try matching different lengths of u_val
     size_t u_len = strlen(u_val);
-    for (size_t len = 0; len <= u_len; len++) {
+    size_t max_len = u_len;
+    if (expr.mod == MCP_URI_MOD_PREFIX && expr.prefix_len < max_len) {
+        max_len = expr.prefix_len;
+    }
+    for (size_t len = 0; len <= max_len; len++) {
         if (!expr.is_reserved && len > 0 && u_val[len - 1] == '/') {
             break;
         }
@@ -449,7 +457,14 @@ mcp_status_t mcp_uri_template_expand(mcp_context_t *ctx,
             buf[len] = '\0';
         }
 
+        size_t char_count = 0;
         for (const char *s = val_str; *s != '\0'; s++) {
+            if (((unsigned char)(*s) & 0xC0) != 0x80) {
+                if (expr.mod == MCP_URI_MOD_PREFIX && char_count >= expr.prefix_len) {
+                    break;
+                }
+                char_count++;
+            }
             char c = *s;
             bool allowed = is_unreserved(c) || (expr.is_reserved && is_reserved_char(c));
             if (allowed) {
