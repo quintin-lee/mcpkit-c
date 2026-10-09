@@ -53,5 +53,26 @@ case "$out" in *code_verifier*code_challenge*) ;; *) echo "FAIL: auth pkce missi
 out="$("$CLI" auth token-exchange "subject-token-123")"
 case "$out" in *grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange*subject_token=subject-token-123*) ;; *) echo "FAIL: auth token-exchange failed"; exit 1 ;; esac
 
+# schema validate (inline valid)
+out="$("$CLI" schema validate '{"type":"string"}' '"hello"')"
+case "$out" in *valid*) ;; *) echo "FAIL: schema validate valid inline failed"; exit 1 ;; esac
+
+# schema validate (inline invalid)
+set +e
+out="$("$CLI" schema validate '{"type":"integer"}' '"hello"' 2>&1)"
+rc=$?
+set -e
+if [ $rc -ne 1 ]; then echo "FAIL: schema validate invalid should return 1, got $rc"; exit 1; fi
+case "$out" in *"Validation failed"*) ;; *) echo "FAIL: schema validate invalid output missing failure reason"; exit 1 ;; esac
+
+# schema validate (file-based)
+TMP_SCHEMA="test_schema.json"
+TMP_DATA="test_data.json"
+printf '{"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}' > "$TMP_SCHEMA"
+printf '{"id":42}' > "$TMP_DATA"
+out="$("$CLI" schema validate "$TMP_SCHEMA" "$TMP_DATA")"
+case "$out" in *valid*) ;; *) echo "FAIL: schema validate file-based failed"; rm -f "$TMP_SCHEMA" "$TMP_DATA"; exit 1 ;; esac
+rm -f "$TMP_SCHEMA" "$TMP_DATA"
+
 echo "CLI acceptance: PASS"
 

@@ -15,6 +15,7 @@
 
 #include "mcpkit/mcpkit.h"
 #include "mcpkit/core/auth.h"
+#include "mcpkit/json/schema.h"
 #include "mcpkit/protocol/registry.h"
 #include "mcpkit/protocol/validate.h"
 
@@ -725,6 +726,93 @@ static int cmd_registry_info(const char *server_id) {
     return 0;
 }
 
+static mcp_status_t load_json_input(mcp_context_t *ctx, const char *arg, mcp_json_value_t **out_val) {
+    if (arg == NULL || out_val == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    *out_val = NULL;
+
+    const char *p = arg;
+    while (*p && isspace((unsigned char)*p)) {
+        p++;
+    }
+
+    if (*p == '{' || *p == '[') {
+        *out_val = mcp_json_parse(ctx, arg, strlen(arg));
+        return *out_val != NULL ? MCP_OK : MCP_ERR_PROTOCOL;
+    }
+
+    FILE *f = fopen(arg, "rb");
+    if (f != NULL) {
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (sz >= 0 && sz <= 10 * 1024 * 1024) {
+            char *buf = malloc((size_t)sz + 1);
+            if (buf != NULL) {
+                size_t nread = fread(buf, 1, (size_t)sz, f);
+                fclose(f);
+                buf[nread] = '\0';
+                *out_val = mcp_json_parse(ctx, buf, nread);
+                free(buf);
+                return *out_val != NULL ? MCP_OK : MCP_ERR_PROTOCOL;
+            }
+        }
+        fclose(f);
+    }
+
+    *out_val = mcp_json_parse(ctx, arg, strlen(arg));
+    return *out_val != NULL ? MCP_OK : MCP_ERR_PROTOCOL;
+}
+
+static int cmd_schema(int argc, char **argv) {
+    if (argc < 3 || strcmp(argv[2], "validate") != 0) {
+        fprintf(stderr, "usage: mcpkit-cli schema validate <schema> <instance>\n");
+        return 2;
+    }
+    if (argc < 5) {
+        fprintf(stderr, "usage: mcpkit-cli schema validate <schema> <instance>\n");
+        return 2;
+    }
+
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    if (ctx == NULL) {
+        fprintf(stderr, "error: context creation failed\n");
+        return 1;
+    }
+
+    mcp_json_value_t *schema = NULL;
+    mcp_status_t st = load_json_input(ctx, argv[3], &schema);
+    if (st != MCP_OK || schema == NULL) {
+        fprintf(stderr, "mcpkit-cli: failed to parse schema as JSON\n");
+        mcp_context_destroy(ctx);
+        return 2;
+    }
+
+    mcp_json_value_t *instance = NULL;
+    st = load_json_input(ctx, argv[4], &instance);
+    if (st != MCP_OK || instance == NULL) {
+        fprintf(stderr, "mcpkit-cli: failed to parse instance as JSON\n");
+        mcp_json_destroy(ctx, schema);
+        mcp_context_destroy(ctx);
+        return 2;
+    }
+
+    char err_buf[256] = {0};
+    st = mcp_schema_validate_verbose(ctx, schema, instance, err_buf, sizeof(err_buf));
+    mcp_json_destroy(ctx, schema);
+    mcp_json_destroy(ctx, instance);
+    mcp_context_destroy(ctx);
+
+    if (st == MCP_OK) {
+        printf("Instance is valid against schema.\n");
+        return 0;
+    } else {
+        fprintf(stderr, "Validation failed: %s\n", err_buf[0] ? err_buf : mcp_status_string(st));
+        return 1;
+    }
+}
+
 static int cmd_auth(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr, "usage: mcpkit-cli auth pkce\n"
@@ -803,6 +891,7 @@ int main(int argc, char **argv) {
                 "       mcpkit-cli listen <server-bin> [filter] [timeout_sec]\n"
                 "       mcpkit-cli auth pkce\n"
                 "       mcpkit-cli auth token-exchange <subject-token> [subject-token-type] [actor-token] [actor-token-type]\n"
+                "       mcpkit-cli schema validate <schema> <instance>\n"
                 "       mcpkit-cli manifest init [name]\n"
                 "       mcpkit-cli manifest validate <file>\n"
                 "       mcpkit-cli registry search <query>\n"
@@ -814,6 +903,10 @@ int main(int argc, char **argv) {
 
     if (strcmp(argv[1], "auth") == 0) {
         return cmd_auth(argc, argv);
+    }
+
+    if (strcmp(argv[1], "schema") == 0) {
+        return cmd_schema(argc, argv);
     }
 
     if (strcmp(argv[1], "manifest") == 0) {
