@@ -16,7 +16,7 @@
 - Modify: `tools/mcpkit-cli/main.c`
 - Modify: `tests/acceptance/cli_accept.sh`
 
-- [ ] **Step 1: Write the failing acceptance tests**
+- [x] **Step 1: Write the failing acceptance tests**
 
 In `tests/acceptance/cli_accept.sh`, add acceptance tests for `mcpkit-cli auth pkce` and `mcpkit-cli auth token-exchange`:
 
@@ -30,12 +30,12 @@ out="$("$CLI" auth token-exchange "subject-token-123")"
 case "$out" in *grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange*subject_token=subject-token-123*) ;; *) echo "FAIL: auth token-exchange failed"; exit 1 ;; esac
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cmake --build build && ctest --test-dir build -R cli_acceptance --output-on-failure`  
 Expected: FAIL because `auth` subcommand is unknown to `mcpkit-cli`.
 
-- [ ] **Step 3: Implement `cmd_auth` in `tools/mcpkit-cli/main.c`**
+- [x] **Step 3: Implement `cmd_auth` in `tools/mcpkit-cli/main.c`**
 
 1. Include `"mcpkit/core/auth.h"` in `tools/mcpkit-cli/main.c`.
 2. Implement `cmd_auth(int argc, char **argv)`:
@@ -59,12 +59,12 @@ Expected: FAIL because `auth` subcommand is unknown to `mcpkit-cli`.
      - Print `body` to stdout, free `body`, return 0.
 3. Wire `auth` into `main()` and update usage help text.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cmake --build build && ctest --test-dir build -R cli_acceptance --output-on-failure`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/mcpkit-cli/main.c tests/acceptance/cli_accept.sh
@@ -79,7 +79,7 @@ git commit -m "feat(cli): add auth pkce and token-exchange subcommands"
 - Modify: `tools/mcpkit-cli/main.c`
 - Modify: `tests/acceptance/cli_accept.sh`
 
-- [ ] **Step 1: Write the failing acceptance tests**
+- [x] **Step 1: Write the failing acceptance tests**
 
 In `tests/acceptance/cli_accept.sh`, add acceptance tests for `mcpkit-cli schema validate`:
 
@@ -97,12 +97,12 @@ if [ $rc -ne 1 ]; then echo "FAIL: schema validate invalid should return 1, got 
 case "$out" in *Validation failed*) ;; *) echo "FAIL: schema validate invalid output missing failure reason"; exit 1 ;; esac
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cmake --build build && ctest --test-dir build -R cli_acceptance --output-on-failure`  
 Expected: FAIL because `schema` subcommand is unknown to `mcpkit-cli`.
 
-- [ ] **Step 3: Implement `load_json_input` and `cmd_schema` in `tools/mcpkit-cli/main.c`**
+- [x] **Step 3: Implement `load_json_input` and `cmd_schema` in `tools/mcpkit-cli/main.c`**
 
 1. Include `"mcpkit/json/schema.h"` in `tools/mcpkit-cli/main.c`.
 2. Implement `load_json_input(mcp_context_t *ctx, const char *arg, mcp_json_value_t **out_val)`:
@@ -120,12 +120,12 @@ Expected: FAIL because `schema` subcommand is unknown to `mcpkit-cli`.
    - Free JSON values and context before return.
 4. Wire `schema` into `main()` and update usage help text.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cmake --build build && ctest --test-dir build -R cli_acceptance --output-on-failure`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/mcpkit-cli/main.c tests/acceptance/cli_accept.sh
@@ -139,18 +139,18 @@ git commit -m "feat(cli): add schema validate subcommand"
 **Files:**
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: Update CHANGELOG**
+- [x] **Step 1: Update CHANGELOG**
 
 In `CHANGELOG.md`, document the new CLI subcommands under `[Unreleased]`:
 - `mcpkit-cli auth pkce` and `mcpkit-cli auth token-exchange`
 - `mcpkit-cli schema validate`
 
-- [ ] **Step 2: Run full project test suite**
+- [x] **Step 2: Run full project test suite**
 
 Run: `ctest --test-dir build --output-on-failure`  
 Expected: All 59 tests pass.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add CHANGELOG.md
