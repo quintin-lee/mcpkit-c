@@ -45,5 +45,13 @@ case "$out" in *echo*) ;; *) echo "FAIL: registry search missing echo"; exit 1 ;
 out="$("$CLI" registry info "io.modelcontextprotocol/filesystem")"
 case "$out" in *filesystem*) ;; *) echo "FAIL: registry info missing filesystem"; exit 1 ;; esac
 
+# auth pkce
+out="$("$CLI" auth pkce)"
+case "$out" in *code_verifier*code_challenge*) ;; *) echo "FAIL: auth pkce missing verifier/challenge"; exit 1 ;; esac
+
+# auth token-exchange
+out="$("$CLI" auth token-exchange "subject-token-123")"
+case "$out" in *grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange*subject_token=subject-token-123*) ;; *) echo "FAIL: auth token-exchange failed"; exit 1 ;; esac
+
 echo "CLI acceptance: PASS"
 

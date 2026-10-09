@@ -14,6 +14,7 @@
 #include <time.h>
 
 #include "mcpkit/mcpkit.h"
+#include "mcpkit/core/auth.h"
 #include "mcpkit/protocol/registry.h"
 #include "mcpkit/protocol/validate.h"
 
@@ -724,6 +725,73 @@ static int cmd_registry_info(const char *server_id) {
     return 0;
 }
 
+static int cmd_auth(int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "usage: mcpkit-cli auth pkce\n"
+                        "       mcpkit-cli auth token-exchange <subject-token> [subject-token-type] [actor-token] [actor-token-type]\n");
+        return 2;
+    }
+
+    if (strcmp(argv[2], "pkce") == 0) {
+        mcp_context_t *ctx = mcp_context_create(NULL);
+        if (ctx == NULL) {
+            fprintf(stderr, "error: context creation failed\n");
+            return 1;
+        }
+        char verifier[129] = {0};
+        char challenge[44] = {0};
+        mcp_status_t st = mcp_pkce_generate(ctx, verifier, challenge);
+        mcp_context_destroy(ctx);
+        if (st != MCP_OK) {
+            fprintf(stderr, "error: failed to generate PKCE (%s)\n", mcp_status_string(st));
+            return 1;
+        }
+        printf("code_verifier:  %s\n", verifier);
+        printf("code_challenge: %s (method: S256)\n", challenge);
+        return 0;
+    }
+
+    if (strcmp(argv[2], "token-exchange") == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "usage: mcpkit-cli auth token-exchange <subject-token> [subject-token-type] [actor-token] [actor-token-type]\n");
+            return 2;
+        }
+        const char *subject_token = argv[3];
+        const char *subject_token_type = argc >= 5 ? argv[4] : MCP_OAUTH_TOKEN_TYPE_JWT;
+        const char *actor_token = argc >= 6 ? argv[5] : NULL;
+        const char *actor_token_type = argc >= 7 ? argv[6] : (actor_token ? MCP_OAUTH_TOKEN_TYPE_ACCESS_TOKEN : NULL);
+
+        mcp_context_t *ctx = mcp_context_create(NULL);
+        if (ctx == NULL) {
+            fprintf(stderr, "error: context creation failed\n");
+            return 1;
+        }
+
+        mcp_oauth_token_exchange_req_t req;
+        memset(&req, 0, sizeof(req));
+        req.subject_token = subject_token;
+        req.subject_token_type = subject_token_type;
+        req.actor_token = actor_token;
+        req.actor_token_type = actor_token_type;
+
+        char *body = NULL;
+        mcp_status_t st = mcp_oauth_build_token_exchange_request(ctx, &req, &body);
+        if (st != MCP_OK) {
+            fprintf(stderr, "error: failed to build token exchange request (%s)\n", mcp_status_string(st));
+            mcp_context_destroy(ctx);
+            return 1;
+        }
+
+        printf("%s\n", body);
+        mcp_oauth_free_string(ctx, body);
+        mcp_context_destroy(ctx);
+        return 0;
+    }
+
+    fprintf(stderr, "mcpkit-cli: unknown auth action '%s'\n", argv[2]);
+    return 2;
+}
+
 int main(int argc, char **argv) {
     /* A closed peer must surface as EPIPE/MCP_ERR_IO, not a SIGPIPE kill. */
     signal(SIGPIPE, SIG_IGN);
@@ -733,6 +801,8 @@ int main(int argc, char **argv) {
                 "       mcpkit-cli inspect <server-bin>\n"
                 "       mcpkit-cli call <server-bin> <tool> [args-json]\n"
                 "       mcpkit-cli listen <server-bin> [filter] [timeout_sec]\n"
+                "       mcpkit-cli auth pkce\n"
+                "       mcpkit-cli auth token-exchange <subject-token> [subject-token-type] [actor-token] [actor-token-type]\n"
                 "       mcpkit-cli manifest init [name]\n"
                 "       mcpkit-cli manifest validate <file>\n"
                 "       mcpkit-cli registry search <query>\n"
@@ -740,6 +810,10 @@ int main(int argc, char **argv) {
                 "       mcpkit-cli validate <file>\n"
                 "       mcpkit-cli test <server-bin>\n");
         return 2;
+    }
+
+    if (strcmp(argv[1], "auth") == 0) {
+        return cmd_auth(argc, argv);
     }
 
     if (strcmp(argv[1], "manifest") == 0) {
