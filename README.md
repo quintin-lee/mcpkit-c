@@ -91,6 +91,8 @@ stdio unless stated otherwise:
 | `threadpool-server` | Serve loop with a 4-thread executor + timer |
 | `client` | Client-side `list` / `call` / `ping` against a live server |
 | `apps-host` | MCP Apps: mount, permission-gated tool, UI read, unmount |
+| `apps-server` | MCP Apps over stdio: tool-level `_meta.ui`, result `_meta.ui`, ui:// resource |
+| `file-server` | Root-jailed `read_file` with offset/limit pagination |
 | `prompt-server` | Prompt + `completion/complete` provider demo |
 | `socket-server` | TCP socket transport serve loop (needs `MCPKIT_BUILD_SOCKET=ON`, default ON) |
 | `mrtr-server` | MRTR multi-round-trip tool demo (2FA elicitation before completion) |

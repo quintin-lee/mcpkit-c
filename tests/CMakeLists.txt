@@ -155,6 +155,10 @@ if(MCPKIT_BUILD_TOOLS AND MCPKIT_BUILD_EXAMPLES)
                    ${CMAKE_BINARY_DIR}/examples/stdio-server
                    ${CMAKE_BINARY_DIR}/examples/threadpool-server
                    ${CMAKE_BINARY_DIR}/examples/apps-host)
+  add_test(NAME apps_acceptance
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/apps_accept.sh
+                   ${CMAKE_BINARY_DIR}/tools/mcpkit-cli
+                   ${CMAKE_BINARY_DIR}/examples/apps-server)
 endif()
 
 if(MCPKIT_BUILD_FUZZ)
