@@ -61,10 +61,19 @@ client you can compile against the library.
 | `MCPKIT_BUILD_TESTS` | `ON` | Build unit and acceptance tests |
 | `MCPKIT_BUILD_EXAMPLES` | `ON` | Build all examples |
 | `MCPKIT_BUILD_TOOLS` | `ON` | Build `mcpkit-cli` |
+| `MCPKIT_BUILD_APPS` | `ON` | Reserved (currently a no-op: apps sources always build) |
+| `MCPKIT_BUILD_CLIENT` | `ON` | Reserved (currently a no-op: client sources always build) |
+| `MCPKIT_BUILD_SERVER` | `ON` | Reserved (currently a no-op: server sources always build) |
 | `MCPKIT_BUILD_HTTP` | `OFF` | Build the HTTP transport and `http-server` example |
+| `MCPKIT_BUILD_SOCKET` | `ON` | Build the socket TCP transport and `socket-server` example |
 | `MCPKIT_BUILD_FUZZ` | `OFF` | Build the `fuzz_json_stdin` driver |
+| `MCPKIT_BUILD_SHARED` | `OFF` | Build the `libmcpkit_core.so` shared-library variant |
 | `MCPKIT_ENABLE_ASAN` | `OFF` | Add `-fsanitize=address` to all targets |
 | `MCPKIT_ENABLE_UBSAN` | `OFF` | Add `-fsanitize=undefined` to all targets |
+| `MCPKIT_ENABLE_TSAN` | `OFF` | Add `-fsanitize=thread` to all targets |
+
+`MCPKIT_ENABLE_ASAN` and `MCPKIT_ENABLE_TSAN` are mutually exclusive
+(configuring both is a CMake fatal error).
 
 `compile_commands.json` is always exported in the build directory for
 LSP / clangd.
@@ -82,6 +91,9 @@ stdio unless stated otherwise:
 | `threadpool-server` | Serve loop with a 4-thread executor + timer |
 | `client` | Client-side `list` / `call` / `ping` against a live server |
 | `apps-host` | MCP Apps: mount, permission-gated tool, UI read, unmount |
+| `prompt-server` | Prompt + `completion/complete` provider demo |
+| `socket-server` | TCP socket transport serve loop (needs `MCPKIT_BUILD_SOCKET=ON`, default ON) |
+| `mrtr-server` | MRTR multi-round-trip tool demo (2FA elicitation before completion) |
 | `http-server` | Streamable HTTP serve over file-backed I/O (needs `MCPKIT_BUILD_HTTP=ON`) |
 
 ## CLI
