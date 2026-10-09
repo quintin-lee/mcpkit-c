@@ -438,6 +438,16 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
                 return NULL;
             }
         }
+        if (t->meta != NULL) {
+            mcp_json_value_t *copy = mcp_json_clone(ctx, t->meta);
+            if (copy == NULL ||
+                mcp_json_object_set_take(ctx, entry, "_meta", copy) != MCP_OK) {
+                mcp_json_destroy(ctx, entry);
+                mcp_json_destroy(ctx, result);
+                mcp_json_destroy(ctx, arr);
+                return NULL;
+            }
+        }
         if (mcp_json_array_append(ctx, arr, entry) != MCP_OK) {
             mcp_json_destroy(ctx, entry);
             mcp_json_destroy(ctx, result);

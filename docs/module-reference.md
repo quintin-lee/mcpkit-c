@@ -643,6 +643,10 @@ typedef enum mcp_tool_visibility {
 } mcp_tool_visibility_t;
 mcp_status_t           mcp_tool_set_visibility(ctx, mcp_tool_t *, mcp_tool_visibility_t);
 mcp_status_t           mcp_tool_require_perms(ctx, mcp_tool_t *, uint32_t perm_mask);
+
+/* Tool-level _meta advertised in tools/list (TAKEs ownership; NULL clears) */
+mcp_status_t           mcp_tool_set_meta(ctx, mcp_tool_t *, mcp_json_value_t *meta);
+const mcp_json_value_t *mcp_tool_meta(const mcp_tool_t *);  /* borrowed */
 ```
 
 ### `resource.h` / `prompt.h`
@@ -1057,6 +1061,12 @@ mcp_resource_t *mcp_apps_ui_resource_new(ctx, const char *uri, const char *name,
 /* Stamps _meta.ui.resourceUri into a tool-call result object */
 mcp_status_t mcp_apps_result_with_ui(ctx, mcp_json_value_t *result,
                             const char *resource_uri);
+/* Stamps tool-level _meta.ui.resourceUri (merges into existing _meta) */
+mcp_status_t mcp_apps_tool_set_ui(ctx, mcp_tool_t *tool,
+                                  const char *resource_uri);
+/* Reads result._meta.ui.resourceUri back out (borrowed pointer) */
+mcp_status_t mcp_apps_result_ui_uri(ctx, const mcp_json_value_t *result,
+                                    const char **uri_out);
 
 /* Mount lifecycle: host calls mount, runs on_mount, unmount runs on_unmount */
 typedef void (*mcp_apps_lifecycle_fn)(ctx, mcp_session_t *session, void *user_data);

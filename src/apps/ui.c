@@ -15,6 +15,7 @@
 #include "mcpkit/json/json.h"
 #include "mcpkit/json/value.h"
 #include "mcpkit/server/resource.h"
+#include "mcpkit/server/tool.h"
 
 struct ui_data {
     char *doc;
@@ -218,5 +219,69 @@ mcp_status_t mcp_apps_unmount(mcp_context_t *ctx, mcp_apps_mount_t *handle) {
         handle->on_unmount(ctx, handle->session, handle->user_data);
     }
     free_of(ctx, handle);
+    return MCP_OK;
+}
+
+mcp_status_t mcp_apps_tool_set_ui(mcp_context_t *ctx, mcp_tool_t *tool,
+                                  const char *resource_uri) {
+    if (tool == NULL || resource_uri == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *meta = NULL;
+    const mcp_json_value_t *existing = mcp_tool_meta(tool);
+    if (existing != NULL) {
+        meta = mcp_json_clone(ctx, existing);
+    } else {
+        meta = mcp_json_object_new(ctx);
+    }
+    if (meta == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_value_t *uri = mcp_json_string_new(ctx, resource_uri);
+    mcp_json_value_t *ui = NULL;
+    mcp_status_t st = MCP_ERR_NOMEM;
+    if (uri == NULL) {
+        goto fail;
+    }
+    ui = mcp_json_object_new(ctx);
+    if (ui == NULL) {
+        goto fail;
+    }
+    st = mcp_json_object_set(ctx, ui, "resourceUri", uri);
+    if (st != MCP_OK) {
+        mcp_json_destroy(ctx, uri);
+        goto fail_obj;
+    }
+    st = mcp_json_object_set(ctx, meta, "ui", ui);
+    if (st != MCP_OK) {
+        goto fail_obj;
+    }
+    return mcp_tool_set_meta(ctx, tool, meta);
+fail_obj:
+    mcp_json_destroy(ctx, ui);
+fail:
+    mcp_json_destroy(ctx, meta);
+    return st;
+}
+
+mcp_status_t mcp_apps_result_ui_uri(mcp_context_t *ctx, const mcp_json_value_t *result,
+                                    const char **uri_out) {
+    if (result == NULL || uri_out == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    const mcp_json_value_t *meta = mcp_json_object_get(ctx, result, "_meta");
+    if (meta == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    const mcp_json_value_t *ui = mcp_json_object_get(ctx, meta, "ui");
+    if (ui == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    const mcp_json_value_t *uri = mcp_json_object_get(ctx, ui, "resourceUri");
+    const char *s = NULL;
+    if (uri == NULL || mcp_json_string_value(ctx, uri, &s) != MCP_OK) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    *uri_out = s;
     return MCP_OK;
 }

@@ -36,6 +36,7 @@ mcp_tool_t *mcp_tool_new(mcp_context_t *ctx, const char *name, const char *descr
     }
     tool->schema = input_schema;
     tool->output_schema = NULL;
+    tool->meta = NULL;
     tool->handler = handler;
     tool->handler_v2 = NULL;
     tool->user_data = user_data;
@@ -52,6 +53,7 @@ void mcp_tool_destroy(mcp_context_t *ctx, mcp_tool_t *tool) {
     srv_free(ctx, tool->description);
     mcp_json_destroy(ctx, tool->schema);
     mcp_json_destroy(ctx, tool->output_schema);
+    mcp_json_destroy(ctx, tool->meta);
     srv_free(ctx, tool);
 }
 
@@ -78,6 +80,7 @@ mcp_tool_t *mcp_tool_new_v2(mcp_context_t *ctx, const char *name, const char *de
     }
     tool->schema = input_schema;
     tool->output_schema = NULL;
+    tool->meta = NULL;
     tool->handler = NULL;
     tool->handler_v2 = handler;
     tool->user_data = user_data;
@@ -99,6 +102,26 @@ mcp_status_t mcp_tool_set_output_schema(mcp_context_t *ctx, mcp_tool_t *tool,
     }
     tool->output_schema = output_schema;
     return MCP_OK;
+}
+
+mcp_status_t mcp_tool_set_meta(mcp_context_t *ctx, mcp_tool_t *tool,
+                               mcp_json_value_t *meta) {
+    if (tool == NULL) {
+        if (meta != NULL) {
+            mcp_json_destroy(ctx, meta);
+        }
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (tool->meta != NULL) {
+        mcp_json_destroy(ctx, tool->meta);
+    }
+    tool->meta = meta;
+    return MCP_OK;
+}
+
+const mcp_json_value_t *mcp_tool_meta(const mcp_tool_t *tool) {
+    if (tool == NULL) return NULL;
+    return tool->meta;
 }
 
 const mcp_json_value_t *mcp_tool_output_schema(const mcp_tool_t *tool) {

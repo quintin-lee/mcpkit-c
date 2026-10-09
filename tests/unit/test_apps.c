@@ -21,6 +21,17 @@ static void on_unmount(mcp_context_t *c, mcp_session_t *s, void *u) {
     unmounted_at = ++lifecycle_order;
 }
 
+static mcp_status_t probe_handler(mcp_context_t *c, mcp_session_t *s,
+                                  const mcp_json_value_t *a, void *u,
+                                  mcp_json_value_t **o) {
+    (void)c;
+    (void)s;
+    (void)a;
+    (void)u;
+    (void)o;
+    return MCP_ERR_INVALID_ARGUMENT;
+}
+
 static mcp_message_t *dispatch_new(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s,
                                    const char *id, const char *method, mcp_json_value_t *params) {
     mcp_message_t *req = mcp_request_new_string_id(ctx, id, method, params);
@@ -156,6 +167,78 @@ int main(void) {
     CHECK(result);
     CHECK(mcp_apps_result_with_ui(ctx, result, NULL) == MCP_ERR_INVALID_ARGUMENT);
     mcp_json_destroy(ctx, result);
+
+    // tool-level _meta: set / replace / clear / NULL-tool destroys value
+    mcp_tool_t *mt = mcp_tool_new(ctx, "probe", NULL, NULL, probe_handler, NULL);
+    CHECK(mt);
+    CHECK(mcp_tool_meta(mt) == NULL);
+    mcp_json_value_t *m1 = mcp_json_object_new(ctx);
+    CHECK(m1 && mcp_json_object_set(ctx, m1, "k", mcp_json_string_new(ctx, "1")) ==
+                    MCP_OK);
+    CHECK(mcp_tool_set_meta(ctx, mt, m1) == MCP_OK);
+    CHECK(mcp_tool_meta(mt) == m1);
+    mcp_json_value_t *m2 = mcp_json_object_new(ctx);
+    CHECK(m2);
+    CHECK(mcp_tool_set_meta(ctx, mt, m2) == MCP_OK);
+    CHECK(mcp_tool_meta(mt) == m2);
+    CHECK(mcp_tool_set_meta(ctx, mt, NULL) == MCP_OK);
+    CHECK(mcp_tool_meta(mt) == NULL);
+    CHECK(mcp_tool_set_meta(ctx, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    mcp_json_value_t *m3 = mcp_json_object_new(ctx);
+    CHECK(m3);
+    CHECK(mcp_tool_set_meta(ctx, NULL, m3) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_tool_meta(NULL) == NULL);
+    mcp_tool_destroy(ctx, mt);
+
+    // mcp_apps_tool_set_ui: stamp + merge into existing _meta
+    mcp_tool_t *ut = mcp_tool_new(ctx, "uite", NULL, NULL, probe_handler, NULL);
+    CHECK(ut);
+    CHECK(mcp_apps_tool_set_ui(ctx, ut, "ui://app/main") == MCP_OK);
+    const mcp_json_value_t *um = mcp_tool_meta(ut);
+    CHECK(um);
+    const mcp_json_value_t *uui = mcp_json_object_get(ctx, um, "ui");
+    CHECK(uui);
+    const char *uuris = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, uui, "resourceUri"),
+                               &uuris) == MCP_OK &&
+           strcmp(uuris, "ui://app/main") == 0);
+    mcp_json_value_t *umeta = mcp_json_object_new(ctx);
+    CHECK(umeta && mcp_json_object_set(ctx, umeta, "other",
+                                       mcp_json_string_new(ctx, "1")) == MCP_OK);
+    CHECK(mcp_tool_set_meta(ctx, ut, umeta) == MCP_OK);
+    CHECK(mcp_apps_tool_set_ui(ctx, ut, "ui://app/second") == MCP_OK);
+    um = mcp_tool_meta(ut);
+    const char *ov = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, um, "other"), &ov) ==
+              MCP_OK &&
+           strcmp(ov, "1") == 0);
+    CHECK(mcp_json_string_value(
+              ctx, mcp_json_object_get(ctx, mcp_json_object_get(ctx, um, "ui"),
+                                       "resourceUri"),
+              &uuris) == MCP_OK &&
+           strcmp(uuris, "ui://app/second") == 0);
+    CHECK(mcp_apps_tool_set_ui(ctx, ut, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_apps_tool_set_ui(ctx, NULL, "ui://x") == MCP_ERR_INVALID_ARGUMENT);
+    mcp_tool_destroy(ctx, ut);
+
+    // mcp_apps_result_ui_uri: reader + negative paths
+    mcp_json_value_t *rres = mcp_json_object_new(ctx);
+    CHECK(rres && mcp_json_object_set(ctx, rres, "content", mcp_json_array_new(ctx)) ==
+                      MCP_OK);
+    CHECK(mcp_apps_result_with_ui(ctx, rres, "ui://app/main") == MCP_OK);
+    const char *rouris = NULL;
+    CHECK(mcp_apps_result_ui_uri(ctx, rres, &rouris) == MCP_OK &&
+           strcmp(rouris, "ui://app/main") == 0);
+    mcp_json_destroy(ctx, rres);
+    mcp_json_value_t *rplain = mcp_json_object_new(ctx);
+    CHECK(rplain);
+    CHECK(mcp_apps_result_ui_uri(ctx, rplain, &rouris) == MCP_ERR_INVALID_ARGUMENT);
+    mcp_json_destroy(ctx, rplain);
+    CHECK(mcp_apps_result_ui_uri(ctx, NULL, &rouris) == MCP_ERR_INVALID_ARGUMENT);
+    mcp_json_value_t *rdummy = mcp_json_object_new(ctx);
+    CHECK(rdummy);
+    CHECK(mcp_apps_result_ui_uri(ctx, rdummy, NULL) == MCP_ERR_INVALID_ARGUMENT);
+    mcp_json_destroy(ctx, rdummy);
 
     // lifecycle: explicit mount/unmount ordering
     mcp_apps_mount_t *h = NULL;

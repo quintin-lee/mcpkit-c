@@ -42,6 +42,7 @@ typedef struct mcp_context mcp_context_t;
 typedef struct mcp_csp mcp_csp_t;
 typedef struct mcp_resource mcp_resource_t;
 typedef struct mcp_session mcp_session_t;
+typedef struct mcp_tool mcp_tool_t;
 
 /**
  * @brief Creates a ui:// resource backed by an HTML document with a CSP
@@ -74,7 +75,36 @@ mcp_resource_t *mcp_apps_ui_resource_new(mcp_context_t *ctx, const char *uri,
  * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if result is NULL.
  */
 mcp_status_t mcp_apps_result_with_ui(mcp_context_t *ctx, mcp_json_value_t *result,
-                                     const char *resource_uri);
+                                      const char *resource_uri);
+
+/**
+ * @brief Stamps a tool-level `_meta.ui.resourceUri` advertisement.
+ *
+ * Merges into the tool's existing `_meta` (other keys are preserved,
+ * an existing `ui` entry is replaced). Stored via mcp_tool_set_meta,
+ * so tools/list advertises it.
+ *
+ * @param ctx Context; may be NULL.
+ * @param tool Target tool.
+ * @param resource_uri ui:// URI string to store; not owned.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if tool or
+ *         resource_uri is NULL.
+ */
+mcp_status_t mcp_apps_tool_set_ui(mcp_context_t *ctx, mcp_tool_t *tool,
+                                  const char *resource_uri);
+
+/**
+ * @brief Reads `result._meta.ui.resourceUri` back out.
+ *
+ * @param ctx Context; may be NULL.
+ * @param result Tool result object (borrowed).
+ * @param uri_out Receives a borrowed pointer; valid while result lives.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if any link of
+ *         the `_meta.ui.resourceUri` chain is missing or mistyped.
+ */
+mcp_status_t mcp_apps_result_ui_uri(mcp_context_t *ctx,
+                                    const mcp_json_value_t *result,
+                                    const char **uri_out);
 
 /**
  * @brief Lifecycle callback signature for mount/unmount.

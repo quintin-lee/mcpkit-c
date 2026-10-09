@@ -209,6 +209,29 @@ mcp_status_t mcp_tool_set_output_schema(mcp_context_t *ctx, mcp_tool_t *tool,
 const mcp_json_value_t *mcp_tool_output_schema(const mcp_tool_t *tool);
 
 /**
+ * @brief Sets the `_meta` object advertised for the tool in `tools/list`.
+ *
+ * The tool TAKES ownership of `meta` on MCP_OK. If tool already has a
+ * `_meta` object, the previous one is destroyed. Pass NULL to clear.
+ *
+ * @param ctx  Context; may be NULL.
+ * @param tool Target tool.
+ * @param meta Optional JSON object; TAKEN on MCP_OK. May be NULL to clear.
+ *             If tool is NULL the value is destroyed to avoid a leak.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if tool is NULL.
+ */
+mcp_status_t mcp_tool_set_meta(mcp_context_t *ctx, mcp_tool_t *tool,
+                               mcp_json_value_t *meta);
+
+/**
+ * @brief Returns the `_meta` object of the tool (borrowed).
+ *
+ * @param tool Target tool.
+ * @return Borrowed pointer to `_meta`, or NULL if none set or tool is NULL.
+ */
+const mcp_json_value_t *mcp_tool_meta(const mcp_tool_t *tool);
+
+/**
  * @brief Sets the structuredContent field on a tool call result object (SEP-1613).
  *
  * Takes ownership of `val` on all paths.

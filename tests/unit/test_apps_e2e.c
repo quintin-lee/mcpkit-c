@@ -92,6 +92,13 @@ int main(void) {
     CHECK(tool);
     CHECK(mcp_tool_set_visibility(ctx, tool, MCP_TOOL_VIS_BOTH) == MCP_OK);
     CHECK(mcp_tool_require_perms(ctx, tool, MCP_APPS_PERM_CALL_TOOL) == MCP_OK);
+    mcp_json_value_t *tool_meta = mcp_json_object_new(ctx);
+    mcp_json_value_t *tool_ui = mcp_json_object_new(ctx);
+    CHECK(tool_meta && tool_ui);
+    CHECK(mcp_json_object_set(ctx, tool_ui, "resourceUri",
+                              mcp_json_string_new(ctx, "ui://sys/status")) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, tool_meta, "ui", tool_ui) == MCP_OK);
+    CHECK(mcp_tool_set_meta(ctx, tool, tool_meta) == MCP_OK);
     CHECK(mcp_server_add_tool(ctx, srv, tool) == MCP_OK);
 
     mcp_csp_t *csp = mcp_csp_default_deny_new(ctx);
@@ -107,7 +114,24 @@ int main(void) {
     CHECK(plain);
     CHECK(mcp_session_revoke(ctx, plain, MCP_APPS_PERM_CALL_TOOL) == MCP_OK);
     init_session(ctx, srv, plain);
-    mcp_message_t *r = dispatch_new(ctx, srv, plain, "p1", "tools/call",
+    mcp_message_t *r = dispatch_new(ctx, srv, plain, "l1", "tools/list",
+                                    mcp_json_object_new(ctx));
+    const mcp_json_value_t *lres = mcp_message_result(ctx, r);
+    CHECK(lres);
+    const mcp_json_value_t *ltools = mcp_json_object_get(ctx, lres, "tools");
+    CHECK(ltools && mcp_json_array_size(ctx, ltools) == 1);
+    const mcp_json_value_t *lentry = mcp_json_array_get(ctx, ltools, 0);
+    const mcp_json_value_t *ltmeta = mcp_json_object_get(ctx, lentry, "_meta");
+    CHECK(ltmeta);
+    const mcp_json_value_t *ltui = mcp_json_object_get(ctx, ltmeta, "ui");
+    CHECK(ltui);
+    const mcp_json_value_t *lturi = mcp_json_object_get(ctx, ltui, "resourceUri");
+    const char *lturis = NULL;
+    CHECK(mcp_json_string_value(ctx, lturi, &lturis) == MCP_OK &&
+           strcmp(lturis, "ui://sys/status") == 0);
+    mcp_message_destroy(ctx, r);
+
+    r = dispatch_new(ctx, srv, plain, "p1", "tools/call",
                                     call_params(ctx, "get_system_status"));
     CHECK(error_code(ctx, r) == (int)MCP_RPC_INVALID_PARAMS);
     mcp_message_destroy(ctx, r);

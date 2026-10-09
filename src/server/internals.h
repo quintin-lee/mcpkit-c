@@ -40,6 +40,7 @@ struct mcp_tool {
     char *description;
     mcp_json_value_t *schema;
     mcp_json_value_t *output_schema;
+    mcp_json_value_t *meta;
     mcp_tool_handler_fn handler;     /* V1; NULL when handler_v2 is set */
     mcp_tool_handler_v2_fn handler_v2; /* V2 (MRTR); NULL for V1 tools */
     void *user_data;
