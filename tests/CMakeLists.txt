@@ -159,6 +159,12 @@ if(MCPKIT_BUILD_TOOLS AND MCPKIT_BUILD_EXAMPLES)
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/apps_accept.sh
                    ${CMAKE_BINARY_DIR}/tools/mcpkit-cli
                    ${CMAKE_BINARY_DIR}/examples/apps-server)
+  add_executable(probe_hostcaps acceptance/probe_hostcaps.c)
+  target_link_libraries(probe_hostcaps PRIVATE mcpkit_core)
+  add_test(NAME hostcaps_acceptance
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/hostcaps_accept.sh
+                   ${CMAKE_BINARY_DIR}/examples/host-caps
+                   ${CMAKE_BINARY_DIR}/tests/probe_hostcaps)
   if(MCPKIT_BUILD_SOCKET)
     add_executable(probe_sock acceptance/probe_sock.c)
     target_link_libraries(probe_sock PRIVATE mcpkit_core)

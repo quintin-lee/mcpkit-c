@@ -230,6 +230,10 @@ Format follows Keep a Changelog. Versions follow SemVer.
   `transport_http_acceptance` (`MCPKIT_BUILD_HTTP=ON`) driving
   `socket-server` / `http-server` over the wire
   (`tests/acceptance/transport_accept.sh` + `probe_sock`).
+- Host-caps example: server-initiated `sampling/createMessage` +
+  `roots/list` demo over stdio (`examples/host-caps/main.c`,
+  `mcp_server_request_client()` outbox push) with `hostcaps_acceptance`
+  wire test (`tests/acceptance/hostcaps_accept.sh` + `probe_hostcaps`).
 
 ### Fixed
 
