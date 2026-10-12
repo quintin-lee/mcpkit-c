@@ -36,6 +36,10 @@ static mcp_status_t greet_handler(mcp_context_t *ctx, mcp_session_t *session,
     }
 
     char greeting[256];
+    int need = snprintf(NULL, 0, "hello, %s", name);
+    if (need < 0 || (size_t)need >= sizeof(greeting)) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
     snprintf(greeting, sizeof(greeting), "hello, %s", name);
 
     mcp_json_value_t *item = mcp_json_object_new(ctx);
