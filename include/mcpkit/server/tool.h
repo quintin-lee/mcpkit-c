@@ -217,8 +217,10 @@ const mcp_json_value_t *mcp_tool_output_schema(const mcp_tool_t *tool);
  * @param ctx  Context; may be NULL.
  * @param tool Target tool.
  * @param meta Optional JSON object; TAKEN on MCP_OK. May be NULL to clear.
+ *             Must be a JSON object; any other type is destroyed and rejected.
  *             If tool is NULL the value is destroyed to avoid a leak.
- * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if tool is NULL.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if tool is NULL or
+ *         meta is not a JSON object.
  */
 mcp_status_t mcp_tool_set_meta(mcp_context_t *ctx, mcp_tool_t *tool,
                                mcp_json_value_t *meta);

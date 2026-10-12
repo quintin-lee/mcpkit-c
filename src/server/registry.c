@@ -112,6 +112,10 @@ mcp_status_t mcp_tool_set_meta(mcp_context_t *ctx, mcp_tool_t *tool,
         }
         return MCP_ERR_INVALID_ARGUMENT;
     }
+    if (meta != NULL && mcp_json_type(ctx, meta) != MCP_JSON_OBJECT) {
+        mcp_json_destroy(ctx, meta);
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
     if (tool->meta != NULL) {
         mcp_json_destroy(ctx, tool->meta);
     }

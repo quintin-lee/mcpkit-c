@@ -188,6 +188,10 @@ int main(void) {
     CHECK(m3);
     CHECK(mcp_tool_set_meta(ctx, NULL, m3) == MCP_ERR_INVALID_ARGUMENT);
     CHECK(mcp_tool_meta(NULL) == NULL);
+    mcp_json_value_t *marr = mcp_json_array_new(ctx);
+    CHECK(marr);
+    CHECK(mcp_tool_set_meta(ctx, mt, marr) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_tool_meta(mt) == NULL);
     mcp_tool_destroy(ctx, mt);
 
     // mcp_apps_tool_set_ui: stamp + merge into existing _meta
