@@ -19,19 +19,23 @@
 ## 设计
 
 1. **新 example** `examples/host-caps/main.c`（stdio，仿 apps-server 骨架）：
-   - 工具 `ask_model`：handler 内向调用方 session 发 `sampling/createMessage`
-    （取首个文本 content）+ `roots/list`（取首个 root uri），结果拼成
-     `{"content":[{type,text: "model:…; root:…"}]}` 返回；
-     对端无 provider 时透传上游错误（不伪造成功）。
-   - 确切服务端发起 API 名 plan 阶段从 `test_client_providers.c` +
-     server 头文件摘（spec 不编造签名）。
+   - 工具 `ask_model`：handler 经 `user_data`（注册时传入 `srv`）调
+     `mcp_server_request_client()` 把 `sampling/createMessage` +
+     `roots/list` 推进 outbox，立即返回 `{"content":[{type,
+     text:"queued"}]}` 收据；对端无 provider 时透传上游错误（不伪造成功）。
+   - fire-and-observe 语义（recon 结论）：框架无 server 起源请求的
+     应答匹配机制，stdio serve 循环静默丢弃入境 response
+     （`src/transport/stdio.c:409-411`），故 handler 不等应答；
+     wire 断言放在 peer 侧（见 3）。
 2. **C 对端探针**（随测编译，不装机）：stdio client，注册 canned sampling
    handler（固定回 `"canned"`）+ roots provider（固定回
-   `file:///tmp/host-caps-root`）；跑完一次 tools/call 即退出。
+   `file:///tmp/host-caps-root`)；主循环 `mcp_client_recv_message()` +
+   `mcp_client_handle_server_request()` 应答，每收到一个 server 请求向
+   stderr 打 `PEER_GOT:<method>` 标记；跑完 tools/call 结果即退出。
 3. **脚本** `tests/acceptance/hostcaps_accept.sh argv: <example> <peer>`：
    `mkfifo` 一对管道交叉连接两者 stdin/stdout；printf 握手 + tools/call
-   喂 example 端；断言结果含 `canned` + `file:///tmp/host-caps-root`；
-   用 `timeout 10` 防挂（无 timeout 命令时跳过并告警——plan 阶段确认 CI 有无）。
+   喂 example 端；断言 peer stderr 含 `PEER_GOT:roots/list` +
+   `PEER_GOT:sampling/createMessage`；用 `timeout 10` 防挂。
 4. **CMake**：example target + peer target + `add_test(hostcaps_acceptance …)`，
    无条件（stdio，零 option 依赖）。
 
