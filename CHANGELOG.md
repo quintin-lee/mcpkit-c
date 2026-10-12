@@ -217,7 +217,15 @@ Format follows Keep a Changelog. Versions follow SemVer.
   client's registered providers answer them and the response is sent
   over the transport.  All other methods go through normal server
   dispatch.  Client = NULL gives identical behaviour to the base
-  functions.
+   functions.
+
+- File-server example: root-jailed `read_file` tool with offset/limit
+  pagination over stdio (`examples/file-server/main.c`).
+- Tool-level `_meta`: `mcp_tool_set_meta()` / `mcp_tool_meta()` advertised
+  in `tools/list`.
+- Apps-server example: stdio demo with tool-level `_meta.ui`, result
+  `_meta.ui` helpers (`mcp_apps_tool_set_ui()`,
+  `mcp_apps_result_ui_uri()`), and `apps_acceptance` test.
 
 ### Fixed
 
