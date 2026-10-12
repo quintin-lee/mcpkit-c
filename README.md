@@ -94,9 +94,9 @@ stdio unless stated otherwise:
 | `apps-server` | MCP Apps over stdio: tool-level `_meta.ui`, result `_meta.ui`, ui:// resource |
 | `file-server` | Root-jailed `read_file` with offset/limit pagination |
 | `prompt-server` | Prompt + `completion/complete` provider demo |
-| `socket-server` | TCP socket transport serve loop (needs `MCPKIT_BUILD_SOCKET=ON`, default ON) |
+| `socket-server` | TCP socket transport serve loop (needs `MCPKIT_BUILD_SOCKET=ON`, default ON; covered by `transport_socket_acceptance`) |
 | `mrtr-server` | MRTR multi-round-trip tool demo (2FA elicitation before completion) |
-| `http-server` | Streamable HTTP serve over file-backed I/O (needs `MCPKIT_BUILD_HTTP=ON`) |
+| `http-server` | Streamable HTTP serve over file-backed I/O (needs `MCPKIT_BUILD_HTTP=ON`; covered by `transport_http_acceptance`) |
 
 ## CLI
 

@@ -159,6 +159,21 @@ if(MCPKIT_BUILD_TOOLS AND MCPKIT_BUILD_EXAMPLES)
            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/apps_accept.sh
                    ${CMAKE_BINARY_DIR}/tools/mcpkit-cli
                    ${CMAKE_BINARY_DIR}/examples/apps-server)
+  if(MCPKIT_BUILD_SOCKET)
+    add_executable(probe_sock acceptance/probe_sock.c)
+    target_link_libraries(probe_sock PRIVATE mcpkit_core)
+    add_test(NAME transport_socket_acceptance
+             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/transport_accept.sh
+                     socket
+                     ${CMAKE_BINARY_DIR}/examples/socket-server
+                     ${CMAKE_BINARY_DIR}/tests/probe_sock)
+  endif()
+  if(MCPKIT_BUILD_HTTP)
+    add_test(NAME transport_http_acceptance
+             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/transport_accept.sh
+                     http
+                     ${CMAKE_BINARY_DIR}/examples/http-server)
+  endif()
 endif()
 
 if(MCPKIT_BUILD_FUZZ)

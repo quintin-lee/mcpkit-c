@@ -226,6 +226,10 @@ Format follows Keep a Changelog. Versions follow SemVer.
 - Apps-server example: stdio demo with tool-level `_meta.ui`, result
   `_meta.ui` helpers (`mcp_apps_tool_set_ui()`,
   `mcp_apps_result_ui_uri()`), and `apps_acceptance` test.
+- Transport acceptance: `transport_socket_acceptance` (default) and
+  `transport_http_acceptance` (`MCPKIT_BUILD_HTTP=ON`) driving
+  `socket-server` / `http-server` over the wire
+  (`tests/acceptance/transport_accept.sh` + `probe_sock`).
 
 ### Fixed
 
