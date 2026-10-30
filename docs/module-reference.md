@@ -881,6 +881,58 @@ void              mcp_sse_parser_destroy(mcp_context_t *ctx, mcp_sse_parser_t *p
 ```
 Streaming parser handling arbitrary chunk boundaries, CRLF/CR/LF line endings, multiline data accumulation, comments, and `Last-Event-ID` tracking for connection resumption.
 
+### `ws.h`
+RFC 6455 WebSocket transport and frame codec (zero-dependency C23):
+```c
+typedef enum {
+    MCP_WS_OP_CONT   = 0x0,
+    MCP_WS_OP_TEXT   = 0x1,
+    MCP_WS_OP_BINARY = 0x2,
+    MCP_WS_OP_CLOSE  = 0x8,
+    MCP_WS_OP_PING   = 0x9,
+    MCP_WS_OP_PONG   = 0xA,
+} mcp_ws_opcode_t;
+
+typedef struct {
+    bool fin;
+    mcp_ws_opcode_t opcode;
+    bool masked;
+    uint8_t mask_key[4];
+    size_t payload_len;
+    char *payload;
+} mcp_ws_frame_t;
+
+mcp_status_t mcp_ws_parse_frame(mcp_context_t *ctx, const uint8_t *buf, size_t len,
+                                mcp_ws_frame_t *frame_out, size_t *consumed_out);
+mcp_status_t mcp_ws_encode_frame(mcp_context_t *ctx, const mcp_ws_frame_t *frame,
+                                 uint8_t **out, size_t *out_len);
+void mcp_ws_frame_destroy(mcp_context_t *ctx, mcp_ws_frame_t *frame);
+
+mcp_transport_t *mcp_ws_transport_create(mcp_context_t *ctx, int fd, bool is_client);
+mcp_transport_t *mcp_ws_client_connect(mcp_context_t *ctx, const char *url);
+```
+
+### `async_server.h`
+High-concurrency unified async server for Streamable HTTP/SSE and WebSocket:
+```c
+typedef struct {
+    uint16_t port;                /**< Port to listen on (0 = ephemeral). */
+    const char *bind_addr;        /**< Interface to bind (default "0.0.0.0" if NULL). */
+    size_t max_connections;       /**< Max concurrent connections (default 10000 if 0). */
+    uint32_t keepalive_timeout_s; /**< Idle session timeout in seconds (default 60 if 0). */
+    bool enable_websocket;        /**< Accept WebSocket upgrade requests (default true). */
+    bool enable_sse;              /**< Accept SSE streaming requests (default true). */
+} mcp_async_server_config_t;
+
+mcp_async_server_t *mcp_async_server_create(mcp_context_t *ctx, mcp_server_t *server,
+                                            mcp_executor_t *pool,
+                                            const mcp_async_server_config_t *cfg);
+uint16_t mcp_async_server_get_port(const mcp_async_server_t *s);
+void mcp_async_server_destroy(mcp_context_t *ctx, mcp_async_server_t *s);
+mcp_status_t mcp_async_server_step(mcp_context_t *ctx, mcp_async_server_t *s, int timeout_ms);
+void mcp_async_server_stop(mcp_context_t *ctx, mcp_async_server_t *s);
+```
+
 ---
 
 ## Client (`mcpkit/client/`)
@@ -1029,6 +1081,29 @@ recv timeout keeps an idle loop responsive to shutdown.
 `mcp_loop_run_with_client` additionally routes `roots/list`,
 `sampling/createMessage`, and `elicitation/create` to the host-supplied
 client's providers; all other methods go through normal server dispatch.
+
+### `reactor.h`
+Non-blocking Reactor I/O multiplexer (`epoll` on Linux, POSIX `poll` fallback):
+```c
+typedef enum {
+    MCP_EVENT_READ  = 1 << 0,
+    MCP_EVENT_WRITE = 1 << 1,
+    MCP_EVENT_ERROR = 1 << 2,
+    MCP_EVENT_HUP   = 1 << 3,
+} mcp_event_mask_t;
+
+typedef void (*mcp_reactor_callback_fn)(mcp_context_t *ctx, int fd,
+                                        mcp_event_mask_t events, void *user_data);
+
+mcp_reactor_t *mcp_reactor_create(mcp_context_t *ctx);
+void           mcp_reactor_destroy(mcp_context_t *ctx, mcp_reactor_t *r);
+mcp_status_t   mcp_reactor_add(mcp_context_t *ctx, mcp_reactor_t *r, int fd,
+                               mcp_event_mask_t events, mcp_reactor_callback_fn cb, void *user_data);
+mcp_status_t   mcp_reactor_modify(mcp_context_t *ctx, mcp_reactor_t *r, int fd, mcp_event_mask_t events);
+mcp_status_t   mcp_reactor_remove(mcp_context_t *ctx, mcp_reactor_t *r, int fd);
+mcp_status_t   mcp_reactor_step(mcp_context_t *ctx, mcp_reactor_t *r, int timeout_ms);
+mcp_status_t   mcp_reactor_wakeup(mcp_context_t *ctx, mcp_reactor_t *r);
+```
 
 ---
 

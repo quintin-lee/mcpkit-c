@@ -6,6 +6,15 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ### Added
 
+- High-Concurrency Asynchronous I/O Reactor & Streamable HTTP / WebSocket Transports:
+  - Non-blocking Reactor runtime (`include/mcpkit/runtime/reactor.h`, `src/runtime/reactor.c`) with Linux `epoll` engine, POSIX `poll` fallback, event masks (`MCP_EVENT_READ`, `MCP_EVENT_WRITE`, `MCP_EVENT_ERROR`, `MCP_EVENT_HUP`), thread-safe inter-thread notification (`mcp_reactor_wakeup`), and zero external dependencies in core.
+  - Standalone SHA-1 implementation (`src/core/sha1.h`, `src/core/sha1.c`) for RFC 6455 Sec-WebSocket-Accept handshake validation and key computation.
+  - RFC 6455 WebSocket frame codec (`include/mcpkit/transport/ws.h`, `src/transport/ws.c`) supporting text/binary payloads, unfragmented/fragmented frames, control frames (Ping/Pong/Close), and client XOR 4-byte masking.
+  - WebSocket bidirectional client transport (`mcp_ws_transport_create`, `mcp_ws_client_connect`) compatible with standard `mcp_transport_t` and `mcp_client_t`.
+  - Unified high-concurrency async server (`include/mcpkit/transport/async_server.h`, `src/transport/async_server.c`) multiplexing MCP Streamable HTTP POST (with `Mcp-Session-Id` session negotiation), Server-Sent Events (SSE) streaming (`GET /mcp`), and WebSocket connections on a single TCP port.
+  - New examples `examples/async-server` (multi-protocol server demo) and `examples/ws-client` (RFC 6455 WebSocket client demo).
+  - High-concurrency stress test (`tests/acceptance/test_async_concurrency.c`, `tests/acceptance/async_accept.sh`) driving 1,000+ concurrent requests across mixed HTTP, SSE, and WebSocket connections with 0 packet drops and clean shutdown.
+
 - MCP 2026-07-28 Specification Alignment & Extensions:
   - Client ID Metadata Documents (SEP-991 / draft-ietf-oauth-client-id-metadata-document): Added `mcp_oauth_client_metadata_t` parser (`mcp_oauth_client_metadata_parse()`), validator (`mcp_oauth_client_metadata_validate()`), serializer (`mcp_oauth_client_metadata_serialize()`), and memory cleanup in `mcpkit/core/auth.h` and `src/core/auth.c`.
   - RFC 9207 Authorization Response Issuer Validation (SEP-2468): Added `mcp_oauth_validate_issuer()` in `mcpkit/core/auth.h` and parsed `client_id_metadata_document_supported` in RFC 8414 metadata discovery.

@@ -31,6 +31,12 @@ target_link_libraries(host-caps PRIVATE mcpkit_core)
 add_executable(mrtr-server mrtr-server/main.c)
 target_link_libraries(mrtr-server PRIVATE mcpkit_core)
 
+add_executable(async-server async-server/main.c)
+target_link_libraries(async-server PRIVATE mcpkit_core)
+
+add_executable(ws-client ws-client/main.c)
+target_link_libraries(ws-client PRIVATE mcpkit_core)
+
 if(MCPKIT_BUILD_HTTP)
   add_executable(http-server http-server/main.c)
   target_link_libraries(http-server PRIVATE mcpkit_core)

@@ -18,11 +18,12 @@ core.
 - **Client** — synchronous request/response over any transport, with
   convenience methods for `tools/list`, `tools/call`,
   `resources/read`, `prompts/get`, and `ping`.
-- **Transports** — stdio (line-delimited, 4 MB cap, serve loop) and
-  Streamable HTTP (session map, SSE-compatible `GET` stream, optional,
-  behind `MCPKIT_BUILD_HTTP=ON`).
-- **Runtime** — pluggable executor: sync (inline) and C11 threadpool
-  (worker pool with per-task context capture), plus a monotonic timer
+- **Transports** — stdio (line-delimited, 4 MB cap, serve loop),
+  native RFC 6455 WebSocket transport (`mcp_ws_transport_create`, `mcp_ws_client_connect`),
+  Streamable HTTP (session map, SSE-compatible `GET` stream), and high-concurrency unified
+  asynchronous server (`mcp_async_server_create`) multiplexing HTTP POST, SSE, and WebSocket on one port.
+- **Runtime** — non-blocking Reactor (`epoll` on Linux, POSIX `poll` fallback), pluggable executor:
+  sync (inline) and C11 threadpool (worker pool with per-task context capture), plus a monotonic timer
   wheel and a transport-agnostic event loop.
 - **MCP Apps extension** — `ui://` resources with lifecycle hooks,
   structured Content-Security-Policy (default-deny), tool visibility
@@ -98,6 +99,8 @@ stdio unless stated otherwise:
 | `socket-server` | TCP socket transport serve loop (needs `MCPKIT_BUILD_SOCKET=ON`, default ON; covered by `transport_socket_acceptance`) |
 | `mrtr-server` | MRTR multi-round-trip tool demo (2FA elicitation before completion) |
 | `http-server` | Streamable HTTP serve over file-backed I/O (needs `MCPKIT_BUILD_HTTP=ON`; covered by `transport_http_acceptance`) |
+| `async-server` | High-concurrency async HTTP POST, SSE, and WebSocket multi-protocol server on a single TCP port (covered by `async_acceptance`) |
+| `ws-client` | RFC 6455 WebSocket client CLI demo (`list` / `call` / `ping`) |
 
 ## CLI
 

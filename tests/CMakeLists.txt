@@ -201,6 +201,13 @@ if(MCPKIT_BUILD_TOOLS AND MCPKIT_BUILD_EXAMPLES)
                      http
                      ${CMAKE_BINARY_DIR}/examples/http-server)
   endif()
+  add_executable(test_async_concurrency acceptance/test_async_concurrency.c)
+  target_link_libraries(test_async_concurrency PRIVATE mcpkit_core)
+  add_test(NAME async_acceptance
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/acceptance/async_accept.sh
+                   ${CMAKE_BINARY_DIR}/examples/async-server
+                   ${CMAKE_BINARY_DIR}/examples/ws-client
+                   ${CMAKE_BINARY_DIR}/tests/test_async_concurrency)
 endif()
 
 if(MCPKIT_BUILD_FUZZ)
