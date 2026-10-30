@@ -61,6 +61,7 @@ set(MCPKIT_CORE_SOURCES
   src/transport/transport.c
   src/transport/stdio.c
   src/transport/sse.c
+  src/transport/ws.c
   src/client/client.c
   src/runtime/executor.c
   src/runtime/sync.c
