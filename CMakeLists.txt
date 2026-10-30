@@ -62,6 +62,8 @@ set(MCPKIT_CORE_SOURCES
   src/transport/stdio.c
   src/transport/sse.c
   src/transport/ws.c
+  src/transport/http.c
+  src/transport/async_server.c
   src/client/client.c
   src/runtime/executor.c
   src/runtime/sync.c
@@ -74,7 +76,6 @@ set(MCPKIT_CORE_SOURCES
 
 if(MCPKIT_BUILD_HTTP)
   list(APPEND MCPKIT_CORE_SOURCES
-    src/transport/http.c
     src/transport/streamable_http.c
   )
 endif()

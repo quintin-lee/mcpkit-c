@@ -130,6 +130,10 @@ add_executable(test_ws_transport unit/test_ws_transport.c)
 target_link_libraries(test_ws_transport PRIVATE mcpkit_core)
 add_test(NAME test_ws_transport COMMAND test_ws_transport)
 
+add_executable(test_async_server unit/test_async_server.c)
+target_link_libraries(test_async_server PRIVATE mcpkit_core)
+add_test(NAME test_async_server COMMAND test_async_server)
+
 add_executable(test_plugin unit/test_plugin.c)
 target_link_libraries(test_plugin PRIVATE mcpkit_core)
 add_test(NAME test_plugin COMMAND test_plugin)
