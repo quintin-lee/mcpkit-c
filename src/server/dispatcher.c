@@ -38,20 +38,6 @@ static mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req, int
     return mcp_response_err_new(ctx, req, code, text, NULL);
 }
 
-// Flat k=v dispatch log; NULL-ctx safe (NULL logger discards).
-static void dlogf(mcp_context_t *ctx, mcp_log_level_t level, const char *fmt, ...) {
-    mcp_logger_t *lg = mcp_context_logger(ctx);
-    if (lg == NULL) {
-        return;
-    }
-    char buf[256];
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-    mcp_logger_log(lg, level, buf);
-}
-
 // Dispatch-route log variant: consults the server's log floor set by
 // logging/setLevel so an operator can quiet verbose routes at runtime.
 // Serve-loop stations (loop.c/stdio.c) have no server and stay

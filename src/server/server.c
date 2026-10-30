@@ -443,6 +443,7 @@ mcp_status_t mcp_server_notify_client(mcp_context_t *ctx, mcp_server_t *srv,
 
 mcp_status_t mcp_server_outbox_pop(mcp_context_t *ctx, mcp_server_t *srv,
                                     mcp_message_t **out) {
+    (void)ctx;
     if (srv == NULL || out == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }

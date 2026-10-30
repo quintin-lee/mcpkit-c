@@ -62,9 +62,6 @@ client you can compile against the library.
 | `MCPKIT_BUILD_TESTS` | `ON` | Build unit and acceptance tests |
 | `MCPKIT_BUILD_EXAMPLES` | `ON` | Build all examples |
 | `MCPKIT_BUILD_TOOLS` | `ON` | Build `mcpkit-cli` |
-| `MCPKIT_BUILD_APPS` | `ON` | Reserved (currently a no-op: apps sources always build) |
-| `MCPKIT_BUILD_CLIENT` | `ON` | Reserved (currently a no-op: client sources always build) |
-| `MCPKIT_BUILD_SERVER` | `ON` | Reserved (currently a no-op: server sources always build) |
 | `MCPKIT_BUILD_HTTP` | `OFF` | Build the HTTP transport and `http-server` example |
 | `MCPKIT_BUILD_SOCKET` | `ON` | Build the socket TCP transport and `socket-server` example |
 | `MCPKIT_BUILD_FUZZ` | `OFF` | Build the `fuzz_json_stdin` driver |

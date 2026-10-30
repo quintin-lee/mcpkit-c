@@ -166,16 +166,6 @@ static mcp_json_value_t *compl_provider(mcp_context_t *ctx, mcp_session_t *s,
     return arr;
 }
 
-// Returns NULL (simulating provider failure).
-static mcp_json_value_t *compl_fail(mcp_context_t *ctx, mcp_session_t *s,
-                                    const mcp_json_value_t *ref, void *ud) {
-    (void)ctx;
-    (void)s;
-    (void)ref;
-    (void)ud;
-    return NULL;
-}
-
 static mcp_json_value_t *params1(mcp_context_t *ctx, const char *text) {
     mcp_json_value_t *p = mcp_json_object_new(ctx);
     mcp_json_value_t *v = mcp_json_string_new(ctx, text);

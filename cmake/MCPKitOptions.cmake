@@ -1,8 +1,5 @@
 option(MCPKIT_BUILD_TESTS "Build tests" ON)
 option(MCPKIT_BUILD_EXAMPLES "Build examples" ON)
-option(MCPKIT_BUILD_APPS "Build MCP Apps extension" ON)
-option(MCPKIT_BUILD_CLIENT "Build client" ON)
-option(MCPKIT_BUILD_SERVER "Build server" ON)
 option(MCPKIT_BUILD_HTTP "Build HTTP transport" OFF)
 option(MCPKIT_BUILD_SOCKET "Build socket TCP transport" ON)
 option(MCPKIT_BUILD_TLS "Build OpenSSL TLS transport adapter" OFF)
