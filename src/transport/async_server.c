@@ -177,42 +177,11 @@ static void conn_unref(async_conn_t *conn) {
     }
 }
 
+#if 0
 static void conn_detach_and_close(mcp_async_server_t *s, async_conn_t *conn) {
-    if (conn == NULL) return;
-    if (atomic_exchange(&conn->detached, true)) {
-        return;
-    }
-    atomic_store(&conn->closing, true);
-    if (conn->fd >= 0) {
-        mcp_reactor_remove(s->ctx, s->reactor, conn->fd);
-        close(conn->fd);
-        conn->fd = -1;
-    }
-    if (conn->type == CONN_SSE && conn->session_id[0] != '\0') {
-        mtx_lock(&s->sessions_mtx);
-        for (session_entry_t *cur = s->sessions; cur != NULL; cur = cur->next) {
-            if (cur->sse_conn == conn) {
-                cur->sse_conn = NULL;
-                break;
-            }
-        }
-        mtx_unlock(&s->sessions_mtx);
-    }
-    mtx_lock(&s->conns_mtx);
-    if (conn->prev != NULL) {
-        conn->prev->next = conn->next;
-    } else {
-        s->conns = conn->next;
-    }
-    if (conn->next != NULL) {
-        conn->next->prev = conn->prev;
-    }
-    if (s->conns_count > 0) {
-        s->conns_count--;
-    }
-    mtx_unlock(&s->conns_mtx);
-    conn_unref(conn);
+    ...
 }
+#endif
 
 static void enqueue_response(mcp_async_server_t *s, async_conn_t *conn, char *data,
                              size_t len, bool close_after) {
