@@ -2,7 +2,7 @@
 
 > 状态：提案 (Brainstorming 完成，待 Spec Reviewer 验证与用户批准)  
 > 日期：2026-10-30  
-> 责任模块：`src/server/dispatcher.c`, `src/server/routes.c`, `src/server/queue.c`, `src/server/internals.h`, `CMakeLists.txt`
+> 责任模块：`src/server/dispatcher.c`, `src/server/routes.c`, `src/server/queue.c`, `src/server/internals.h`, `src/method_table.h`, `CMakeLists.txt`
 
 ---
 
@@ -20,9 +20,10 @@
 
 ### 1.2 目标
 采用**领域清晰三分法**重构解耦 `dispatcher.c`：
-- 将会话消息队列下沉为独立的 `src/server/queue.c`，并将 `struct mcp_queue` 完全私有化封装；
+- 将会话消息队列下沉为独立的 `src/server/queue.c`，并将 `struct mcp_queue` 完全私有化封装在该文件内部；
 - 将所有具体的业务方法路由逻辑与结果装潢抽离至独立的 `src/server/routes.c`；
 - 精简 `src/server/dispatcher.c`，使其专注于纯粹的请求验证门禁、会话状态机、Tracing 观测以及顶层分发编排；
+- 在 `src/method_table.h` 中为静态方法表声明添加 `__attribute__((unused))`，避免拆分后因单文件只引用部分表引发 `-Wunused-const-variable` 告警；
 - **保持 100% 公共 API 稳定性与行为一致性**，全部 69+ 项已有测试全绿，且在 `-Wall -Wextra` 下保持零告警。
 
 ---
@@ -37,7 +38,7 @@
 2. **零外部破坏性改动 (Zero Public API Breakage)**：
    - 公开头文件 `include/mcpkit/server/dispatcher.h` 和 `include/mcpkit/server/server.h` 函数签名、错误码与所有权语义 100% 保持不变。
 3. **高内聚的内部接口契约**：
-   - 通过内部私有头文件 `src/server/internals.h` 声明跨文件内部接口，避免在头文件暴露非公共符号；`struct mcp_queue` 移出 `internals.h` 并私有化在 `queue.c`。
+   - 通过内部私有头文件 `src/server/internals.h` 声明跨文件内部接口，避免在头文件暴露非公共符号；`struct mcp_queue` 从 `internals.h` 移除并在 `queue.c` 内部私有化。
 4. **无损性能与零回归**：
    - 内部拆分保持纯 C 静态链接调用，无虚函数或额外间接寻址开销，不引入任何堆内存重分配或性能损耗。
 
@@ -63,23 +64,23 @@
 
 重构后：
   src/server/
-  ├── queue.c         (约 120 行) ── 实现 include/mcpkit/server/dispatcher.h 声明的 mcp_queue_*
-  ├── dispatcher.c    (约 230 行) ── 实现 mcp_server_dispatch 与 mcp_server_notify 管线
+  ├── queue.c         (约 120 行) ── 实现 include/mcpkit/server/dispatcher.h 声明的 mcp_queue_* 及 mcp_server_process_one
+  ├── dispatcher.c    (约 230 行) ── 实现 mcp_server_dispatch 与 mcp_server_notify 顶层管线
   ├── routes.c        (约 1250 行) ── 实现 mcp_server_route_request 及全部具体方法实现
   └── internals.h     (头文件)   ── 内部符号跨文件声明 seam
 ```
 
 #### 3.1.1 `src/server/queue.c`（消息队列子模块）
-- **职责**：管理 Session 级别的单步请求/通知消息队列，对应 `include/mcpkit/server/dispatcher.h` 中定义的全部队列操作。
+- **职责**：管理 Session 级别的单步请求/通知消息队列，对应 `include/mcpkit/server/dispatcher.h` 中定义的全部队列操作及 `mcp_server_process_one`。
 - **数据结构封装**：
-  将目前位于 `src/server/internals.h` 中的 `struct mcp_queue` 定义移除并下沉至 `src/server/queue.c`，完全封装为内部实现细节：
+  将目前位于 `src/server/internals.h` 中的 `struct mcp_queue` 定义移除并下沉至 `src/server/queue.c`，保留原本的字段排布：
   ```c
   struct mcp_queue {
       mcp_session_t **sessions;
       mcp_message_t **msgs;
+      size_t head;
       size_t len;
       size_t cap;
-      size_t head;
   };
   ```
 - **包含符号**：
@@ -94,7 +95,7 @@
 #### 3.1.2 `src/server/routes.c`（方法路由子模块）
 - **职责**：收敛全部协议业务逻辑处理，包括入参解构、数据校验、权限校验、业务回调执行及结果装潢。
 - **包含辅助函数**：
-  - `static inline mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req, int code, const char *text)`：构建 RPC 错误响应；
+  - `static mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req, int code, const char *text)`：构建 RPC 错误响应的私有静态辅助；
   - `page_offset`、`set_next_cursor`：分页 Cursor 转换；
   - `set_string`、`get_string`：JSON 属性存取快捷辅助；
   - `find_tool`、`find_resource`、`find_prompt`：Server 注册表项线性查找；
@@ -127,28 +128,20 @@
   9. 统计错误响应 `c_requests_error` 并输出；
   10. 实现 `mcp_server_notify` 入站通知消费（依赖 `k_mcp_server_notifications`）；
 - **包含辅助函数**：
-  - `static inline mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req, int code, const char *text)`：定义在本地或通过 `internals.h` 共享；
+  - `static mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req, int code, const char *text)`：在本地保留私有静态辅助；
   - `void dlogf_srv(...)`：实现顶层日志函数，并在 `internals.h` 中导出供 `routes.c` 调用。
 
 ---
 
-### 3.2 内部接口跨文件契约 (Seam in `internals.h`)
+### 3.2 内部接口与头文件契约
 
-在 `src/server/internals.h` 中：
-1. **移除 `struct mcp_queue` 定义**（下沉至 `src/server/queue.c`，在 `internals.h` 中仅保留 `typedef struct mcp_queue mcp_queue_t;` 不透明前置声明）；
-2. **增设跨子模块调用接口声明**：
+#### 3.2.1 `src/server/internals.h` 更新
+1. 移除 `struct mcp_queue` 结构体字段定义（完全下沉至 `queue.c` 私有）；
+2. 增设跨模块调用接口声明：
 ```c
 /* ------------------------------------------------------------------ */
 /* Server Route Handlers Seam (routes.c <-> dispatcher.c)             */
 /* ------------------------------------------------------------------ */
-
-/**
- * @brief Helper to build an RPC error response with code and message text.
- */
-static inline mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req,
-                                      int code, const char *text) {
-    return mcp_response_err_new(ctx, req, code, text, NULL);
-}
 
 /**
  * @brief Logs formatted messages respecting server's dynamic log_floor level.
@@ -171,6 +164,13 @@ void dlogf_srv(mcp_context_t *ctx, mcp_server_t *srv, mcp_log_level_t level,
 mcp_message_t *mcp_server_route_request(mcp_context_t *ctx, mcp_server_t *srv,
                                         mcp_session_t *s, const mcp_message_t *req,
                                         const char *method);
+```
+
+#### 3.2.2 `src/method_table.h` 编译器警告防护
+为避免 `routes.c`（仅使用 methods 表）与 `dispatcher.c`（仅使用 notifications 表）分别包含头文件时触发 GCC/Clang 的 `-Wunused-const-variable` 告警，在 `src/method_table.h` 中为两个静态表添加 `__attribute__((unused))` 属性注解：
+```c
+static const char *const k_mcp_server_methods[] __attribute__((unused)) = { ... };
+static const char *const k_mcp_server_notifications[] __attribute__((unused)) = { ... };
 ```
 
 ---
