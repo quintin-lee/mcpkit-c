@@ -117,6 +117,11 @@ add_executable(test_reactor unit/test_reactor.c)
 target_link_libraries(test_reactor PRIVATE mcpkit_core)
 add_test(NAME test_reactor COMMAND test_reactor)
 
+add_executable(test_ws_handshake unit/test_ws_handshake.c)
+target_include_directories(test_ws_handshake PRIVATE "${CMAKE_SOURCE_DIR}")
+target_link_libraries(test_ws_handshake PRIVATE mcpkit_core)
+add_test(NAME test_ws_handshake COMMAND test_ws_handshake)
+
 add_executable(test_plugin unit/test_plugin.c)
 target_link_libraries(test_plugin PRIVATE mcpkit_core)
 add_test(NAME test_plugin COMMAND test_plugin)
