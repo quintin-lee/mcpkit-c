@@ -59,11 +59,20 @@ struct async_conn {
     size_t write_cap;
     size_t write_off;
 
+    /* WebSocket Continuation frame reassembly buffer */
+    char *ws_frag_buf;
+    size_t ws_frag_len;
+    size_t ws_frag_cap;
+    mcp_ws_opcode_t ws_frag_opcode;
+
     char session_id[64];
     mcp_session_t *session;
     mcp_async_server_t *server;
     atomic_bool closing;
+    atomic_bool detached;
+    bool http_in_flight;
 
+    async_conn_t *prev;
     async_conn_t *next;
 };
 
@@ -72,6 +81,8 @@ typedef struct session_entry {
     mcp_session_t *session;
     async_conn_t *sse_conn;
     time_t last_active;
+    atomic_uint ref_count;
+    atomic_bool dead;
     mtx_t session_lock;
     struct session_entry *next;
 } session_entry_t;
@@ -103,9 +114,11 @@ struct mcp_async_server {
 
     mtx_t sessions_mtx;
     session_entry_t *sessions;
+    time_t last_reap_time;
 
     mtx_t conns_mtx;
     async_conn_t *conns;
+    size_t conns_count;
 };
 
 static const mcp_allocator_t *alloc_of(mcp_context_t *ctx) {
@@ -156,8 +169,49 @@ static void conn_unref(async_conn_t *conn) {
             srv_free(ctx, conn->write_buf);
             conn->write_buf = NULL;
         }
+        if (conn->ws_frag_buf != NULL) {
+            srv_free(ctx, conn->ws_frag_buf);
+            conn->ws_frag_buf = NULL;
+        }
         srv_free(ctx, conn);
     }
+}
+
+static void conn_detach_and_close(mcp_async_server_t *s, async_conn_t *conn) {
+    if (conn == NULL) return;
+    if (atomic_exchange(&conn->detached, true)) {
+        return;
+    }
+    atomic_store(&conn->closing, true);
+    if (conn->fd >= 0) {
+        mcp_reactor_remove(s->ctx, s->reactor, conn->fd);
+        close(conn->fd);
+        conn->fd = -1;
+    }
+    if (conn->type == CONN_SSE && conn->session_id[0] != '\0') {
+        mtx_lock(&s->sessions_mtx);
+        for (session_entry_t *cur = s->sessions; cur != NULL; cur = cur->next) {
+            if (cur->sse_conn == conn) {
+                cur->sse_conn = NULL;
+                break;
+            }
+        }
+        mtx_unlock(&s->sessions_mtx);
+    }
+    mtx_lock(&s->conns_mtx);
+    if (conn->prev != NULL) {
+        conn->prev->next = conn->next;
+    } else {
+        s->conns = conn->next;
+    }
+    if (conn->next != NULL) {
+        conn->next->prev = conn->prev;
+    }
+    if (s->conns_count > 0) {
+        s->conns_count--;
+    }
+    mtx_unlock(&s->conns_mtx);
+    conn_unref(conn);
 }
 
 static void enqueue_response(mcp_async_server_t *s, async_conn_t *conn, char *data,

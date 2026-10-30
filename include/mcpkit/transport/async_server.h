@@ -89,7 +89,14 @@ mcp_status_t mcp_async_server_step(mcp_context_t *ctx, mcp_async_server_t *s, in
  * @param ctx Context; may be NULL.
  * @param s Server handle.
  */
-void mcp_async_server_stop(mcp_context_t *ctx, mcp_async_server_t *s);
+void           mcp_async_server_stop(mcp_context_t *ctx, mcp_async_server_t *s);
+
+/**
+ * @brief Returns the current number of active connections tracked by the server.
+ * @param s Async server handle; may be NULL.
+ * @return Active connection count, or 0 if s is NULL.
+ */
+size_t mcp_async_server_active_connections(const mcp_async_server_t *s);
 
 #ifdef __cplusplus
 }
