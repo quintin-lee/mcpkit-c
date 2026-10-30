@@ -20,7 +20,7 @@
 
 ### 1.2 目标
 采用**领域清晰三分法**重构解耦 `dispatcher.c`：
-- 将会话消息队列下沉为独立的 `src/server/queue.c`；
+- 将会话消息队列下沉为独立的 `src/server/queue.c`，并将 `struct mcp_queue` 完全私有化封装；
 - 将所有具体的业务方法路由逻辑与结果装潢抽离至独立的 `src/server/routes.c`；
 - 精简 `src/server/dispatcher.c`，使其专注于纯粹的请求验证门禁、会话状态机、Tracing 观测以及顶层分发编排；
 - **保持 100% 公共 API 稳定性与行为一致性**，全部 69+ 项已有测试全绿，且在 `-Wall -Wextra` 下保持零告警。
@@ -37,7 +37,7 @@
 2. **零外部破坏性改动 (Zero Public API Breakage)**：
    - 公开头文件 `include/mcpkit/server/dispatcher.h` 和 `include/mcpkit/server/server.h` 函数签名、错误码与所有权语义 100% 保持不变。
 3. **高内聚的内部接口契约**：
-   - 通过内部私有头文件 `src/server/internals.h` 声明跨文件内部接口，避免在头文件暴露非公共符号。
+   - 通过内部私有头文件 `src/server/internals.h` 声明跨文件内部接口，避免在头文件暴露非公共符号；`struct mcp_queue` 移出 `internals.h` 并私有化在 `queue.c`。
 4. **无损性能与零回归**：
    - 内部拆分保持纯 C 静态链接调用，无虚函数或额外间接寻址开销，不引入任何堆内存重分配或性能损耗。
 
@@ -71,8 +71,18 @@
 
 #### 3.1.1 `src/server/queue.c`（消息队列子模块）
 - **职责**：管理 Session 级别的单步请求/通知消息队列，对应 `include/mcpkit/server/dispatcher.h` 中定义的全部队列操作。
+- **数据结构封装**：
+  将目前位于 `src/server/internals.h` 中的 `struct mcp_queue` 定义移除并下沉至 `src/server/queue.c`，完全封装为内部实现细节：
+  ```c
+  struct mcp_queue {
+      mcp_session_t **sessions;
+      mcp_message_t **msgs;
+      size_t len;
+      size_t cap;
+      size_t head;
+  };
+  ```
 - **包含符号**：
-  - `struct mcp_queue`：环形缓冲区队列结构；
   - `static mcp_status_t queue_grow(mcp_context_t *ctx, mcp_queue_t *q)`：动态扩容与数据平移；
   - `mcp_queue_t *mcp_queue_create(mcp_context_t *ctx)`；
   - `void mcp_queue_destroy(mcp_context_t *ctx, mcp_queue_t *q)`；
@@ -84,18 +94,19 @@
 #### 3.1.2 `src/server/routes.c`（方法路由子模块）
 - **职责**：收敛全部协议业务逻辑处理，包括入参解构、数据校验、权限校验、业务回调执行及结果装潢。
 - **包含辅助函数**：
+  - `static inline mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req, int code, const char *text)`：构建 RPC 错误响应；
   - `page_offset`、`set_next_cursor`：分页 Cursor 转换；
   - `set_string`、`get_string`：JSON 属性存取快捷辅助；
   - `find_tool`、`find_resource`、`find_prompt`：Server 注册表项线性查找；
   - `decorate_result`：集中注入 `resultType`、`ttlMs`、`cacheScope` 与 `_meta`；
-  - `err_resp`：RPC 错误响应构建；
-  - `dlogf_srv`：带服务器日志等级过滤的格式化日志；
 - **包含路由实现**：
   - 核心协议：`route_initialize`、`route_server_discover`；
   - 工具系统：`route_tools_list`、`route_tools_call`（含 MRTR 状态机流转与签名透传）；
   - 资源系统：`route_resources_list`、`route_resources_read`、`route_advanced`（subscribe/unsubscribe/templates）；
   - 提示词与补全：`route_prompts_list`、`route_prompts_get`、`route_completion_list`、`route_completion_complete`；
   - 扩展系统：`route_subscriptions_listen`、`route_tasks_get`、`route_tasks_update`、`route_tasks_cancel`、`route_skills_list`、`route_skills_get`；
+- **方法表依赖**：
+  包含 `#include "../method_table.h"`，用于通过 `k_mcp_server_methods` 执行方法匹配；
 - **核心对外入口**：
   ```c
   mcp_message_t *mcp_server_route_request(mcp_context_t *ctx, mcp_server_t *srv,
@@ -114,26 +125,41 @@
   7. Tracing 监控（`trace_begin`、`trace_end`）；
   8. 调用 `mcp_server_route_request` 执行路由分发；
   9. 统计错误响应 `c_requests_error` 并输出；
-  10. 实现 `mcp_server_notify` 入站通知消费。
+  10. 实现 `mcp_server_notify` 入站通知消费（依赖 `k_mcp_server_notifications`）；
+- **包含辅助函数**：
+  - `static inline mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req, int code, const char *text)`：定义在本地或通过 `internals.h` 共享；
+  - `void dlogf_srv(...)`：实现顶层日志函数，并在 `internals.h` 中导出供 `routes.c` 调用。
 
 ---
 
 ### 3.2 内部接口跨文件契约 (Seam in `internals.h`)
 
-在 `src/server/internals.h` 中增设跨子模块调用接口声明：
+在 `src/server/internals.h` 中：
+1. **移除 `struct mcp_queue` 定义**（下沉至 `src/server/queue.c`，在 `internals.h` 中仅保留 `typedef struct mcp_queue mcp_queue_t;` 不透明前置声明）；
+2. **增设跨子模块调用接口声明**：
 ```c
 /* ------------------------------------------------------------------ */
 /* Server Route Handlers Seam (routes.c <-> dispatcher.c)             */
 /* ------------------------------------------------------------------ */
 
 /**
+ * @brief Helper to build an RPC error response with code and message text.
+ */
+static inline mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req,
+                                      int code, const char *text) {
+    return mcp_response_err_new(ctx, req, code, text, NULL);
+}
+
+/**
  * @brief Logs formatted messages respecting server's dynamic log_floor level.
+ * Defined in src/server/dispatcher.c and used across server routes.
  */
 void dlogf_srv(mcp_context_t *ctx, mcp_server_t *srv, mcp_log_level_t level,
                const char *fmt, ...);
 
 /**
  * @brief Routes a validated MCP request to its concrete method handler.
+ * Defined in src/server/routes.c and called by mcp_server_dispatch.
  *
  * @param ctx Context; may be NULL.
  * @param srv Target server instance (must not be NULL).
