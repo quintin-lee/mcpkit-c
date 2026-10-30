@@ -7,8 +7,8 @@
 **Architecture:**
 - **Task 1: Internal Seams & Method Table Hygiene** — Update `src/server/internals.h` to declare cross-file route entrypoint `mcp_server_route_request` and `dlogf_srv`; update `src/server/dispatcher.c` to drop `static` on `dlogf_srv` to match external linkage; annotate method tables in `src/method_table.h` with `__attribute__((unused))` to prevent `-Wunused-const-variable` warnings when split.
 - **Task 2: Extract Session Queue Subsystem (`src/server/queue.c`)** — Move `struct mcp_queue`, `queue_grow`, `mcp_queue_*`, and `mcp_server_process_one` verbatim from `dispatcher.c` into a dedicated `src/server/queue.c` module; remove `struct mcp_queue` from `internals.h`; register `src/server/queue.c` in `CMakeLists.txt`.
-- **Task 3: Extract Method Route Handlers Subsystem (`src/server/routes.c`)** — Move `#define MCP_LIST_PAGE_SIZE 100u`, all 22 method route handlers, and decorators (`decorate_result`, `tool_error_result`, `find_*`, `page_offset`, etc.) verbatim from lines 84–1332 of `dispatcher.c` into `routes.c` under `mcp_server_route_request`; register `src/server/routes.c` in `CMakeLists.txt`.
-- **Task 4: Streamline Core Dispatcher Engine (`src/server/dispatcher.c`)** — Refactor `dispatcher.c` into a concise pipeline orchestrator (~230 lines) handling L1/L2/L3 validation, tracing, session status/permissions, error accounting, and notification consumption.
+- **Task 3: Extract Method Route Handlers Subsystem (`src/server/routes.c`)** — Copy `#define MCP_LIST_PAGE_SIZE 100u`, all 22 method route handlers, and decorators (`decorate_result`, `tool_error_result`, `find_*`, `page_offset`, etc.) verbatim from lines 84–1332 of `dispatcher.c` into `routes.c` under `mcp_server_route_request` (leaving `dispatcher.c` functional); register `src/server/routes.c` in `CMakeLists.txt`.
+- **Task 4: Streamline Core Dispatcher Engine (`src/server/dispatcher.c`)** — Refactor `dispatcher.c` into a concise pipeline orchestrator (~230 lines) handling L1/L2/L3 validation, tracing, session status/permissions, ID tracking with `mcp_idset_contains`, error accounting, and notification consumption.
 - **Task 5: Full Regression Testing & Zero-Warning Gate** — Run the full test suite (all 69+ tests) under clean build with `-Wall -Wextra` to verify 100% test pass rate and zero warnings.
 
 **Tech Stack:** C23 (`-std=c2x`), libc, CMake / CTest.
@@ -313,10 +313,10 @@ git commit -m "refactor(server): extract queue subsystem into src/server/queue.c
 - Create: `src/server/routes.c`
 - Modify: `CMakeLists.txt:55-65`
 
-- [ ] **Step 1: Create `src/server/routes.c`**
+- [ ] **Step 1: Create `src/server/routes.c` copying route handlers verbatim**
 
-Create `src/server/routes.c` moving lines 84–1332 from `src/server/dispatcher.c` verbatim:
-- Include:
+Create `src/server/routes.c` copying lines 84–1332 from `src/server/dispatcher.c` (leaving `dispatcher.c` intact for incremental compilation safety):
+- Inclusions:
   ```c
   #define _DEFAULT_SOURCE
 
@@ -348,7 +348,7 @@ Create `src/server/routes.c` moving lines 84–1332 from `src/server/dispatcher.
   ```
 - Helpers: `page_offset`, `set_next_cursor`, `set_string`, `get_string`, `find_tool`, `find_resource`, `find_prompt`, `decorate_result`, `tool_error_result`.
 - Route implementations: `route_server_discover`, `route_initialize`, `route_tools_list`, `route_tools_call`, `route_resources_list`, `route_resources_read`, `route_prompts_list`, `route_prompts_get`, `route_completion_list`, `route_completion_complete`, `route_advanced`, `route_subscriptions_listen`, `route_tasks_get`, `route_tasks_update`, `route_tasks_cancel`, `route_skills_list`, `route_skills_get`.
-- Exported entrypoint `mcp_server_route_request` (replacing `static mcp_message_t *route_request`):
+- Exported entrypoint `mcp_server_route_request`:
   ```c
   mcp_message_t *mcp_server_route_request(mcp_context_t *ctx, mcp_server_t *srv,
                                           mcp_session_t *s, const mcp_message_t *req,
@@ -434,6 +434,7 @@ Replace `src/server/dispatcher.c` with the streamlined pipeline engine (~230 lin
  */
 #define _DEFAULT_SOURCE
 
+#include <stdbool.h>
 #include <stdatomic.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -446,6 +447,7 @@ Replace `src/server/dispatcher.c` with the streamlined pipeline engine (~230 lin
 #include "mcpkit/json/object.h"
 #include "mcpkit/logging/logger.h"
 #include "mcpkit/protocol/message.h"
+#include "mcpkit/protocol/validate.h"
 #include "mcpkit/server/server.h"
 #include "mcpkit/server/session.h"
 
@@ -543,35 +545,28 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
     mcp_id_type_t id_type = mcp_message_id_type(ctx, req);
-    const char *id_str = mcp_message_id_string(ctx, req);
-    double id_num = 0.0;
-    if (id_type == MCP_ID_NUMBER) {
+    if (id_type != MCP_ID_NONE) {
+        const char *id_str = mcp_message_id_string(ctx, req);
+        double id_num = 0;
         mcp_message_id_number(ctx, req, &id_num);
-    }
-    bool is_dup = false;
-    mcp_status_t id_st = mcp_idset_contains(ctx, session->ids, id_type, id_str, id_num, &is_dup);
-    if (id_st != MCP_OK) {
-        atomic_fetch_add(&srv->c_requests_error, 1);
-        *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "internal error");
-        return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
-    }
-    if (is_dup) {
-        dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=duplicate_id method=%s", method);
-        atomic_fetch_add(&srv->c_requests_error, 1);
-        *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "duplicate request id");
-        return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
-    }
-    id_st = mcp_idset_add(ctx, session->ids, id_type, id_str, id_num);
-    if (id_st != MCP_OK) {
-        atomic_fetch_add(&srv->c_requests_error, 1);
-        *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "internal error");
-        return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
+        if (mcp_idset_contains(ctx, session->ids, id_type, id_str, id_num)) {
+            dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=duplicate_id method=%s", method);
+            atomic_fetch_add(&srv->c_requests_error, 1);
+            *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "duplicate request id");
+            return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
+        }
+        if (mcp_idset_add(ctx, session->ids, id_type, id_str, id_num) != MCP_OK) {
+            dlogf_srv(ctx, srv, MCP_LOG_ERROR, "event=id_tracking_failed method=%s", method);
+            atomic_fetch_add(&srv->c_requests_error, 1);
+            *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "id tracking failed");
+            return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
+        }
     }
     uint64_t t0 = srv->tracer != NULL ? trace_now() : 0;
     trace_begin(ctx, srv, method);
     mcp_message_t *resp = mcp_server_route_request(ctx, srv, session, req, method);
     if (resp == NULL) {
-        dlogf_srv(ctx, srv, MCP_LOG_ERROR, "event=route_nomem method=%s", method);
+        dlogf_srv(ctx, srv, MCP_LOG_ERROR, "event=route_failed method=%s", method);
         atomic_fetch_add(&srv->c_requests_error, 1);
         trace_end(ctx, srv, method, t0, MCP_RPC_INTERNAL_ERROR);
         *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "internal error");
