@@ -23,6 +23,11 @@ void *rt_malloc(mcp_context_t *ctx, size_t n) {
     return a->malloc_fn(n, a->userdata);
 }
 
+void *rt_realloc(mcp_context_t *ctx, void *ptr, size_t n) {
+    const mcp_allocator_t *a = alloc_of(ctx);
+    return a->realloc_fn(ptr, n, a->userdata);
+}
+
 void rt_free(mcp_context_t *ctx, void *ptr) {
     if (ptr == NULL) {
         return;

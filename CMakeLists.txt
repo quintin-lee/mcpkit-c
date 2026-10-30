@@ -66,6 +66,7 @@ set(MCPKIT_CORE_SOURCES
   src/runtime/threadpool.c
   src/runtime/timer.c
   src/runtime/loop.c
+  src/runtime/reactor.c
   src/plugin/plugin.c
 )
 

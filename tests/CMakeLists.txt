@@ -113,6 +113,10 @@ add_executable(test_loop unit/test_loop.c)
 target_link_libraries(test_loop PRIVATE mcpkit_core)
 add_test(NAME test_loop COMMAND test_loop)
 
+add_executable(test_reactor unit/test_reactor.c)
+target_link_libraries(test_reactor PRIVATE mcpkit_core)
+add_test(NAME test_reactor COMMAND test_reactor)
+
 add_executable(test_plugin unit/test_plugin.c)
 target_link_libraries(test_plugin PRIVATE mcpkit_core)
 add_test(NAME test_plugin COMMAND test_plugin)
