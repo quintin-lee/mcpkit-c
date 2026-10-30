@@ -59,6 +59,13 @@ Server headers carry the visibility enum and session permission masks as
 typeless `uint32_t` values so the server layer never includes an Apps
 header. Apps modules build on top of that seam.
 
+## Permission model
+
+Sessions created via `mcp_server_create_session` default to full permissions
+(`granted = 0xFFFFFFFF`, default-allow). Hosts integrating permission boundaries
+must explicitly invoke `mcp_session_revoke` or configure permission masks to
+restrict access to sensitive tools.
+
 ## Threading model
 
 The dispatcher is single-threaded by design. All protocol validation,

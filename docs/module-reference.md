@@ -929,8 +929,10 @@ mcp_async_server_t *mcp_async_server_create(mcp_context_t *ctx, mcp_server_t *se
                                             const mcp_async_server_config_t *cfg);
 uint16_t mcp_async_server_get_port(const mcp_async_server_t *s);
 void mcp_async_server_destroy(mcp_context_t *ctx, mcp_async_server_t *s);
+mcp_status_t mcp_async_server_run(mcp_context_t *ctx, mcp_async_server_t *s);
 mcp_status_t mcp_async_server_step(mcp_context_t *ctx, mcp_async_server_t *s, int timeout_ms);
 void mcp_async_server_stop(mcp_context_t *ctx, mcp_async_server_t *s);
+size_t mcp_async_server_active_connections(const mcp_async_server_t *s);
 ```
 
 ---

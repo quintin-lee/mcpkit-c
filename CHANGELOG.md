@@ -6,6 +6,21 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ### Added
 
+- Async Server Stability, Diagnostics & Lifecycle Hardening:
+  - Added `mcp_async_server_active_connections()` API in `include/mcpkit/transport/async_server.h` to inspect live active connections tracked by `mcp_async_server_t`.
+  - Added design specification and implementation plan for async server zero-leak connection management, two-phase streaming HTTP parsing, and session reaper (`docs/superpowers/specs/2026-10-30-async-server-stability-and-leak-free-design.md`, `docs/superpowers/plans/2026-10-30-async-server-stability-and-leak-free.md`).
+
+### Changed
+
+- Build System & Hygiene:
+  - Enforced `-Wall -Wextra` compiler flags in root `CMakeLists.txt` for GNU and Clang compilers.
+  - Pruned unused no-op build options (`MCPKIT_BUILD_APPS`, `MCPKIT_BUILD_CLIENT`, `MCPKIT_BUILD_SERVER`) from `cmake/MCPKitOptions.cmake` and updated `README.md`.
+
+### Fixed
+
+- Compiler Warnings:
+  - Eliminated all compiler warnings under `-Wall -Wextra` across the codebase, including unused `ctx` in `mcp_server_outbox_pop()`, unused `dlogf()` in `src/server/dispatcher.c`, and unused test helper `compl_fail()` in `tests/unit/test_dispatcher.c`.
+
 - High-Concurrency Asynchronous I/O Reactor & Streamable HTTP / WebSocket Transports:
   - Non-blocking Reactor runtime (`include/mcpkit/runtime/reactor.h`, `src/runtime/reactor.c`) with Linux `epoll` engine, POSIX `poll` fallback, event masks (`MCP_EVENT_READ`, `MCP_EVENT_WRITE`, `MCP_EVENT_ERROR`, `MCP_EVENT_HUP`), thread-safe inter-thread notification (`mcp_reactor_wakeup`), and zero external dependencies in core.
   - Standalone SHA-1 implementation (`src/core/sha1.h`, `src/core/sha1.c`) for RFC 6455 Sec-WebSocket-Accept handshake validation and key computation.

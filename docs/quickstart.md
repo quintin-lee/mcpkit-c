@@ -118,6 +118,7 @@ mcp_transport_destroy(ctx, t);
 | `MCPKIT_BUILD_EXAMPLES`    | `ON`    | Build all examples                   |
 | `MCPKIT_BUILD_TOOLS`       | `ON`    | Build `mcpkit-cli`                   |
 | `MCPKIT_BUILD_HTTP`        | `OFF`   | Build HTTP transport + http example  |
+| `MCPKIT_BUILD_SOCKET`      | `ON`    | Build TCP socket transport + example |
 | `MCPKIT_BUILD_FUZZ`        | `OFF`   | Build fuzz-stdin target              |
 | `MCPKIT_ENABLE_ASAN`       | `OFF`   | Add AddressSanitizer flags           |
 | `MCPKIT_ENABLE_UBSAN`      | `OFF`   | Add UndefinedBehaviorSanitizer flags |
