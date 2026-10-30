@@ -7,7 +7,7 @@
 **Architecture:**
 - **Task 1: Internal Seams & Method Table Hygiene** — Update `src/server/internals.h` to declare cross-file route entrypoint `mcp_server_route_request` and `dlogf_srv`; update `src/server/dispatcher.c` to drop `static` on `dlogf_srv` to match external linkage; annotate method tables in `src/method_table.h` with `__attribute__((unused))` to prevent `-Wunused-const-variable` warnings when split.
 - **Task 2: Extract Session Queue Subsystem (`src/server/queue.c`)** — Move `struct mcp_queue`, `queue_grow`, `mcp_queue_*`, and `mcp_server_process_one` verbatim from `dispatcher.c` into a dedicated `src/server/queue.c` module; remove `struct mcp_queue` from `internals.h`; register `src/server/queue.c` in `CMakeLists.txt`.
-- **Task 3: Extract Method Route Handlers Subsystem (`src/server/routes.c`)** — Move all 22 method route handlers and decorators (`decorate_result`, `tool_error_result`, `find_*`, `page_offset`, etc.) into `routes.c` under `mcp_server_route_request`; register `src/server/routes.c` in `CMakeLists.txt`.
+- **Task 3: Extract Method Route Handlers Subsystem (`src/server/routes.c`)** — Move `#define MCP_LIST_PAGE_SIZE 100u`, all 22 method route handlers, and decorators (`decorate_result`, `tool_error_result`, `find_*`, `page_offset`, etc.) verbatim from lines 84–1332 of `dispatcher.c` into `routes.c` under `mcp_server_route_request`; register `src/server/routes.c` in `CMakeLists.txt`.
 - **Task 4: Streamline Core Dispatcher Engine (`src/server/dispatcher.c`)** — Refactor `dispatcher.c` into a concise pipeline orchestrator (~230 lines) handling L1/L2/L3 validation, tracing, session status/permissions, error accounting, and notification consumption.
 - **Task 5: Full Regression Testing & Zero-Warning Gate** — Run the full test suite (all 69+ tests) under clean build with `-Wall -Wextra` to verify 100% test pass rate and zero warnings.
 
@@ -26,15 +26,30 @@
 
 - [ ] **Step 1: Declare cross-module functions in `src/server/internals.h`**
 
-Add cross-module function declarations to `src/server/internals.h`:
+Add cross-module function declarations and Doxygen docstrings to `src/server/internals.h`:
 ```c
 /* ------------------------------------------------------------------ */
 /* Server Route Handlers Seam (routes.c <-> dispatcher.c)             */
 /* ------------------------------------------------------------------ */
 
+/**
+ * @brief Logs formatted messages respecting server's dynamic log_floor level.
+ * Defined in src/server/dispatcher.c and used across server routes.
+ */
 void dlogf_srv(mcp_context_t *ctx, mcp_server_t *srv, mcp_log_level_t level,
                const char *fmt, ...);
 
+/**
+ * @brief Routes a validated MCP request to its concrete method handler.
+ * Defined in src/server/routes.c and called by mcp_server_dispatch.
+ *
+ * @param ctx Context; may be NULL.
+ * @param srv Target server instance (must not be NULL).
+ * @param s Active session (must not be NULL).
+ * @param req Borrowed validated request message (must not be NULL).
+ * @param method Borrowed method name (must not be NULL).
+ * @return Owned response message on success/RPC error, or NULL on memory allocation failure.
+ */
 mcp_message_t *mcp_server_route_request(mcp_context_t *ctx, mcp_server_t *srv,
                                         mcp_session_t *s, const mcp_message_t *req,
                                         const char *method);
@@ -163,6 +178,9 @@ static mcp_status_t queue_grow(mcp_context_t *ctx, mcp_queue_t *q) {
     if (nm == NULL) {
         return MCP_ERR_NOMEM;
     }
+    /* Commit msgs before touching sessions: if the sessions realloc fails,
+     * q->msgs already points to a valid (possibly larger) buffer and the
+     * ring logic still operates within the old cap, so no dangling pointer. */
     q->msgs = nm;
     struct mcp_session **os = q->sessions;
     struct mcp_session **ns = srv_realloc(ctx, os, ncap * sizeof(*ns));
@@ -226,19 +244,14 @@ mcp_status_t mcp_server_process_one(mcp_context_t *ctx, mcp_server_t *srv, mcp_q
     if (st != MCP_OK) {
         return st;
     }
-    mcp_msg_kind_t kind = mcp_message_kind(ctx, msg);
-    if (kind == MCP_MSG_NOTIFICATION) {
+    if (mcp_message_kind(ctx, msg) == MCP_MSG_NOTIFICATION) {
         st = mcp_server_notify(ctx, srv, session, msg);
         mcp_message_destroy(ctx, msg);
         return st;
     }
-    if (kind == MCP_MSG_REQUEST) {
-        st = mcp_server_dispatch(ctx, srv, session, msg, resp_out);
-        mcp_message_destroy(ctx, msg);
-        return st;
-    }
+    st = mcp_server_dispatch(ctx, srv, session, msg, resp_out);
     mcp_message_destroy(ctx, msg);
-    return MCP_ERR_PROTOCOL;
+    return st;
 }
 ```
 
@@ -280,8 +293,8 @@ set(MCPKIT_CORE_SOURCES
 
 - [ ] **Step 5: Build and test**
 
-Run: `cmake --build build -j && ctest --test-dir build -R "test_dispatcher" --output-on-failure`
-Expected: Build succeeds without warnings, `test_dispatcher` passes 100%.
+Run: `cmake --build build -j && ctest --test-dir build -R "test_dispatcher|test_pagination" --output-on-failure`
+Expected: Build succeeds without warnings, `test_dispatcher` and `test_pagination` pass 100%.
 
 - [ ] **Step 6: Commit**
 
@@ -302,10 +315,11 @@ git commit -m "refactor(server): extract queue subsystem into src/server/queue.c
 
 - [ ] **Step 1: Create `src/server/routes.c`**
 
-Create `src/server/routes.c` containing:
-- Inclusions:
+Create `src/server/routes.c` moving lines 84–1332 from `src/server/dispatcher.c` verbatim:
+- Include:
   ```c
   #define _DEFAULT_SOURCE
+
   #include <stdio.h>
   #include <string.h>
 
@@ -321,6 +335,10 @@ Create `src/server/routes.c` containing:
   #include "mcpkit/server/server.h"
   #include "mcpkit/server/session.h"
   ```
+- Macro:
+  ```c
+  #define MCP_LIST_PAGE_SIZE 100u
+  ```
 - Private static helper `err_resp`:
   ```c
   static mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req, int code,
@@ -330,7 +348,7 @@ Create `src/server/routes.c` containing:
   ```
 - Helpers: `page_offset`, `set_next_cursor`, `set_string`, `get_string`, `find_tool`, `find_resource`, `find_prompt`, `decorate_result`, `tool_error_result`.
 - Route implementations: `route_server_discover`, `route_initialize`, `route_tools_list`, `route_tools_call`, `route_resources_list`, `route_resources_read`, `route_prompts_list`, `route_prompts_get`, `route_completion_list`, `route_completion_complete`, `route_advanced`, `route_subscriptions_listen`, `route_tasks_get`, `route_tasks_update`, `route_tasks_cancel`, `route_skills_list`, `route_skills_get`.
-- Exported entrypoint `mcp_server_route_request`:
+- Exported entrypoint `mcp_server_route_request` (replacing `static mcp_message_t *route_request`):
   ```c
   mcp_message_t *mcp_server_route_request(mcp_context_t *ctx, mcp_server_t *srv,
                                           mcp_session_t *s, const mcp_message_t *req,
@@ -385,6 +403,18 @@ set(MCPKIT_CORE_SOURCES
 )
 ```
 
+- [ ] **Step 3: Verify `routes.c` compiles cleanly**
+
+Run: `cmake -S . -B build && cmake --build build -j`
+Expected: Compilation succeeds without warnings.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/server/routes.c CMakeLists.txt
+git commit -m "feat(server): extract route handlers into src/server/routes.c"
+```
+
 ---
 
 ### Task 4: Streamline Core Dispatcher Engine (`src/server/dispatcher.c`)
@@ -392,9 +422,9 @@ set(MCPKIT_CORE_SOURCES
 **Files:**
 - Modify: `src/server/dispatcher.c`
 
-- [ ] **Step 1: Refactor `src/server/dispatcher.c`**
+- [ ] **Step 1: Refactor `src/server/dispatcher.c` preserving exact ID tracking and error handling**
 
-Replace `src/server/dispatcher.c` with the streamlined pipeline engine:
+Replace `src/server/dispatcher.c` with the streamlined pipeline engine (~230 lines):
 ```c
 /**
  * @file dispatcher.c
@@ -512,11 +542,17 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
         *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "session not initialized");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
+    mcp_id_type_t id_type = mcp_message_id_type(ctx, req);
+    const char *id_str = mcp_message_id_string(ctx, req);
+    double id_num = 0.0;
+    if (id_type == MCP_ID_NUMBER) {
+        mcp_message_id_number(ctx, req, &id_num);
+    }
     bool is_dup = false;
-    mcp_status_t id_st = mcp_idset_contains_msg(ctx, session->seen_ids, req, &is_dup);
+    mcp_status_t id_st = mcp_idset_contains(ctx, session->ids, id_type, id_str, id_num, &is_dup);
     if (id_st != MCP_OK) {
         atomic_fetch_add(&srv->c_requests_error, 1);
-        *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "id tracking failed");
+        *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "internal error");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
     if (is_dup) {
@@ -525,20 +561,21 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
         *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "duplicate request id");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
-    id_st = mcp_idset_add_msg(ctx, session->seen_ids, req);
+    id_st = mcp_idset_add(ctx, session->ids, id_type, id_str, id_num);
     if (id_st != MCP_OK) {
         atomic_fetch_add(&srv->c_requests_error, 1);
-        *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "id tracking failed");
+        *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "internal error");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
-    uint64_t t0 = trace_now();
+    uint64_t t0 = srv->tracer != NULL ? trace_now() : 0;
     trace_begin(ctx, srv, method);
     mcp_message_t *resp = mcp_server_route_request(ctx, srv, session, req, method);
     if (resp == NULL) {
         dlogf_srv(ctx, srv, MCP_LOG_ERROR, "event=route_nomem method=%s", method);
         atomic_fetch_add(&srv->c_requests_error, 1);
         trace_end(ctx, srv, method, t0, MCP_RPC_INTERNAL_ERROR);
-        return MCP_ERR_NOMEM;
+        *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "internal error");
+        return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
     int ecode = 0;
     int end_status = mcp_message_error_code(ctx, resp, &ecode) == MCP_OK ? ecode : 0;
@@ -595,8 +632,8 @@ Expected: All 69 tests pass 100%.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/server/routes.c src/server/dispatcher.c CMakeLists.txt
-git commit -m "refactor(server): extract routes into routes.c and streamline dispatcher pipeline"
+git add src/server/dispatcher.c
+git commit -m "refactor(server): streamline dispatcher pipeline into dedicated orchestrator"
 ```
 
 ---
@@ -631,9 +668,7 @@ Expected: 100% tests pass, zero sanitizer complaints.
 Run: `rm -rf build-http build-asan`
 Expected: Temporary directories removed.
 
-- [ ] **Step 4: Commit and finalize**
+- [ ] **Step 4: Verify working tree cleanliness**
 
-```bash
-git status
-```
+Run: `git status`
 Expected: Working tree clean.
