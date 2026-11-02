@@ -60,6 +60,7 @@ set(MCPKIT_CORE_SOURCES
   src/server/registry.c
   src/server/session.c
   src/server/dispatcher.c
+  src/server/routes.c
   src/server/queue.c
   src/apps/csp.c
   src/apps/ui.c
