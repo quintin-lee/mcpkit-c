@@ -280,11 +280,151 @@ static void test_timeout_step(void) {
     mcp_context_destroy(ctx);
 }
 
+typedef struct {
+    mcp_context_t *ctx;
+    mcp_reactor_t *r;
+    int target_to_remove;
+    bool cb1_fired;
+    bool cb2_fired;
+} sibling_test_ctx_t;
+
+static void on_first_read(mcp_context_t *ctx, int fd, mcp_event_mask_t events, void *user) {
+    (void)ctx;
+    (void)fd;
+    (void)events;
+    sibling_test_ctx_t *tc = (sibling_test_ctx_t *)user;
+    tc->cb1_fired = true;
+    CHECK(mcp_reactor_remove(tc->ctx, tc->r, tc->target_to_remove) == MCP_OK);
+}
+
+static void on_second_read(mcp_context_t *ctx, int fd, mcp_event_mask_t events, void *user) {
+    (void)ctx;
+    (void)fd;
+    (void)events;
+    sibling_test_ctx_t *tc = (sibling_test_ctx_t *)user;
+    tc->cb2_fired = true;
+}
+
+static void test_reentrant_remove_sibling(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    CHECK(ctx != NULL);
+    mcp_reactor_t *r = mcp_reactor_create(ctx);
+    CHECK(r != NULL);
+
+    int sv1[2], sv2[2];
+    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sv1) == 0);
+    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sv2) == 0);
+
+    /* Determine lower and higher fd numbers to guarantee dispatch order */
+    int first_fd = (sv1[0] < sv2[0]) ? sv1[0] : sv2[0];
+    int first_peer = (sv1[0] < sv2[0]) ? sv1[1] : sv2[1];
+    int second_fd = (sv1[0] < sv2[0]) ? sv2[0] : sv1[0];
+    int second_peer = (sv1[0] < sv2[0]) ? sv2[1] : sv1[1];
+
+    sibling_test_ctx_t tc = {
+        .ctx = ctx,
+        .r = r,
+        .target_to_remove = second_fd,
+        .cb1_fired = false,
+        .cb2_fired = false
+    };
+
+    CHECK(mcp_reactor_add(ctx, r, first_fd, MCP_EVENT_READ, on_first_read, &tc) == MCP_OK);
+    CHECK(mcp_reactor_add(ctx, r, second_fd, MCP_EVENT_READ, on_second_read, &tc) == MCP_OK);
+
+    /* Write to first_peer then second_peer so both are ready */
+    char byte = 'x';
+    CHECK(write(first_peer, &byte, 1) == 1);
+    CHECK(write(second_peer, &byte, 1) == 1);
+
+    /* Step reactor: first_fd fires and removes second_fd; second_fd must NOT fire */
+    CHECK(mcp_reactor_step(ctx, r, 50) == MCP_OK);
+    CHECK(tc.cb1_fired == true);
+    CHECK(tc.cb2_fired == false);
+
+    close(sv1[0]); close(sv1[1]);
+    close(sv2[0]); close(sv2[1]);
+    mcp_reactor_destroy(ctx, r);
+    mcp_context_destroy(ctx);
+}
+
+typedef struct {
+    mcp_context_t *ctx;
+    mcp_reactor_t *r;
+    int new_fd_to_add;
+    bool new_cb_fired;
+} add_test_ctx_t;
+
+static void on_dynamic_read(mcp_context_t *ctx, int fd, mcp_event_mask_t events, void *user) {
+    (void)ctx;
+    (void)fd;
+    (void)events;
+    add_test_ctx_t *tc = (add_test_ctx_t *)user;
+    tc->new_cb_fired = true;
+}
+
+static void on_trigger_add(mcp_context_t *ctx, int fd, mcp_event_mask_t events, void *user) {
+    (void)events;
+    char b;
+    CHECK(read(fd, &b, 1) == 1);
+    add_test_ctx_t *tc = (add_test_ctx_t *)user;
+    CHECK(mcp_reactor_add(ctx, tc->r, tc->new_fd_to_add, MCP_EVENT_READ, on_dynamic_read, tc) == MCP_OK);
+}
+
+static void test_reentrant_add_within_cb(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    CHECK(ctx != NULL);
+    mcp_reactor_t *r = mcp_reactor_create(ctx);
+    CHECK(r != NULL);
+
+    /* Fill reactor to initial capacity (16 descriptors) so next add triggers rt_realloc */
+    int fill_sv[15][2];
+    for (int i = 0; i < 15; i++) {
+        CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, fill_sv[i]) == 0);
+        CHECK(mcp_reactor_add(ctx, r, fill_sv[i][0], MCP_EVENT_READ, dummy_cb, NULL) == MCP_OK);
+    }
+
+    int sv_trigger[2], sv_overflow[2];
+    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sv_trigger) == 0);
+    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sv_overflow) == 0);
+
+    add_test_ctx_t tc = {
+        .ctx = ctx,
+        .r = r,
+        .new_fd_to_add = sv_overflow[0],
+        .new_cb_fired = false
+    };
+
+    /* 16th descriptor: capacity reaches 16 */
+    CHECK(mcp_reactor_add(ctx, r, sv_trigger[0], MCP_EVENT_READ, on_trigger_add, &tc) == MCP_OK);
+
+    char byte = 'a';
+    CHECK(write(sv_trigger[1], &byte, 1) == 1);
+    CHECK(write(sv_overflow[1], &byte, 1) == 1);
+
+    /* First step: on_trigger_add fires and dynamically adds 17th fd (sv_overflow[0]), triggering realloc */
+    CHECK(mcp_reactor_step(ctx, r, 50) == MCP_OK);
+
+    /* Second step: sv_overflow[0] should now be active and fire */
+    CHECK(mcp_reactor_step(ctx, r, 50) == MCP_OK);
+    CHECK(tc.new_cb_fired == true);
+
+    for (int i = 0; i < 15; i++) {
+        close(fill_sv[i][0]); close(fill_sv[i][1]);
+    }
+    close(sv_trigger[0]); close(sv_trigger[1]);
+    close(sv_overflow[0]); close(sv_overflow[1]);
+    mcp_reactor_destroy(ctx, r);
+    mcp_context_destroy(ctx);
+}
+
 int main(void) {
     test_invalid_args();
     test_add_modify_remove();
     test_io_events();
     test_reentrant_remove();
+    test_reentrant_remove_sibling();
+    test_reentrant_add_within_cb();
     test_multithread_stop_and_wakeup();
     test_timeout_step();
     printf("test_reactor: all assertions passed\n");
