@@ -2,13 +2,13 @@
  * @file method_table.h
  *
  * Single source of truth for the server-supported method names.
- * validate.c's L2 known-method table and dispatcher.c's route table
- * both include this header, so the two can never drift apart.
+ * validate.c's L2 known-method table, routes.c's route table, and
+ * dispatcher.c's notification handler all include this header.
  */
 #ifndef MCPKIT_METHOD_TABLE_H
 #define MCPKIT_METHOD_TABLE_H
 
-static const char *const k_mcp_server_methods[] = {
+static const char *const k_mcp_server_methods[] __attribute__((unused)) = {
     "initialize",
     "ping",
     "tools/list",
@@ -44,7 +44,7 @@ _Static_assert(sizeof(k_mcp_server_methods) / sizeof(*k_mcp_server_methods) ==
  * All of these may arrive as NOTIFICATION kind and are handled there;
  * arriving as REQUEST kind, they hit route fallback -> -32601 (honest).
  */
-static const char *const k_mcp_server_notifications[] = {
+static const char *const k_mcp_server_notifications[] __attribute__((unused)) = {
     "notifications/initialized",
     "notifications/cancelled",
     "notifications/progress",

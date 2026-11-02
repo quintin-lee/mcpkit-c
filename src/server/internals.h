@@ -165,4 +165,30 @@ char *srv_strdup(mcp_context_t *ctx, const char *s);
 // drain the session list, mcp_server_destroy_session uses it after detach.
 void session_free(mcp_context_t *ctx, mcp_session_t *s);
 
+/* ------------------------------------------------------------------ */
+/* Server Route Handlers Seam (routes.c <-> dispatcher.c)             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @brief Logs formatted messages respecting server's dynamic log_floor level.
+ * Defined in src/server/dispatcher.c and used across server routes.
+ */
+void dlogf_srv(mcp_context_t *ctx, mcp_server_t *srv, mcp_log_level_t level,
+               const char *fmt, ...);
+
+/**
+ * @brief Routes a validated MCP request to its concrete method handler.
+ * Defined in src/server/routes.c and called by mcp_server_dispatch.
+ *
+ * @param ctx Context; may be NULL.
+ * @param srv Target server instance (must not be NULL).
+ * @param s Active session (must not be NULL).
+ * @param req Borrowed validated request message (must not be NULL).
+ * @param method Borrowed method name (must not be NULL).
+ * @return Owned response message on success/RPC error, or NULL on memory allocation failure.
+ */
+mcp_message_t *mcp_server_route_request(mcp_context_t *ctx, mcp_server_t *srv,
+                                        mcp_session_t *s, const mcp_message_t *req,
+                                        const char *method);
+
 #endif

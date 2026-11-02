@@ -42,8 +42,8 @@ static mcp_message_t *err_resp(mcp_context_t *ctx, const mcp_message_t *req, int
 // logging/setLevel so an operator can quiet verbose routes at runtime.
 // Serve-loop stations (loop.c/stdio.c) have no server and stay
 // logger-level-filtered only.
-static void dlogf_srv(mcp_context_t *ctx, mcp_server_t *srv, mcp_log_level_t level,
-                       const char *fmt, ...) {
+void dlogf_srv(mcp_context_t *ctx, mcp_server_t *srv, mcp_log_level_t level,
+                 const char *fmt, ...) {
     if (level < (mcp_log_level_t)atomic_load(&srv->log_floor)) {
         return;
     }
