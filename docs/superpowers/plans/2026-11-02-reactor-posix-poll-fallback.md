@@ -31,9 +31,8 @@ option(MCPKIT_REACTOR_FORCE_POLL "Force POSIX poll backend in reactor for testin
 
 - [ ] **Step 2: Add compile definition in `CMakeLists.txt`**
 
-In root `CMakeLists.txt` immediately after `include(cmake/MCPKitOptions.cmake)`:
+In root `CMakeLists.txt` immediately after `include(cmake/MCPKitOptions.cmake)` (line 31):
 ```cmake
-include(cmake/MCPKitOptions.cmake)
 if(MCPKIT_REACTOR_FORCE_POLL)
   add_compile_definitions(MCP_REACTOR_FORCE_POLL)
 endif()
@@ -155,10 +154,6 @@ static void on_trigger_add(mcp_context_t *ctx, int fd, mcp_event_mask_t events, 
     CHECK(read(fd, &b, 1) == 1);
     add_test_ctx_t *tc = (add_test_ctx_t *)user;
     CHECK(mcp_reactor_add(ctx, tc->r, tc->new_fd_to_add, MCP_EVENT_READ, on_dynamic_read, tc) == MCP_OK);
-}
-
-static void dummy_cb(mcp_context_t *ctx, int fd, mcp_event_mask_t events, void *user) {
-    (void)ctx; (void)fd; (void)events; (void)user;
 }
 
 static void test_reentrant_add_within_cb(void) {
