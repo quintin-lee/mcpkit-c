@@ -29,6 +29,9 @@ configure_file(cmake/mcpkit_version_generated.h.in
                "${CMAKE_BINARY_DIR}/include/mcpkit_version_generated.h")
 
 include(cmake/MCPKitOptions.cmake)
+if(MCPKIT_REACTOR_FORCE_POLL)
+  add_compile_definitions(MCP_REACTOR_FORCE_POLL)
+endif()
 include(cmake/MCPKitSanitizers.cmake)
 mcpkit_apply_sanitizers()
 
