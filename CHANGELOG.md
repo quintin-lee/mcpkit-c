@@ -6,6 +6,13 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ### Added
 
+- Cross-Platform POSIX `poll()` Fallback for Event Reactor:
+  - Implemented full POSIX `poll()` fallback in `src/runtime/reactor.c` for non-Linux platforms (macOS / BSD) or when `<sys/epoll.h>` is unavailable, fulfilling the zero-dependency cross-platform reactor contract.
+  - Added `MCPKIT_REACTOR_FORCE_POLL` build option in `cmake/MCPKitOptions.cmake` and `CMakeLists.txt` for dual-engine verification on Linux.
+  - Added self-pipe non-blocking wakeup mechanism (`pipe()` + `fcntl(FD_CLOEXEC, O_NONBLOCK)`) for portable cross-thread notification.
+  - Implemented dynamic event snapshot collection in `mcp_reactor_step` to prevent iterator invalidation and starvation across descriptor removals or reentrant additions.
+  - Added unit test fixtures (`test_reentrant_remove_sibling`, `test_reentrant_add_within_cb`) in `tests/unit/test_reactor.c` verifying reentrancy and dispatch order symmetry.
+
 - Async Server Stability, Diagnostics & Lifecycle Hardening:
   - Added `mcp_async_server_active_connections()` API in `include/mcpkit/transport/async_server.h` to inspect live active connections tracked by `mcp_async_server_t`.
   - Added design specification and implementation plan for async server zero-leak connection management, two-phase streaming HTTP parsing, and session reaper (`docs/superpowers/specs/2026-10-30-async-server-stability-and-leak-free-design.md`, `docs/superpowers/plans/2026-10-30-async-server-stability-and-leak-free.md`).
