@@ -35,7 +35,7 @@
 2. **跨平台 self-pipe 唤醒机制**：
    - 在支持 `eventfd` 的 Linux 下使用 `eventfd`（无论选用 epoll 还是 poll 引擎）；若未提供或在非 Linux（如 macOS / BSD）环境下，使用标准 POSIX `pipe()` + `fcntl(FD_CLOEXEC, O_NONBLOCK)`，避免在 macOS 等缺少 `pipe2` 的系统上引用无效符号。
 3. **完备的迭代器失效与全量事件防饥饿防护**：
-   - 在 `poll()` 返回就绪事件后，将所有就绪事件提取到结构体内部维护的动态快照缓冲区（`snapshots`，容量与 `capacity` 对应），杜绝硬编码固定长度导致的就绪事件饥饿截断；并在每次回调触发前校验目标 fd 存在性，彻底消除回调重入调用 `mcp_reactor_remove` 时元素平移导致的事件丢失或跳过缺陷。
+   - 在 `poll()` 返回就绪事件后，将所有就绪事件提取到结构体内部维护的动态快照缓冲区（`snapshots`，容量与 `capacity` 对应），杜绝硬编码固定长度导致的就绪事件饥饿截断；并在每次回调触发前校验目标 fd 存在性，彻底消除回调重入调用 `mcp_reactor_remove` 时元素平移导致的事件丢失或跳过缺陷。动态通过 `r->snapshots[i]` 寻址，防止回调内部重入 `mcp_reactor_add` 扩容引发快照悬挂指针。
 4. **零外部第三方依赖**：
    - 严格使用 POSIX.1-2008 标准系统调用（`<poll.h>`, `<unistd.h>`, `<fcntl.h>`），不引入 `libkqueue` 等外部第三方包装。
 
@@ -183,8 +183,8 @@ static mcp_event_mask_t map_from_poll_revents(short revents, mcp_event_mask_t re
 
 #### 3.4.2 反应器创建与初始状态分配 (`mcp_reactor_create`)
 在 `mcp_reactor_create()` 中：
-1. 创建自唤醒通道（得到 `w_read`, `w_write`）；
-2. 实例化 `mcp_reactor_t *r = rt_malloc(ctx, sizeof(*r))`；
+1. 创建自唤醒通道（得到 `w_read`, `w_write`），若 `w_read < 0`，直接返回 NULL；
+2. 实例化 `mcp_reactor_t *r = rt_malloc(ctx, sizeof(*r))`；若 `r == NULL`，关闭 `w_read` 及 `w_write`（若 `>= 0`）并返回 NULL；
 3. 初始化通用字段：`r->wakeup_fd = w_read; r->wakeup_write_fd = w_write; r->count = 0; r->capacity = 0; r->entries = NULL; atomic_init(&r->stop_requested, false);`；
 4. **poll 后端初始 Slot 0 分配**：
    - 在 poll 模式下，分配恰好容纳 Slot 0 唤醒描述符的初始数组：
@@ -204,9 +204,14 @@ static mcp_event_mask_t map_from_poll_revents(short revents, mcp_event_mask_t re
    - 保持 `r->capacity = 0; r->entries = NULL;`，从而保证当尚未添加任何业务 fd 时，调用 `mcp_reactor_step` 会以 `poll(r->poll_fds, 1, timeout_ms)` 正常等待唤醒，且第一次调用 `mcp_reactor_add` 时 `r->count == r->capacity` (`0 == 0`) 会触发两者的首次同步扩容。
 
 #### 3.4.3 数组排布与安全扩容 (`mcp_reactor_add / modify / remove`)
+- **通用参数前置校验**：
+  保持现有实现完全不变：
+  - `mcp_reactor_add`: 检查 `r == NULL || fd < 0 || cb == NULL`，非法事件掩码，以及 `fd == r->wakeup_fd || (r->wakeup_write_fd >= 0 && fd == r->wakeup_write_fd)`，不合法返回 `MCP_ERR_INVALID_ARGUMENT`；
+  - `mcp_reactor_modify`: 检查 `r == NULL || fd < 0`，非法事件掩码；
+  - `mcp_reactor_remove`: 检查 `r == NULL || fd < 0`；
 - **添加操作 (`mcp_reactor_add`)**：
   1. 通过二分查找确定插入位置 `ins`；若已存在返回 `MCP_ERR_ALREADY_EXISTS`；
-  2. 容量扩容处理（事务性与内存安全原则）：
+  2. 容量扩容处理（内存安全与事务性顺序）：
      - 若 `r->count == r->capacity`：
        - 计算 `new_cap = r->capacity == 0 ? 16 : r->capacity * 2`；
        - **先重分配 `poll_fds`**：
@@ -229,8 +234,11 @@ static mcp_event_mask_t map_from_poll_revents(short revents, mcp_event_mask_t re
          ```
        - 三者全部成功后更新容量标记：`r->capacity = new_cap;`；
   3. 平移插入新项：
-     - 将 `r->entries` 在 `ins` 后的元素向后平移 1 位；
-     - 将 `r->poll_fds` 在 `ins + 1` 后的元素向后平移 1 位；
+     - 若 `ins < r->count`：
+       ```c
+       memmove(&r->entries[ins + 1], &r->entries[ins], (r->count - ins) * sizeof(mcp_reactor_entry_t));
+       memmove(&r->poll_fds[ins + 2], &r->poll_fds[ins + 1], (r->count - ins) * sizeof(struct pollfd));
+       ```
      - 初始化 `poll_fds[ins + 1].fd = fd; poll_fds[ins + 1].events = map_to_poll_events(events); poll_fds[ins + 1].revents = 0;`；
      - 初始化 `entries[ins]`，`r->count++`；
 - **修改操作 (`mcp_reactor_modify`)**：
@@ -238,17 +246,25 @@ static mcp_event_mask_t map_from_poll_revents(short revents, mcp_event_mask_t re
   2. 更新 `r->entries[idx].events = events; r->poll_fds[idx + 1].events = map_to_poll_events(events);`；
 - **删除操作 (`mcp_reactor_remove`)**：
   1. 二分查找定位索引 `idx`；若不存在返回 `MCP_ERR_NOT_FOUND`；
-  2. 将 `entries[idx + 1]` 与 `poll_fds[idx + 2]` 之后的项前移覆盖；
-  3. `r->count--`；
+  2. 将 `idx` 之后的项前移覆盖：
+     ```c
+     if (idx + 1 < r->count) {
+         memmove(&r->entries[idx], &r->entries[idx + 1], (r->count - idx - 1) * sizeof(mcp_reactor_entry_t));
+         memmove(&r->poll_fds[idx + 1], &r->poll_fds[idx + 2], (r->count - idx - 1) * sizeof(struct pollfd));
+     }
+     r->count--;
+     ```
 - **销毁操作 (`mcp_reactor_destroy`)**：
   - 释放 `r->poll_fds`、`r->snapshots` 与 `r->entries`，关闭 `wakeup_fd` 与 `wakeup_write_fd`。
 
 #### 3.4.4 单步轮询调度与快照分发 (`mcp_reactor_step`)
+0. **前置入参防空校验**：
+   `if (r == NULL) return MCP_ERR_INVALID_ARGUMENT;`；
 1. 检查关机状态：`if (mcp_shutdown_requested()) return MCP_ERR_CANCELLED;`；
 2. 执行轮询：`int n = poll(r->poll_fds, (nfds_t)(r->count + 1), timeout_ms);`；
 3. 处理返回值：
    - `n < 0`：若 `errno == EINTR`，返回 `MCP_OK`；否则返回 `MCP_ERR_IO`；
-   - `n == 0`：超时，**先检查关机**：`if (mcp_shutdown_requested()) return MCP_ERR_CANCELLED; return MCP_OK;`；
+   - `n == 0`：超时，**必须先检查关机**：`if (mcp_shutdown_requested()) return MCP_ERR_CANCELLED; return MCP_OK;`；
 4. **处理唤醒事件（Slot 0）**：
    - 若 `r->poll_fds[0].revents != 0`，调用 `drain_wakeup(r)`；
 5. **动态快照采集（解决回调重入平移失效与大并发饥饿截断）**：
@@ -263,13 +279,18 @@ static mcp_event_mask_t map_from_poll_revents(short revents, mcp_event_mask_t re
          }
      }
      ```
-6. **快照分发与存在性二次验证**：
+6. **快照分发与存在性二次验证（严防回调重入扩容快照悬挂）**：
    - 遍历快照数组 `for (size_t i = 0; i < n_fired; i++)`：
      - 若 `atomic_load(&r->stop_requested) || mcp_shutdown_requested()`，跳出分发；
-     - **存在性二次验证**：调用 `find_entry_idx(r, r->snapshots[i].fd, &cur_idx)`；
+     - **禁止跨回调缓存快照指针**，每次迭代动态提取目标 fd 与就绪事件：
+       ```c
+       int target_fd = r->snapshots[i].fd;
+       short fired_rev = r->snapshots[i].revents;
+       ```
+     - **存在性二次验证**：调用 `find_entry_idx(r, target_fd, &cur_idx)`；
      - 若返回 `< 0`，说明该 fd 已在当前批次前面执行的回调中被注销，安全跳过；
-     - 否则获取 `entry = r->entries[cur_idx]`，计算 `mcp_event_mask_t mask = map_from_poll_revents(r->snapshots[i].revents, entry.events)`；
-     - 若 `mask != 0`，执行回调 `entry.cb(ctx, r->snapshots[i].fd, mask, entry.user)`；
+     - 否则获取 `entry = r->entries[cur_idx]`，计算 `mcp_event_mask_t mask = map_from_poll_revents(fired_rev, entry.events)`；
+     - 若 `mask != 0`，执行回调 `entry.cb(ctx, target_fd, mask, entry.user)`；
 7. 尾部检查关机：`if (mcp_shutdown_requested()) return MCP_ERR_CANCELLED; return MCP_OK;`。
 
 ---
@@ -293,11 +314,14 @@ endif()
    - 验证添加/修改/删除基本流程；
    - 验证自唤醒（`mcp_reactor_wakeup`）；
    - 验证空反应器超时（`test_timeout_step` 在未注册业务 fd 时正常工作，验证 Slot 0 唤醒通道）；
-   - **新增专项用例 `test_reentrant_remove_sibling`**：
-     - 创建两组 socketpair `sv1` 与 `sv2` 并全部注册入 reactor 监听读；
-     - 同时向 `sv1[1]` 与 `sv2[1]` 写入数据使两者同时在同一次 `poll()` 批次中就绪；
-     - 在 `sv1[0]` 的读回调中执行 `mcp_reactor_remove(ctx, r, sv2[0])`；
-     - 断言 `sv2[0]` 的回调在当次迭代中**绝不会被非法触发**，且 `reactor` 状态完全正常。
+   - **新增专项用例 `test_reentrant_remove_sibling`（确定性升序验证）**：
+     - 创建两组 socketpair `sv1` 与 `sv2`；
+     - 确定大小关系：令 `first_fd = (sv1[0] < sv2[0] ? sv1[0] : sv2[0])`，其对应配对写端为 `first_peer`；令 `second_fd = (sv1[0] < sv2[0] ? sv2[0] : sv1[0])`，其对应配对写端为 `second_peer`；
+     - 将 `first_fd` 与 `second_fd` 注册至 reactor 监听读；
+     - 同时向 `first_peer` 与 `second_peer` 写入单字节数据，使两者在同一次 `poll()` 批次中同时就绪；
+     - 在 `first_fd` 的读回调中执行 `mcp_reactor_remove(ctx, r, second_fd)`；
+     - 断言 `second_fd` 的回调在当次迭代中**绝不会被非法触发**（计数为 0）；
+     - 循环继续并在随后安全清理描述符，验证快照与二次存在性检查机制 100% 生效。
 2. **双引擎对照验证矩阵**：
    - 默认配置（Linux 下为 `epoll`）：`ctest --test-dir build` 69/69 100% 通过；
    - 强制 poll 配置：`cmake -S . -B build-poll -DMCPKIT_REACTOR_FORCE_POLL=ON && cmake --build build-poll -j && ctest --test-dir build-poll`，验证全量 69/69 单元与验收测试在 `poll` 引擎下完全通过！
