@@ -5,7 +5,7 @@
  * NOT a public header: exposed here only so the dispatcher, session,
  * and registry translation units can share the opaque definitions.
  *
- * - Struct definitions for mcp_tool/resource/prompt/session/server/queue.
+ * - Struct definitions for mcp_tool/resource/prompt/session/server.
  * - srv_malloc/srv_realloc/srv_free/srv_strdup: ctx-routed allocation
  *   helpers that fall back to the default allocator on NULL ctx.
  */
@@ -143,14 +143,6 @@ struct mcp_server {
     mcp_task_mgr_t *task_mgr;
     // MCP Skills extension registry (SEP-2640). NULL if not enabled.
     mcp_skill_registry_t *skill_reg;
-};
-
-struct mcp_queue {
-    mcp_session_t **sessions;
-    mcp_message_t **msgs;
-    size_t head;
-    size_t len;
-    size_t cap;
 };
 
 // Shared allocation helpers (server.c). NULL ctx falls back to the
