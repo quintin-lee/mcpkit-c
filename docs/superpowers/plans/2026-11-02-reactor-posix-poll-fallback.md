@@ -6,8 +6,8 @@
 
 **Architecture:**
 - **Task 1: CMake Configuration & Macros** — Add `MCPKIT_REACTOR_FORCE_POLL` option in `cmake/MCPKitOptions.cmake` and wire `MCP_REACTOR_FORCE_POLL` definition in root `CMakeLists.txt`.
-- **Task 2: Reentrant Sibling & Reallocation Unit Tests** — Implement `test_reentrant_remove_sibling` (deterministic fd ordering) and `test_reentrant_add_within_cb` in `tests/unit/test_reactor.c` to guarantee snapshot isolation.
-- **Task 3: POSIX `poll()` Backend & Cross-Platform Wakeup** — Implement conditional headers (decoupled `<sys/eventfd.h>`), safe non-Linux self-pipe wakeup, transactional memory reallocation, symmetric event mapping, Slot 0 wakeup drain, and dynamic snapshot dispatch in `src/runtime/reactor.c`.
+- **Task 2: Reentrant Sibling & Reallocation Unit Tests** — Implement `test_reentrant_remove_sibling` (deterministic fd ordering) and `test_reentrant_add_within_cb` (filling to capacity to trigger reentrant reallocation) in `tests/unit/test_reactor.c` to guarantee snapshot isolation.
+- **Task 3: POSIX `poll()` Backend & Cross-Platform Wakeup** — Implement conditional headers (decoupled `<sys/eventfd.h>`), safe non-Linux self-pipe wakeup, complete lifecycle functions (`create`, `add`, `modify`, `remove`, `destroy`), symmetric event mapping, Slot 0 wakeup drain, and dynamic snapshot dispatch in `src/runtime/reactor.c`.
 - **Task 4: Dual-Engine Matrix Regression & Quality Gates** — Run full CTest suite under default epoll, under forced poll (`-DMCPKIT_REACTOR_FORCE_POLL=ON`), and with ASan / UBSan under `-Wall -Wextra` zero-warning gate.
 
 **Tech Stack:** C23 (`-std=c2x`), POSIX `poll()`, `pipe()`, `fcntl()`, CMake / CTest.
@@ -132,7 +132,7 @@ static void test_reentrant_remove_sibling(void) {
 
 - [ ] **Step 2: Add `test_reentrant_add_within_cb` to `tests/unit/test_reactor.c`**
 
-Add test function verifying that adding a new descriptor (triggering dynamic snapshot buffer expansion) from within a callback executes safely without memory corruption or dangling pointer access:
+Add test function verifying that adding a new descriptor that forces buffer reallocation (`capacity` threshold) from within a callback executes safely without memory corruption or dangling pointer access:
 ```c
 typedef struct {
     mcp_context_t *ctx;
@@ -150,11 +150,15 @@ static void on_dynamic_read(mcp_context_t *ctx, int fd, mcp_event_mask_t events,
 }
 
 static void on_trigger_add(mcp_context_t *ctx, int fd, mcp_event_mask_t events, void *user) {
-    (void)ctx;
-    (void)fd;
     (void)events;
+    char b;
+    CHECK(read(fd, &b, 1) == 1);
     add_test_ctx_t *tc = (add_test_ctx_t *)user;
-    mcp_reactor_add(tc->ctx, tc->r, tc->new_fd_to_add, MCP_EVENT_READ, on_dynamic_read, tc);
+    CHECK(mcp_reactor_add(ctx, tc->r, tc->new_fd_to_add, MCP_EVENT_READ, on_dynamic_read, tc) == MCP_OK);
+}
+
+static void dummy_cb(mcp_context_t *ctx, int fd, mcp_event_mask_t events, void *user) {
+    (void)ctx; (void)fd; (void)events; (void)user;
 }
 
 static void test_reentrant_add_within_cb(void) {
@@ -162,31 +166,43 @@ static void test_reentrant_add_within_cb(void) {
     mcp_reactor_t *r = mcp_reactor_create(ctx);
     CHECK(r != NULL);
 
-    int sv_base[2], sv_new[2];
-    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sv_base) == 0);
-    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sv_new) == 0);
+    /* Fill reactor to initial capacity (16 descriptors) so next add triggers rt_realloc */
+    int fill_sv[15][2];
+    for (int i = 0; i < 15; i++) {
+        CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, fill_sv[i]) == 0);
+        CHECK(mcp_reactor_add(ctx, r, fill_sv[i][0], MCP_EVENT_READ, dummy_cb, NULL) == MCP_OK);
+    }
+
+    int sv_trigger[2], sv_overflow[2];
+    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sv_trigger) == 0);
+    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sv_overflow) == 0);
 
     add_test_ctx_t tc = {
         .ctx = ctx,
         .r = r,
-        .new_fd_to_add = sv_new[0],
+        .new_fd_to_add = sv_overflow[0],
         .new_cb_fired = false
     };
 
-    CHECK(mcp_reactor_add(ctx, r, sv_base[0], MCP_EVENT_READ, on_trigger_add, &tc) == MCP_OK);
+    /* 16th descriptor: capacity reaches 16 */
+    CHECK(mcp_reactor_add(ctx, r, sv_trigger[0], MCP_EVENT_READ, on_trigger_add, &tc) == MCP_OK);
 
     char byte = 'a';
-    CHECK(write(sv_base[1], &byte, 1) == 1);
-    CHECK(write(sv_new[1], &byte, 1) == 1);
+    CHECK(write(sv_trigger[1], &byte, 1) == 1);
+    CHECK(write(sv_overflow[1], &byte, 1) == 1);
 
+    /* First step: on_trigger_add fires and dynamically adds 17th fd (sv_overflow[0]), triggering realloc */
     CHECK(mcp_reactor_step(ctx, r, 50) == MCP_OK);
 
-    /* Second step: new_fd_to_add should now be monitored and fire */
+    /* Second step: sv_overflow[0] should now be active and fire */
     CHECK(mcp_reactor_step(ctx, r, 50) == MCP_OK);
     CHECK(tc.new_cb_fired == true);
 
-    close(sv_base[0]); close(sv_base[1]);
-    close(sv_new[0]); close(sv_new[1]);
+    for (int i = 0; i < 15; i++) {
+        close(fill_sv[i][0]); close(fill_sv[i][1]);
+    }
+    close(sv_trigger[0]); close(sv_trigger[1]);
+    close(sv_overflow[0]); close(sv_overflow[1]);
     mcp_reactor_destroy(ctx, r);
     mcp_context_destroy(ctx);
 }
@@ -194,7 +210,7 @@ static void test_reentrant_add_within_cb(void) {
 
 - [ ] **Step 3: Register test functions in `main()` of `test_reactor.c` and verify**
 
-Register and run:
+Register `test_reentrant_remove_sibling()` and `test_reentrant_add_within_cb()` in `test_reactor.c:main()`:
 `cmake --build build -j && ctest --test-dir build -R "test_reactor" --output-on-failure`
 Expected: Existing tests plus new tests pass under epoll.
 
@@ -216,6 +232,18 @@ git commit -m "test(reactor): add reentrant remove sibling and dynamic add test 
 
 In `src/runtime/reactor.c`:
 ```c
+#define _GNU_SOURCE
+
+#include "mcpkit/runtime/reactor.h"
+
+#include <errno.h>
+#include <fcntl.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#include <unistd.h>
+
 #if defined(__linux__) && __has_include(<sys/epoll.h>) && !defined(MCP_REACTOR_FORCE_POLL)
 #define MCP_REACTOR_BACKEND_EPOLL 1
 #include <sys/epoll.h>
@@ -227,12 +255,24 @@ In `src/runtime/reactor.c`:
 #if __has_include(<sys/eventfd.h>)
 #include <sys/eventfd.h>
 #endif
+
+#include "mcpkit/core/context.h"
+#include "mcpkit/core/error.h"
+#include "mcpkit/core/shutdown.h"
+#include "internals.h"
 ```
 
 - [ ] **Step 2: Update `struct mcp_reactor` for poll backend**
 
 In `src/runtime/reactor.c`:
 ```c
+typedef struct {
+    int fd;
+    mcp_event_mask_t events;
+    mcp_reactor_cb_t cb;
+    void *user;
+} mcp_reactor_entry_t;
+
 typedef struct {
     int fd;
     short revents;
@@ -254,12 +294,136 @@ struct mcp_reactor {
 };
 ```
 
-- [ ] **Step 3: Implement cross-platform self-pipe wakeup**
+- [ ] **Step 3: Implement cross-platform self-pipe wakeup and `mcp_reactor_create`**
 
-In `mcp_reactor_create`:
-Ensure `pipe2` is only attempted when `defined(__linux__) && defined(_GNU_SOURCE)`, falling back cleanly to `pipe()` + `fcntl(FD_CLOEXEC, O_NONBLOCK)` on macOS and other POSIX systems.
+In `src/runtime/reactor.c`:
+```c
+mcp_reactor_t *mcp_reactor_create(mcp_context_t *ctx) {
+#if defined(MCP_REACTOR_BACKEND_EPOLL)
+    int epfd = epoll_create1(EPOLL_CLOEXEC);
+    if (epfd < 0) {
+        return NULL;
+    }
+#endif
 
-- [ ] **Step 4: Implement event mapping helpers for poll**
+    int w_read = -1;
+    int w_write = -1;
+
+#if defined(EFD_CLOEXEC) && defined(EFD_NONBLOCK)
+    w_read = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+#endif
+    if (w_read < 0) {
+        int pipe_fds[2];
+#if defined(__linux__) && defined(_GNU_SOURCE)
+        if (pipe2(pipe_fds, O_CLOEXEC | O_NONBLOCK) == 0) {
+            w_read = pipe_fds[0];
+            w_write = pipe_fds[1];
+        }
+#endif
+        if (w_read < 0) {
+            if (pipe(pipe_fds) == 0) {
+                (void)fcntl(pipe_fds[0], F_SETFD, FD_CLOEXEC);
+                (void)fcntl(pipe_fds[1], F_SETFD, FD_CLOEXEC);
+                int flags0 = fcntl(pipe_fds[0], F_GETFL, 0);
+                (void)fcntl(pipe_fds[0], F_SETFL, flags0 | O_NONBLOCK);
+                int flags1 = fcntl(pipe_fds[1], F_GETFL, 0);
+                (void)fcntl(pipe_fds[1], F_SETFL, flags1 | O_NONBLOCK);
+                w_read = pipe_fds[0];
+                w_write = pipe_fds[1];
+            }
+        }
+    }
+
+    if (w_read < 0) {
+#if defined(MCP_REACTOR_BACKEND_EPOLL)
+        close(epfd);
+#endif
+        return NULL;
+    }
+
+#if defined(MCP_REACTOR_BACKEND_EPOLL)
+    struct epoll_event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.events = EPOLLIN;
+    ev.data.fd = w_read;
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, w_read, &ev) != 0) {
+        close(w_read);
+        if (w_write >= 0) close(w_write);
+        close(epfd);
+        return NULL;
+    }
+#endif
+
+    mcp_reactor_t *r = rt_malloc(ctx, sizeof(*r));
+    if (r == NULL) {
+        close(w_read);
+        if (w_write >= 0) close(w_write);
+#if defined(MCP_REACTOR_BACKEND_EPOLL)
+        close(epfd);
+#endif
+        return NULL;
+    }
+
+#if defined(MCP_REACTOR_BACKEND_EPOLL)
+    r->epoll_fd = epfd;
+#else
+    r->poll_fds = rt_malloc(ctx, 1 * sizeof(struct pollfd));
+    if (r->poll_fds == NULL) {
+        close(w_read);
+        if (w_write >= 0) close(w_write);
+        rt_free(ctx, r);
+        return NULL;
+    }
+    r->poll_fds[0].fd = w_read;
+    r->poll_fds[0].events = POLLIN;
+    r->poll_fds[0].revents = 0;
+    r->snapshots = NULL;
+#endif
+
+    r->wakeup_fd = w_read;
+    r->wakeup_write_fd = w_write;
+    atomic_init(&r->stop_requested, false);
+    r->entries = NULL;
+    r->count = 0;
+    r->capacity = 0;
+
+    return r;
+}
+```
+
+- [ ] **Step 4: Implement `mcp_reactor_destroy` for poll**
+
+```c
+void mcp_reactor_destroy(mcp_context_t *ctx, mcp_reactor_t *r) {
+    if (r == NULL) {
+        return;
+    }
+#if defined(MCP_REACTOR_BACKEND_EPOLL)
+    if (r->epoll_fd >= 0) {
+        close(r->epoll_fd);
+    }
+#else
+    if (r->poll_fds != NULL) {
+        rt_free(ctx, r->poll_fds);
+    }
+    if (r->snapshots != NULL) {
+        rt_free(ctx, r->snapshots);
+    }
+#endif
+    if (r->wakeup_fd >= 0) {
+        close(r->wakeup_fd);
+    }
+    if (r->wakeup_write_fd >= 0) {
+        close(r->wakeup_write_fd);
+    }
+    if (r->entries != NULL) {
+        rt_free(ctx, r->entries);
+    }
+    rt_free(ctx, r);
+}
+```
+
+- [ ] **Step 5: Implement event mapping helpers and transactional `add`, `modify`, `remove` for poll**
 
 ```c
 #if defined(MCP_REACTOR_BACKEND_POLL)
@@ -303,25 +467,250 @@ static mcp_event_mask_t map_from_poll_revents(short revents, mcp_event_mask_t re
     return mask;
 }
 #endif
+
+mcp_status_t mcp_reactor_add(mcp_context_t *ctx, mcp_reactor_t *r, int fd,
+                             mcp_event_mask_t events, mcp_reactor_cb_t cb, void *user) {
+    if (r == NULL || fd < 0 || cb == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if ((events & ~(MCP_EVENT_READ | MCP_EVENT_WRITE | MCP_EVENT_ERROR)) != 0) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (fd == r->wakeup_fd || (r->wakeup_write_fd >= 0 && fd == r->wakeup_write_fd)) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t ins = 0;
+    if (find_entry_idx(r, fd, &ins) >= 0) {
+        return MCP_ERR_ALREADY_EXISTS;
+    }
+
+    if (r->count == r->capacity) {
+        size_t new_cap = r->capacity == 0 ? 16 : r->capacity * 2;
+#if defined(MCP_REACTOR_BACKEND_EPOLL)
+        mcp_reactor_entry_t *new_entries =
+            rt_realloc(ctx, r->entries, new_cap * sizeof(*new_entries));
+        if (new_entries == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+        r->entries = new_entries;
+        r->capacity = new_cap;
+#else
+        struct pollfd *new_poll_fds =
+            rt_realloc(ctx, r->poll_fds, (new_cap + 1) * sizeof(*new_poll_fds));
+        if (new_poll_fds == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+        poll_event_snapshot_t *new_snapshots =
+            rt_realloc(ctx, r->snapshots, new_cap * sizeof(*new_snapshots));
+        if (new_snapshots == NULL) {
+            r->poll_fds = new_poll_fds;
+            return MCP_ERR_NOMEM;
+        }
+        mcp_reactor_entry_t *new_entries =
+            rt_realloc(ctx, r->entries, new_cap * sizeof(*new_entries));
+        if (new_entries == NULL) {
+            r->poll_fds = new_poll_fds;
+            r->snapshots = new_snapshots;
+            return MCP_ERR_NOMEM;
+        }
+        r->poll_fds = new_poll_fds;
+        r->snapshots = new_snapshots;
+        r->entries = new_entries;
+        r->capacity = new_cap;
+#endif
+    }
+
+#if defined(MCP_REACTOR_BACKEND_EPOLL)
+    uint32_t epoll_ev = 0;
+    if (events & MCP_EVENT_READ) {
+        epoll_ev |= (uint32_t)(EPOLLIN | EPOLLRDHUP);
+    }
+    if (events & MCP_EVENT_WRITE) {
+        epoll_ev |= (uint32_t)EPOLLOUT;
+    }
+    if (events & MCP_EVENT_ERROR) {
+        epoll_ev |= (uint32_t)(EPOLLERR | EPOLLHUP);
+    }
+
+    struct epoll_event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.events = epoll_ev;
+    ev.data.fd = fd;
+    if (epoll_ctl(r->epoll_fd, EPOLL_CTL_ADD, fd, &ev) != 0) {
+        return MCP_ERR_IO;
+    }
+#else
+    if (ins < r->count) {
+        memmove(&r->poll_fds[ins + 2], &r->poll_fds[ins + 1],
+                (r->count - ins) * sizeof(struct pollfd));
+    }
+    r->poll_fds[ins + 1].fd = fd;
+    r->poll_fds[ins + 1].events = map_to_poll_events(events);
+    r->poll_fds[ins + 1].revents = 0;
+#endif
+
+    if (ins < r->count) {
+        memmove(&r->entries[ins + 1], &r->entries[ins],
+                (r->count - ins) * sizeof(mcp_reactor_entry_t));
+    }
+    r->entries[ins].fd = fd;
+    r->entries[ins].events = events;
+    r->entries[ins].cb = cb;
+    r->entries[ins].user = user;
+    r->count++;
+
+    return MCP_OK;
+}
+
+mcp_status_t mcp_reactor_modify(mcp_context_t *ctx, mcp_reactor_t *r, int fd,
+                                mcp_event_mask_t events) {
+    (void)ctx;
+    if (r == NULL || fd < 0) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if ((events & ~(MCP_EVENT_READ | MCP_EVENT_WRITE | MCP_EVENT_ERROR)) != 0) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t idx = 0;
+    if (find_entry_idx(r, fd, &idx) < 0) {
+        return MCP_ERR_NOT_FOUND;
+    }
+
+#if defined(MCP_REACTOR_BACKEND_EPOLL)
+    uint32_t epoll_ev = 0;
+    if (events & MCP_EVENT_READ) {
+        epoll_ev |= (uint32_t)(EPOLLIN | EPOLLRDHUP);
+    }
+    if (events & MCP_EVENT_WRITE) {
+        epoll_ev |= (uint32_t)EPOLLOUT;
+    }
+    if (events & MCP_EVENT_ERROR) {
+        epoll_ev |= (uint32_t)(EPOLLERR | EPOLLHUP);
+    }
+
+    struct epoll_event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.events = epoll_ev;
+    ev.data.fd = fd;
+    if (epoll_ctl(r->epoll_fd, EPOLL_CTL_MOD, fd, &ev) != 0) {
+        return MCP_ERR_IO;
+    }
+#else
+    r->poll_fds[idx + 1].events = map_to_poll_events(events);
+#endif
+
+    r->entries[idx].events = events;
+    return MCP_OK;
+}
+
+mcp_status_t mcp_reactor_remove(mcp_context_t *ctx, mcp_reactor_t *r, int fd) {
+    (void)ctx;
+    if (r == NULL || fd < 0) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t idx = 0;
+    if (find_entry_idx(r, fd, &idx) < 0) {
+        return MCP_ERR_NOT_FOUND;
+    }
+
+#if defined(MCP_REACTOR_BACKEND_EPOLL)
+    (void)epoll_ctl(r->epoll_fd, EPOLL_CTL_DEL, fd, NULL);
+#else
+    if (idx + 1 < r->count) {
+        memmove(&r->poll_fds[idx + 1], &r->poll_fds[idx + 2],
+                (r->count - idx - 1) * sizeof(struct pollfd));
+    }
+#endif
+
+    if (idx + 1 < r->count) {
+        memmove(&r->entries[idx], &r->entries[idx + 1],
+                (r->count - idx - 1) * sizeof(mcp_reactor_entry_t));
+    }
+    r->count--;
+
+    return MCP_OK;
+}
 ```
 
-- [ ] **Step 5: Implement `mcp_reactor_create`, `add`, `modify`, `remove`, `destroy` for poll**
+- [ ] **Step 6: Implement `mcp_reactor_step` with timeout normalization and dynamic snapshot dispatch**
 
-Implement Slot 0 allocation in `mcp_reactor_create`, transactional realloc in `mcp_reactor_add`, array shift in `mcp_reactor_remove`, and resource cleanup in `mcp_reactor_destroy`.
-
-- [ ] **Step 6: Implement `mcp_reactor_step` for poll with dynamic snapshot dispatch**
-
-Implement poll call with timeout normalization (`timeout_ms < 0 ? -1 : timeout_ms`), shutdown check on `n == 0`, Slot 0 wakeup drain, and safe snapshot dispatch loop:
 ```c
-#if defined(MCP_REACTOR_BACKEND_POLL)
+mcp_status_t mcp_reactor_step(mcp_context_t *ctx, mcp_reactor_t *r, int timeout_ms) {
+    if (r == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (mcp_shutdown_requested()) {
+        return MCP_ERR_CANCELLED;
+    }
+
+#if defined(MCP_REACTOR_BACKEND_EPOLL)
+    struct epoll_event evs[64];
+    int n = epoll_wait(r->epoll_fd, evs, 64, timeout_ms);
+    if (n < 0) {
+        if (errno == EINTR) {
+            return MCP_OK;
+        }
+        return MCP_ERR_IO;
+    }
+
+    for (int i = 0; i < n; i++) {
+        if (atomic_load(&r->stop_requested) || mcp_shutdown_requested()) {
+            break;
+        }
+
+        int fd = evs[i].data.fd;
+        if (fd == r->wakeup_fd) {
+            drain_wakeup(r);
+            continue;
+        }
+
+        size_t idx = 0;
+        if (find_entry_idx(r, fd, &idx) < 0) {
+            /* fd was removed by a prior callback in this batch */
+            continue;
+        }
+
+        mcp_reactor_entry_t entry = r->entries[idx];
+        mcp_event_mask_t revents = 0;
+
+        if (evs[i].events & (uint32_t)(EPOLLIN | EPOLLRDHUP)) {
+            if (entry.events & MCP_EVENT_READ) {
+                revents |= MCP_EVENT_READ;
+            }
+        }
+        if (evs[i].events & (uint32_t)EPOLLOUT) {
+            if (entry.events & MCP_EVENT_WRITE) {
+                revents |= MCP_EVENT_WRITE;
+            }
+        }
+        if (evs[i].events & (uint32_t)(EPOLLERR | EPOLLHUP)) {
+            if (entry.events & MCP_EVENT_ERROR) {
+                revents |= MCP_EVENT_ERROR;
+            } else if (entry.events & MCP_EVENT_READ) {
+                revents |= MCP_EVENT_READ;
+            }
+        }
+
+        if (revents != 0) {
+            entry.cb(ctx, fd, revents, entry.user);
+        }
+    }
+#else
     int timeout = timeout_ms < 0 ? -1 : timeout_ms;
     int n = poll(r->poll_fds, (nfds_t)(r->count + 1), timeout);
     if (n < 0) {
-        if (errno == EINTR) return MCP_OK;
+        if (errno == EINTR) {
+            return MCP_OK;
+        }
         return MCP_ERR_IO;
     }
     if (n == 0) {
-        if (mcp_shutdown_requested()) return MCP_ERR_CANCELLED;
+        if (mcp_shutdown_requested()) {
+            return MCP_ERR_CANCELLED;
+        }
         return MCP_OK;
     }
 
@@ -342,24 +731,30 @@ Implement poll call with timeout normalization (`timeout_ms < 0 ? -1 : timeout_m
         if (atomic_load(&r->stop_requested) || mcp_shutdown_requested()) {
             break;
         }
+
         int target_fd = r->snapshots[i].fd;
         short fired_rev = r->snapshots[i].revents;
+
         size_t cur_idx = 0;
         if (find_entry_idx(r, target_fd, &cur_idx) < 0) {
+            /* Target fd was removed by a prior callback in this batch */
             continue;
         }
+
         mcp_reactor_entry_t entry = r->entries[cur_idx];
         mcp_event_mask_t mask = map_from_poll_revents(fired_rev, entry.events);
         if (mask != 0) {
             entry.cb(ctx, target_fd, mask, entry.user);
         }
     }
+#endif
 
     if (mcp_shutdown_requested()) {
         return MCP_ERR_CANCELLED;
     }
+
     return MCP_OK;
-#endif
+}
 ```
 
 - [ ] **Step 7: Build and test both epoll and poll**
@@ -369,7 +764,7 @@ Run:
 cmake -S . -B build -DMCPKIT_REACTOR_FORCE_POLL=OFF && cmake --build build -j && ctest --test-dir build -R "test_reactor" --output-on-failure
 cmake -S . -B build-poll -DMCPKIT_REACTOR_FORCE_POLL=ON && cmake --build build-poll -j && ctest --test-dir build-poll -R "test_reactor" --output-on-failure
 ```
-Expected: `test_reactor` passes 100% under both backends without warnings.
+Expected: All `test_reactor` cases pass 100% under both backends without warnings.
 
 - [ ] **Step 8: Commit**
 
