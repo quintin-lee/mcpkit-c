@@ -118,7 +118,7 @@ struct mcp_async_server {
 
     mtx_t conns_mtx;
     async_conn_t *conns;
-    size_t conns_count;
+    atomic_size_t conns_count;
 };
 
 static const mcp_allocator_t *alloc_of(mcp_context_t *ctx) {
@@ -177,11 +177,44 @@ static void conn_unref(async_conn_t *conn) {
     }
 }
 
-#if 0
 static void conn_detach_and_close(mcp_async_server_t *s, async_conn_t *conn) {
-    ...
+    if (conn == NULL) {
+        return;
+    }
+    if (atomic_exchange(&conn->detached, true)) {
+        return; /* already detached, idempotent */
+    }
+    atomic_store(&conn->closing, true);
+    if (conn->fd >= 0) {
+        mcp_reactor_remove(s->ctx, s->reactor, conn->fd);
+        close(conn->fd);
+        conn->fd = -1;
+    }
+    if (conn->type == CONN_SSE && conn->session_id[0] != '\0') {
+        mtx_lock(&s->sessions_mtx);
+        for (session_entry_t *cur = s->sessions; cur != NULL; cur = cur->next) {
+            if (cur->sse_conn == conn) {
+                cur->sse_conn = NULL;
+                break;
+            }
+        }
+        mtx_unlock(&s->sessions_mtx);
+    }
+    mtx_lock(&s->conns_mtx);
+    if (conn->prev != NULL) {
+        conn->prev->next = conn->next;
+    } else {
+        s->conns = conn->next;
+    }
+    if (conn->next != NULL) {
+        conn->next->prev = conn->prev;
+    }
+    if (atomic_load_explicit(&s->conns_count, memory_order_relaxed) > 0) {
+        atomic_fetch_sub_explicit(&s->conns_count, 1, memory_order_relaxed);
+    }
+    mtx_unlock(&s->conns_mtx);
+    conn_unref(conn);
 }
-#endif
 
 static void enqueue_response(mcp_async_server_t *s, async_conn_t *conn, char *data,
                              size_t len, bool close_after) {
@@ -233,10 +266,10 @@ static session_entry_t *create_session_entry(mcp_async_server_t *s) {
         return NULL;
     }
 
-    /* Generate a unique session id */
-    static atomic_uint id_counter = 1000;
-    unsigned val = atomic_fetch_add(&id_counter, 1);
-    snprintf(entry->id, sizeof(entry->id), "sess-%u-%ld", val, (long)time(NULL));
+    /* Generate a unique session id (monotonic atomic counter, no clock) */
+    static atomic_uint_fast64_t id_counter = 1000;
+    uint64_t val = atomic_fetch_add(&id_counter, 1);
+    snprintf(entry->id, sizeof(entry->id), "sess-%llu", (unsigned long long)val);
     entry->last_active = time(NULL);
     mtx_init(&entry->session_lock, mtx_plain);
 
@@ -380,11 +413,7 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
 static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t events, void *user);
 
 static void close_conn(mcp_async_server_t *s, async_conn_t *conn) {
-    if (conn == NULL || conn->fd < 0) return;
-    atomic_store(&conn->closing, true);
-    mcp_reactor_remove(s->ctx, s->reactor, conn->fd);
-    close(conn->fd);
-    conn->fd = -1;
+    conn_detach_and_close(s, conn);
 }
 
 static void send_http_error(mcp_async_server_t *s, async_conn_t *conn, int code, const char *msg) {
@@ -729,8 +758,13 @@ static void on_accept(mcp_context_t *ctx, int listen_fd, mcp_event_mask_t events
         conn->server = s;
 
         mtx_lock(&s->conns_mtx);
+        conn->prev = NULL;
         conn->next = s->conns;
+        if (s->conns != NULL) {
+            s->conns->prev = conn;
+        }
         s->conns = conn;
+        atomic_fetch_add_explicit(&s->conns_count, 1, memory_order_relaxed);
         mtx_unlock(&s->conns_mtx);
 
         mcp_reactor_add(s->ctx, s->reactor, cfd, MCP_EVENT_READ, handle_client_read, conn);
@@ -767,6 +801,7 @@ mcp_async_server_t *mcp_async_server_create(mcp_context_t *ctx, mcp_server_t *se
     mtx_init(&s->resp_mtx, mtx_plain);
     mtx_init(&s->sessions_mtx, mtx_plain);
     mtx_init(&s->conns_mtx, mtx_plain);
+    atomic_init(&s->conns_count, 0);
 
     s->reactor = mcp_reactor_create(ctx);
     if (s->reactor == NULL) {
@@ -861,6 +896,13 @@ static void drain_responses(mcp_async_server_t *s) {
     }
 }
 
+size_t mcp_async_server_active_connections(const mcp_async_server_t *s) {
+    if (s == NULL) {
+        return 0;
+    }
+    return atomic_load_explicit(&s->conns_count, memory_order_relaxed);
+}
+
 mcp_status_t mcp_async_server_step(mcp_context_t *ctx, mcp_async_server_t *s, int timeout_ms) {
     if (s == NULL) return MCP_ERR_INVALID_ARGUMENT;
     drain_responses(s);
@@ -907,12 +949,7 @@ void mcp_async_server_destroy(mcp_context_t *ctx, mcp_async_server_t *s) {
 
     while (cur_conn != NULL) {
         async_conn_t *next = cur_conn->next;
-        if (cur_conn->fd >= 0) {
-            mcp_reactor_remove(ctx, s->reactor, cur_conn->fd);
-            close(cur_conn->fd);
-            cur_conn->fd = -1;
-        }
-        conn_unref(cur_conn);
+        conn_detach_and_close(s, cur_conn);
         cur_conn = next;
     }
 
