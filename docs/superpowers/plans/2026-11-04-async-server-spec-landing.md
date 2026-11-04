@@ -670,7 +670,7 @@ git commit -m "feat(transport): batch session reaper with lock-free SSE disconne
 
 ### Task 7: `test_async_session_expiry` / `test_async_p0_concurrency`（前置测试已在 Chunk 2/3 落地）
 
-> 注：`test_async_leak`（Chunk 1 Task 2）、`test_async_fragmentation`（Chunk 2 Task 3 Step 1）、`test_ws_continuation`（Chunk 3 Task 4 Step 0）已随各自实现前置落地。本 Task 仅剩剩余 2 个。
+> 注：`test_async_leak`（Chunk 1 Task 2）、`test_async_fragmentation`（Chunk 2 Task 3 Step 1）、`test_ws_continuation`（Chunk 3 Task 4 Step 1）已随各自实现前置落地。本 Task 仅剩剩余 2 个。
 
 **Files:**
 - Create: `tests/unit/test_async_session_expiry.c`, `tests/unit/test_async_p0_concurrency.c`
