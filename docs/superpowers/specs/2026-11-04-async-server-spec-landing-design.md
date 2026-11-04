@@ -23,12 +23,16 @@
 | `mcp_async_server_active_connections` 探针 | 实现 | ❌ 仅在 `.h:99` 声明，`.c` 中无定义、无调用者（故 69/69 全绿也未暴露） |
 | `find_session` 内增持 ref（TOCTOU 安全） | 实现 | ❌ 未做（`async_server.c:212` 命中即解锁返回裸指针） |
 | `reap_expired_sessions` 会话超时巡检 | 实现 | ❌ 未做（仅 `last_reap_time` 字段空置） |
-| WS Continuation 分片状态机 | 实现 | ❌ `ws_frag_buf` 字段存在但无逻辑，`fin==false` 数据帧直接 `close_conn` |
-| 写路径所有权（worker 只 enqueue，不碰 `conn->write_buf`） | 实现 | ❌ `drain_responses` 直接拼 `conn->write_buf`，与 worker `enqueue_response` 双线程竞态（**P0 根因**） |
+| WS Continuation 分片状态机 | 实现 | ❌ `ws_frag_buf` 字段存在但无状态机逻辑；当前不检查 `frame.fin`，`fin==false` 的 TEXT/BINARY 帧被当完整帧直接提交 worker（`async_server.c:655-669`），`mcp_message_parse` 失败后静默丢弃、连接不断开 |
+| 写路径所有权（worker 只 enqueue，不碰 `conn->write_buf`） | 实现 | ⚠️ `write_buf` 本身仅在 reactor 线程被改（`drain_responses`）；真实竞态在跨线程共享的 `conn->closing`（worker 经 `enqueue_response`→`send_http_error` 传 `close_after=true` 置位，reactor 在 `close_conn`/写完成/drain 检查）与 `conn->write_buf` 释放（`conn_unref` 归零）与 reactor 改写之间无统一所有权边界 |
+| `conns_count` 原子化 | 升级 | ❌ 当前为普通 `size_t`（`async_server.c:120`），需升级为 `atomic_size_t` |
 
 **根因链**：`21e04e4` 提交 message 声称"移除未使用的静态函数消除编译警告"，实际把
-**已被调用的** `conn_detach_and_close` 注释掉；此后骨架与逻辑脱节，写缓冲的双线程访问
-从未收敛，P0 竞态 + P1 泄漏 + UAF 三类问题并存。
+**已被调用的** `conn_detach_and_close` 注释掉；此后骨架与逻辑脱节。P0 竞态的准确机制是
+`conn->closing` 等连接状态由 worker（`enqueue_response`）与 reactor（`close_conn`/
+写完成/drain）并发读写，且 `conn->write_buf` 的释放与 reactor 改写之间缺少统一所有权
+边界，配合 P1 泄漏、UAF 三类问题并存。本设计以"写路径单一所有权 + 确定性脱钩"统一
+收敛。
 
 ---
 
@@ -43,7 +47,7 @@
    reaper 释放。
 4. **协议健全**：HTTP 流式两阶段解析（消除分包误杀/粘包截断）、严格保序、
    RFC 6455 §5.4 WS 分片重组（含 4MB DoS 上限）。
-5. **门禁**：既有 69 项 + 新增 4 项单测 100% 通过；`-Wall -Wextra` 零告警；
+5. **门禁**：既有 69 项（HTTP+SOCKET 全开基线）+ 新增 5 项单测 100% 通过；`-Wall -Wextra` 零告警；
    ASan/UBSan/TSan 全绿零泄漏。
 
 ### 1.2 非目标
@@ -98,18 +102,22 @@
 - 全仓连接关闭路径（HTTP/WS 读错、WS Close 帧、reaper、`mcp_async_server_destroy`）
   统一走 `conn_detach_and_close`，禁止再直接 `close(fd)`。
 
-**`active_connections` 探针**：
+**`active_connections` 探针**：`conns_count` 升级为 `atomic_size_t`；**所有写操作
+（`on_accept` 的 `++`、`conn_detach_and_close` 的 `--`）统一在 `conns_mtx` 锁内用
+`atomic_fetch_add/sub` 完成**（锁保证互斥，atomic 只为让锁外读合法、消除 data race，并非
+允许脱锁改写）；`active_connections` 探针**锁外**读：
 ```c
 size_t mcp_async_server_active_connections(const mcp_async_server_t *s) {
     if (s == NULL) return 0;
     return atomic_load_explicit(&s->conns_count, memory_order_relaxed);
 }
 ```
-（`conns_count` 需从 `size_t` 升级为 `atomic_size_t`。）
 
 **清理**：删除 `#if 0 ... #endif` 包裹的死代码块，`conn_detach_and_close` 还原为正式
-函数。`create_session_entry` 的 session id 生成器去掉 `time(NULL)` 依赖，改为单调原子
-计数（`static atomic_uint` 起始 1000），保证同秒高并发唯一。
+函数。
+
+**会话 id 生成器**：`create_session_entry` 的 session id 去掉 `time(NULL)` 依赖，改用
+单调原子 64 位计数（`static atomic_uint` 起始 1000），保证同秒高并发下唯一。
 
 ### 2.2 HTTP 流式两阶段解析与严格保序（spec §3.2）
 
@@ -136,22 +144,24 @@ size_t mcp_async_server_active_connections(const mcp_async_server_t *s) {
 **严格保序 + 滑动窗口（RFC 9112）**：
 - `conn->http_in_flight` 守卫：同一连接已有 in-flight POST 时，reactor 不分发下一个，
   剩余粘包留在 `read_buf`。
-- **清除点唯一**：仅在 `handle_client_read` 写完成分支（`write_off >= write_len`）置
-  `http_in_flight = false`，并就地重查 `read_buf` 剩余粘包；若此时已 101 升级 WS，立即
-  转入 WS 帧解析循环。
+- **清除点唯一且明确**：仅在 `handle_client_read` 写完成分支（`write_off >= write_len`）
+  置 `http_in_flight = false` 并就地重查 `read_buf` 剩余粘包；若此时已 101 升级 WS，
+  立即转入 WS 帧解析循环。置位点：worker `mcp_executor_submit` 成功后由 reactor 置位；
+  同步错误路径（`create_session_entry`/task 分配失败 → 500）不置位，避免 flag 卡死。
 - 分发后滑窗消费：`remaining = read_len - total_needed`，`memmove(read_buf, read_buf +
   total_needed, remaining)`，`read_len = remaining`，`read_buf[read_len] = '\0'`。
 
 ### 2.3 WebSocket Continuation 分片重组（spec §3.3，`CONN_WS` 分支）
 
-当前对 `fin==false` 数据帧直接 `close_conn`。改为状态机（`ws_frag_buf/len/cap/opcode`
-字段已就位）：
+当前对 `fin==false` 数据帧不检查、直接当完整帧提交 worker（JSON 解析失败后静默丢弃）。
+改为状态机（`ws_frag_buf/len/cap/opcode` 字段已就位）：
 1. **控制帧优先就地处理**：Ping→Pong、Close→`conn_detach_and_close`，可在分片序列间
    穿插，不破坏 `ws_frag_buf`。
 2. **起始分片帧**（`fin==false` 且 TEXT/BINARY）：若 `ws_frag_buf != NULL`（前序未完结
    又来新起始帧）→ 协议违规断开；否则初始化 `ws_frag_buf`，记 `ws_frag_opcode`。
 3. **Continuation 帧**：若 `ws_frag_buf == NULL`（未收首帧就来续帧）→ 违规断开；
-   防 DoS：`new_len = ws_frag_len + payload_len > 4MB` → 断开；拼接（末尾保留 `\0`）；
+   防 DoS：`new_len = ws_frag_len + payload_len > MCP_ASYNC_MAX_BODY`（复用 §2.2 常量，
+   不另写字面量）→ 断开；拼接（末尾保留 `\0`）；
    `fin==true`（含 0 负载纯结束帧）→ 拼装完毕，`ws_frag_buf` 所有权转移给
    `worker_task_t->json_body`，重置 `ws_frag_*` 字段，提交线程池。
 4. **普通完整数据帧**（`fin==true`）：若 `ws_frag_buf != NULL`（等续帧期间来了非分片
@@ -169,6 +179,13 @@ size_t mcp_async_server_active_connections(const mcp_async_server_t *s) {
   结束、释放 task **之前** `session_entry_unref`；OOM 失败路径调用方就地 `unref`；
 - **GET SSE**：在 `sessions_mtx` 内赋 `entry->sse_conn = conn`，解锁后调用方就地 `unref`
   （由链表基准引用 + `sse_conn` 持续维护）。
+- **id 语义**：reaper 摘链后的 session id 在 TTL 内不再被 `find_session` 命中（已不在
+  链表）；客户端重新 `initialize` 会得到**新** session id。实现时**不得**对 id 做去重/
+  复用缓存。
+- **`last_active` 并发关系**：`last_active` 由 worker（`worker_dispatch_fn` 更新）与
+  reaper（`reap_expired_sessions` 读取）并发访问。将其声明为 `atomic_time_t`（或
+  `time_t` 配合明确单写多读语义），worker 写用 `atomic_store`、reaper 读用
+  `atomic_load`，避免 TSan 报跨锁数据竞争。
 
 **5s 批次巡检 `reap_expired_sessions(s)`**（在 `mcp_async_server_step` 中，
 `time(NULL) - last_reap_time >= 5` 触发）：
@@ -184,7 +201,7 @@ size_t mcp_async_server_active_connections(const mcp_async_server_t *s) {
 
 ## 3. 测试与验证计划
 
-### 3.1 新增 4 个单测（`tests/unit/` + 注册 `tests/CMakeLists.txt`）
+### 3.1 新增 5 个单测（`tests/unit/` + 注册 `tests/CMakeLists.txt`）
 1. **`test_async_leak`（零泄漏门禁）**：启动 async server → 循环 300 次短连接
    （GET/POST 后关闭 socket）→ `mcp_async_server_step` 驱动一次 → 断言
    `mcp_async_server_active_connections(s) == 0` → 销毁后 ASan/UBSan 下无泄漏。
@@ -198,13 +215,20 @@ size_t mcp_async_server_active_connections(const mcp_async_server_t *s) {
 4. **`test_async_session_expiry`（会话超时）**：`keepalive_timeout_s=1`，建立会话后
    sleep 2s 驱动 `step` 巡检 → 后续请求 404 Session Not Found；挂起长连接 + 慢任务期间
    会话超时，断言 worker 退出与 reaper 巡检无崩溃/死锁/UAF。
+5. **`test_async_p0_concurrency`（P0 竞态回归门禁）**：`thrd_create` 64 个 worker 线程
+   并发打同一 async server（HTTP + SSE + WS 混合），结束后断言
+   `mcp_async_server_active_connections(s) == 0` 且无泄漏。作为写路径竞态的常态回归，
+   不依赖 `MCPKIT_BUILD_TOOLS` 的 acceptance 壳。
 
 ### 3.2 质量门禁
-- 既有 69 项 + 新增 4 项 100% 通过；
+- 既有 69 项（HTTP+SOCKET 全开基线）+ 新增 5 项 100% 通过；
 - `-Wall -Wextra` 零告警（已入根 CMakeLists）；
 - ASan + UBSan（`-DMCPKIT_ENABLE_ASAN=ON -DMCPKIT_ENABLE_UBSAN=ON`，
   `MCPKIT_BUILD_HTTP=ON -DMCPKIT_BUILD_SOCKET=ON`）全绿、零泄漏；
-- 补 TSan 验收跑 `test_async_concurrency`（1000+ 并发）固化"写路径单一所有权"防回归。
+- TSan 验收**独立构建**（`MCPKitSanitizers.cmake` 强制 ASan 与 TSan 互斥）：
+  `cmake -S . -B build-tsan -DMCPKIT_ENABLE_TSAN=ON -DMCPKIT_BUILD_HTTP=ON -DMCPKIT_BUILD_SOCKET=ON`，
+  跑 `test_async_p0_concurrency` 与 `test_async_concurrency`（1000+ 并发）固化"写路径
+  单一所有权"防回归。
 
 ---
 
@@ -215,7 +239,7 @@ size_t mcp_async_server_active_connections(const mcp_async_server_t *s) {
 - **提交 2**：HTTP 流式两阶段解析 + 严格保序滑窗。
 - **提交 3**：WS Continuation 分片重组状态机。
 - **提交 4**：session 引用计数 + 5s 批次 reaper + 会话 id 生成器去 `time(NULL)`。
-- **提交 5**：4 个新单测 + CTest 注册 + 门禁（ASan/UBSan/TSan）。
+- **提交 5**：5 个新单测 + CTest 注册 + 门禁（ASan/UBSan/TSan）。
 
 ## 5. 风险与回滚
 
