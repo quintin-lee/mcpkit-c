@@ -142,6 +142,15 @@ add_executable(test_ws_continuation unit/test_ws_continuation.c)
 target_link_libraries(test_ws_continuation PRIVATE mcpkit_core)
 add_test(NAME test_ws_continuation COMMAND test_ws_continuation)
 
+add_executable(test_async_session_expiry unit/test_async_session_expiry.c)
+target_link_libraries(test_async_session_expiry PRIVATE mcpkit_core)
+add_test(NAME test_async_session_expiry COMMAND test_async_session_expiry)
+set_tests_properties(test_async_session_expiry PROPERTIES TIMEOUT 120)
+
+add_executable(test_async_p0_concurrency unit/test_async_p0_concurrency.c)
+target_link_libraries(test_async_p0_concurrency PRIVATE mcpkit_core)
+add_test(NAME test_async_p0_concurrency COMMAND test_async_p0_concurrency)
+
 add_executable(test_plugin unit/test_plugin.c)
 target_link_libraries(test_plugin PRIVATE mcpkit_core)
 add_test(NAME test_plugin COMMAND test_plugin)
