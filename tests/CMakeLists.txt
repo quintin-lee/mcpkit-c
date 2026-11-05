@@ -134,6 +134,14 @@ add_executable(test_async_server unit/test_async_server.c)
 target_link_libraries(test_async_server PRIVATE mcpkit_core)
 add_test(NAME test_async_server COMMAND test_async_server)
 
+add_executable(test_async_fragmentation unit/test_async_fragmentation.c)
+target_link_libraries(test_async_fragmentation PRIVATE mcpkit_core)
+add_test(NAME test_async_fragmentation COMMAND test_async_fragmentation)
+
+add_executable(test_ws_continuation unit/test_ws_continuation.c)
+target_link_libraries(test_ws_continuation PRIVATE mcpkit_core)
+add_test(NAME test_ws_continuation COMMAND test_ws_continuation)
+
 add_executable(test_plugin unit/test_plugin.c)
 target_link_libraries(test_plugin PRIVATE mcpkit_core)
 add_test(NAME test_plugin COMMAND test_plugin)
