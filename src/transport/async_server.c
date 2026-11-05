@@ -83,7 +83,7 @@ typedef struct session_entry {
     char id[64];
     mcp_session_t *session;
     async_conn_t *sse_conn;
-    time_t last_active;
+    atomic_intmax_t last_active;
     atomic_uint ref_count;
     atomic_bool dead;
     mtx_t session_lock;
@@ -277,17 +277,37 @@ static void enqueue_response(mcp_async_server_t *s, async_conn_t *conn, char *da
     mcp_reactor_wakeup(s->ctx, s->reactor);
 }
 
+/* forward declaration: find_session uses session_entry_ref inside the lock */
+static void session_entry_ref(session_entry_t *e);
+static session_entry_t *find_session(mcp_async_server_t *s, const char *sid);
+
 static session_entry_t *find_session(mcp_async_server_t *s, const char *sid) {
     if (sid == NULL) return NULL;
     mtx_lock(&s->sessions_mtx);
     for (session_entry_t *cur = s->sessions; cur != NULL; cur = cur->next) {
         if (strcmp(cur->id, sid) == 0) {
+            session_entry_ref(cur);
             mtx_unlock(&s->sessions_mtx);
             return cur;
         }
     }
     mtx_unlock(&s->sessions_mtx);
     return NULL;
+}
+
+static void session_entry_ref(session_entry_t *e) {
+    if (e != NULL) atomic_fetch_add(&e->ref_count, 1);
+}
+
+static void session_entry_unref(mcp_async_server_t *s, session_entry_t *e) {
+    if (e == NULL) return;
+    if (atomic_fetch_sub(&e->ref_count, 1) == 1) {
+        if (e->session != NULL && s->server != NULL) {
+            mcp_server_destroy_session(s->ctx, s->server, e->session);
+        }
+        mtx_destroy(&e->session_lock);
+        srv_free(s->ctx, e);
+    }
 }
 
 static session_entry_t *create_session_entry(mcp_async_server_t *s) {
@@ -305,14 +325,17 @@ static session_entry_t *create_session_entry(mcp_async_server_t *s) {
     static atomic_uint_fast64_t id_counter = 1000;
     uint64_t val = atomic_fetch_add(&id_counter, 1);
     snprintf(entry->id, sizeof(entry->id), "sess-%llu", (unsigned long long)val);
-    entry->last_active = time(NULL);
+    atomic_init(&entry->last_active, (int64_t)time(NULL));
     mtx_init(&entry->session_lock, mtx_plain);
+    atomic_init(&entry->ref_count, 1); /* list-ownership base ref */
+    atomic_init(&entry->dead, false);
 
     mtx_lock(&s->sessions_mtx);
     entry->next = s->sessions;
     s->sessions = entry;
     mtx_unlock(&s->sessions_mtx);
 
+    session_entry_ref(entry); /* caller gets 1 ref; caller unref after use */
     return entry;
 }
 
@@ -352,7 +375,7 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
     }
 
     if (task->entry != NULL) {
-        task->entry->last_active = time(NULL);
+        atomic_store(&task->entry->last_active, (int64_t)time(NULL));
         mtx_unlock(&task->entry->session_lock);
     }
 
@@ -441,6 +464,7 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
     }
 
     conn_unref(task->conn);
+    session_entry_unref(s, task->entry); /* task holds the caller's find/create ref */
     srv_free(ctx, task->json_body);
     srv_free(ctx, task);
 }
@@ -587,6 +611,7 @@ static size_t process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
             snprintf(conn->session_id, sizeof(conn->session_id), "%s", sid);
             conn->session = entry->session;
             entry->sse_conn = conn;
+            session_entry_unref(s, entry); /* caller's find_session ref released */
 
             const char *sse_ok =
                 "HTTP/1.1 200 OK\r\n"
@@ -658,6 +683,7 @@ static size_t process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
         if (task == NULL) {
             mcp_http_request_destroy(ctx, req);
             send_http_error(s, conn, 500, "OOM");
+            session_entry_unref(s, entry); /* task never carried it */
             return total_needed;
         }
         conn_ref(conn);
@@ -1178,11 +1204,7 @@ void mcp_async_server_destroy(mcp_context_t *ctx, mcp_async_server_t *s) {
 
     while (cur_sess != NULL) {
         session_entry_t *next = cur_sess->next;
-        if (cur_sess->session != NULL && s->server != NULL) {
-            mcp_server_destroy_session(ctx, s->server, cur_sess->session);
-        }
-        mtx_destroy(&cur_sess->session_lock);
-        srv_free(ctx, cur_sess);
+        session_entry_unref(s, cur_sess); /* releases list-ownership base ref */
         cur_sess = next;
     }
 
