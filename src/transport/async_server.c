@@ -339,6 +339,38 @@ static session_entry_t *create_session_entry(mcp_async_server_t *s) {
     return entry;
 }
 
+/* 5s 批次 reaper：锁内摘除过期会话 + 记 SSE 连接，锁外断开（死锁免疫） */
+#define MCP_SESSION_REAP_BATCH 32
+static void reap_expired_sessions(mcp_async_server_t *s) {
+    time_t now = time(NULL);
+    async_conn_t *sse_to_close[MCP_SESSION_REAP_BATCH];
+    size_t count = 0;
+    time_t timeout_s = s->cfg.keepalive_timeout_s > 0 ? s->cfg.keepalive_timeout_s : 60;
+    mtx_lock(&s->sessions_mtx);
+    session_entry_t **pprev = &s->sessions;
+    while (*pprev != NULL) {
+        session_entry_t *e = *pprev;
+        if ((long)(now - (time_t)atomic_load(&e->last_active)) > (long)timeout_s) {
+            *pprev = e->next;
+            atomic_store(&e->dead, true);
+            if (e->sse_conn != NULL) {
+                sse_to_close[count++] = e->sse_conn;
+                e->sse_conn = NULL;
+            }
+            session_entry_unref(s, e); /* 释放链表持有基准引用 */
+            if (count == MCP_SESSION_REAP_BATCH) {
+                break; /* 超批保留，下周期再清 */
+            }
+        } else {
+            pprev = &e->next;
+        }
+    }
+    mtx_unlock(&s->sessions_mtx);
+    for (size_t i = 0; i < count; i++) {
+        conn_detach_and_close(s, sse_to_close[i]);
+    }
+}
+
 typedef struct {
     mcp_async_server_t *server;
     async_conn_t *conn;
@@ -1147,6 +1179,10 @@ size_t mcp_async_server_active_connections(const mcp_async_server_t *s) {
 
 mcp_status_t mcp_async_server_step(mcp_context_t *ctx, mcp_async_server_t *s, int timeout_ms) {
     if (s == NULL) return MCP_ERR_INVALID_ARGUMENT;
+    if ((time_t)(time(NULL) - s->last_reap_time) >= 5) {
+        s->last_reap_time = time(NULL);
+        reap_expired_sessions(s);
+    }
     drain_responses(s);
     mcp_status_t st = mcp_reactor_step(ctx, s->reactor, timeout_ms);
     drain_responses(s);
