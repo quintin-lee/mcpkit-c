@@ -37,6 +37,9 @@
 #include "mcpkit/transport/ws.h"
 #include "../core/sha1.h"
 
+#define MCP_ASYNC_MAX_BODY    (4u << 20)
+#define MCP_ASYNC_MAX_READ_CAP (MCP_ASYNC_MAX_BODY + 65536u)
+
 typedef struct async_conn async_conn_t;
 
 typedef enum {
@@ -134,6 +137,38 @@ static void srv_free(mcp_context_t *ctx, void *p) {
     if (p == NULL) return;
     const mcp_allocator_t *a = alloc_of(ctx);
     a->free_fn(p, a->userdata);
+}
+
+/* Case-insensitive fetch of the Content-Length header value.
+ * Missing header -> 0. Malformed -> -1. Scans header lines (each line
+ * begins at buf or just after a '\n'). */
+static long parse_http_content_length(const char *buf, size_t header_len) {
+    const char *line = buf;
+    for (;;) {
+        /* Find the end of the current line within header_len. */
+        size_t off = (size_t)(line - buf);
+        const char *eol = memchr(line, '\n', header_len - off);
+        size_t line_len = eol != NULL ? (size_t)(eol - line) : (header_len - off);
+        /* Check this line for "Content-Length:" (case-insensitive prefix). */
+        if (line_len >= 15 && strncasecmp(line, "Content-Length:", 15) == 0) {
+            const char *p = line + 15;
+            size_t remain = line_len - 15;
+            /* Skip trailing whitespace before terminator. */
+            while (remain > 0 && (p[remain - 1] == ' ' || p[remain - 1] == '\t' ||
+                                  p[remain - 1] == '\r')) {
+                remain--;
+            }
+            char *endp = NULL;
+            long v = strtol(p, &endp, 10);
+            if (endp == p) return -1; /* 非数字 */
+            return v;
+        }
+        if (eol == NULL) {
+            break; /* 最后一行（已到 header_len） */
+        }
+        line = eol + 1; /* 跳到下一行 */
+    }
+    return 0; /* 无 Content-Length */
 }
 
 static char *srv_strdup(mcp_context_t *ctx, const char *str) {
@@ -433,12 +468,49 @@ static void send_http_error(mcp_async_server_t *s, async_conn_t *conn, int code,
     }
 }
 
-static void process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
+static size_t process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
     mcp_context_t *ctx = s->ctx;
-    mcp_http_request_t *req = mcp_http_parse_request(ctx, conn->read_buf, conn->read_len);
+    /* 先定位 header 边界（CR/LF 序列），可能跨包未到，此时等待下次 recv */
+    size_t header_end_off = 0;
+    bool header_complete = false;
+    for (size_t i = 0; i + 3 < conn->read_len; i++) {
+        if (conn->read_buf[i] == '\r' && conn->read_buf[i + 1] == '\n' &&
+            conn->read_buf[i + 2] == '\r' && conn->read_buf[i + 3] == '\n') {
+            header_end_off = i + 4;
+            header_complete = true;
+            break;
+        }
+    }
+    if (!header_complete) {
+        return 0; /* 头未收全，等下次 recv */
+    }
+
+    size_t header_len = header_end_off;
+    long content_len = parse_http_content_length(conn->read_buf, header_len);
+    if (content_len < 0) {
+        send_http_error(s, conn, 400, "Bad Request");
+        close_conn(s, conn);
+        return conn->read_len;
+    }
+    /* DoS 上限：请求体超过 4MB 直接 413 */
+    if (content_len > MCP_ASYNC_MAX_BODY) {
+        send_http_error(s, conn, 413, "Payload Too Large");
+        close_conn(s, conn);
+        return conn->read_len;
+    }
+    size_t total_needed = header_len + (size_t)content_len;
+    /* 两阶段完整性守卫：body 未收全则等待，绝不报错、绝不截断解析 */
+    if (conn->read_len < total_needed) {
+        return 0; /* 等下次 recv */
+    }
+
+    /* body 已收全：把请求边界限制在 total_needed 上解析，避免越过 body 把下一个
+     * 粘包请求的字节当成当前请求的 body */
+    mcp_http_request_t *req = mcp_http_parse_request(ctx, conn->read_buf, total_needed);
     if (req == NULL) {
         send_http_error(s, conn, 400, "Bad Request");
-        return;
+        close_conn(s, conn);
+        return conn->read_len;
     }
 
     const char *upgrade = mcp_http_header(ctx, req, "Upgrade");
@@ -446,19 +518,19 @@ static void process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
         if (!s->cfg.enable_websocket) {
             mcp_http_request_destroy(ctx, req);
             send_http_error(s, conn, 403, "WebSocket Disabled");
-            return;
+            return total_needed;
         }
         const char *key = mcp_http_header(ctx, req, "Sec-WebSocket-Key");
         if (key == NULL) {
             mcp_http_request_destroy(ctx, req);
             send_http_error(s, conn, 400, "Missing Sec-WebSocket-Key");
-            return;
+            return total_needed;
         }
         char accept_key[32];
         if (mcp_ws_compute_accept_key(key, accept_key) != MCP_OK) {
             mcp_http_request_destroy(ctx, req);
             send_http_error(s, conn, 500, "Handshake Error");
-            return;
+            return total_needed;
         }
 
         char resp[512];
@@ -477,9 +549,16 @@ static void process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
 
         conn->type = CONN_WS;
         conn->session = mcp_server_create_session(ctx, s->server);
-        conn->read_len = 0;
+        /* 升级请求被消费：read_buf 前移 total_needed，残留字节（粘包 WS 帧）
+         * 交给下次 CONN_WS 读事件循环消化；无额外字节时 read_len 为 0 */
+        size_t ws_remaining = conn->read_len - total_needed;
+        if (ws_remaining > 0) {
+            memmove(conn->read_buf, conn->read_buf + total_needed, ws_remaining);
+        }
+        conn->read_len = ws_remaining;
+        conn->read_buf[conn->read_len] = '\0';
         mcp_http_request_destroy(ctx, req);
-        return;
+        return 0;
     }
 
     mcp_http_method_t method = mcp_http_request_method(ctx, req);
@@ -490,19 +569,19 @@ static void process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
             if (!s->cfg.enable_sse) {
                 mcp_http_request_destroy(ctx, req);
                 send_http_error(s, conn, 403, "SSE Disabled");
-                return;
+                return total_needed;
             }
             const char *sid = mcp_http_header(ctx, req, "Mcp-Session-Id");
             if (sid == NULL) {
                 mcp_http_request_destroy(ctx, req);
                 send_http_error(s, conn, 400, "Bad Request: Missing Mcp-Session-Id");
-                return;
+                return total_needed;
             }
             session_entry_t *entry = find_session(s, sid);
             if (entry == NULL) {
                 mcp_http_request_destroy(ctx, req);
                 send_http_error(s, conn, 404, "Session Not Found");
-                return;
+                return total_needed;
             }
             conn->type = CONN_SSE;
             snprintf(conn->session_id, sizeof(conn->session_id), "%s", sid);
@@ -520,13 +599,20 @@ static void process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
                 memcpy(dup, sse_ok, strlen(sse_ok) + 1);
                 enqueue_response(s, conn, dup, strlen(sse_ok), false);
             }
-            conn->read_len = 0;
+            /* GET-SSE 无 body：消费 header（total_needed == header_len），
+             * 残留字节（粘包）前移后交下次读事件消化 */
+            size_t sse_remaining = conn->read_len - total_needed;
+            if (sse_remaining > 0) {
+                memmove(conn->read_buf, conn->read_buf + total_needed, sse_remaining);
+            }
+            conn->read_len = sse_remaining;
+            conn->read_buf[conn->read_len] = '\0';
             mcp_http_request_destroy(ctx, req);
-            return;
+            return 0;
         }
         mcp_http_request_destroy(ctx, req);
         send_http_error(s, conn, 405, "Method Not Allowed");
-        return;
+        return total_needed;
     }
 
     if (method == MCP_HTTP_POST) {
@@ -537,6 +623,13 @@ static void process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
         session_entry_t *entry = NULL;
         bool is_init = false;
 
+        if (body == NULL || body_len == 0) {
+            /* POST 必须有非空 JSON 请求体（initialize 或后续请求） */
+            mcp_http_request_destroy(ctx, req);
+            send_http_error(s, conn, 400, "Bad Request");
+            return total_needed;
+        }
+
         if (sid == NULL) {
             /* Must be initialize request */
             if (body != NULL && strstr(body, "\"initialize\"") != NULL) {
@@ -544,20 +637,20 @@ static void process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
                 if (entry == NULL) {
                     mcp_http_request_destroy(ctx, req);
                     send_http_error(s, conn, 500, "Cannot Create Session");
-                    return;
+                    return total_needed;
                 }
                 is_init = true;
             } else {
                 mcp_http_request_destroy(ctx, req);
                 send_http_error(s, conn, 400, "Bad Request: Missing Mcp-Session-Id");
-                return;
+                return total_needed;
             }
         } else {
             entry = find_session(s, sid);
             if (entry == NULL) {
                 mcp_http_request_destroy(ctx, req);
                 send_http_error(s, conn, 404, "Session Not Found");
-                return;
+                return total_needed;
             }
         }
 
@@ -565,7 +658,7 @@ static void process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
         if (task == NULL) {
             mcp_http_request_destroy(ctx, req);
             send_http_error(s, conn, 500, "OOM");
-            return;
+            return total_needed;
         }
         conn_ref(conn);
         task->server = s;
@@ -582,13 +675,43 @@ static void process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
         }
 
         mcp_executor_submit(ctx, s->pool, worker_dispatch_fn, task);
-        conn->read_len = 0;
+        conn->http_in_flight = true;
         mcp_http_request_destroy(ctx, req);
-        return;
+        /* 成功提交 worker：本次消费 total_needed（header+body）字节，
+         * 由调用者侧执行滑窗 */
+        return total_needed;
     }
 
     mcp_http_request_destroy(ctx, req);
     send_http_error(s, conn, 405, "Method Not Allowed");
+    return total_needed;
+}
+
+/* 对 POST in-flight 请求执行滑窗：body 已在 process_http_request 内 memcpy 进
+ * task，body 指针此后不再被使用，memmove 安全。total_needed 为本次消费的
+ * 请求总长（header+body）。 */
+static void http_slide_window(async_conn_t *conn, size_t total_needed) {
+    if (!conn->http_in_flight) {
+        return;
+    }
+    size_t remaining = conn->read_len - total_needed;
+    if (remaining > 0) {
+        memmove(conn->read_buf, conn->read_buf + total_needed, remaining);
+    }
+    conn->read_len = remaining;
+    conn->read_buf[conn->read_len] = '\0';
+}
+
+/* 粘包处理：在写完成回调中重新分发 read_buf 中已收全的第二个请求 */
+static void handle_pipelined_http(mcp_async_server_t *s, async_conn_t *conn) {
+    if (conn->type != CONN_HTTP_INIT || conn->read_len == 0) {
+        return;
+    }
+    if (conn->http_in_flight) {
+        return; /* 严格保序：in-flight 未消化前不分发下一个 */
+    }
+    size_t consumed = process_http_request(s, conn);
+    http_slide_window(conn, consumed);
 }
 
 static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t events, void *user) {
@@ -601,41 +724,50 @@ static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t even
         return;
     }
 
-    if (events & MCP_EVENT_WRITE) {
-        if (conn->write_buf != NULL && conn->write_off < conn->write_len) {
-            ssize_t n = send(fd, conn->write_buf + conn->write_off,
-                             conn->write_len - conn->write_off, MSG_NOSIGNAL);
-            if (n > 0) {
-                conn->write_off += (size_t)n;
-            } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-                close_conn(s, conn);
-                return;
+        if (events & MCP_EVENT_WRITE) {
+            if (conn->write_buf != NULL && conn->write_off < conn->write_len) {
+                ssize_t n = send(fd, conn->write_buf + conn->write_off,
+                                 conn->write_len - conn->write_off, MSG_NOSIGNAL);
+                if (n > 0) {
+                    conn->write_off += (size_t)n;
+                } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+                    close_conn(s, conn);
+                    return;
+                }
+            } else if (conn->write_buf != NULL) {
+                if (conn->write_off >= conn->write_len) {
+                    srv_free(ctx, conn->write_buf);
+                    conn->write_buf = NULL;
+                    conn->write_len = 0;
+                    conn->write_cap = 0;
+                    conn->write_off = 0;
+                    conn->http_in_flight = false;
+                    if (atomic_load(&conn->closing)) {
+                        close_conn(s, conn);
+                        return;
+                    }
+                    mcp_event_mask_t ev = MCP_EVENT_READ;
+                    if (!conn->closing && conn->read_len > 0 && !conn->http_in_flight) {
+                        ev |= MCP_EVENT_WRITE;
+                    }
+                    mcp_reactor_modify(s->ctx, s->reactor, fd, ev);
+                    /* 重新触发粘包请求的分发，避免连接挂死 */
+                    handle_pipelined_http(s, conn);
+                }
             }
         }
-        if (conn->write_off >= conn->write_len) {
-            srv_free(ctx, conn->write_buf);
-            conn->write_buf = NULL;
-            conn->write_len = 0;
-            conn->write_cap = 0;
-            conn->write_off = 0;
-            if (atomic_load(&conn->closing)) {
-                close_conn(s, conn);
-                return;
-            }
-            mcp_reactor_modify(s->ctx, s->reactor, fd, MCP_EVENT_READ);
-        }
-    }
 
     if (events & MCP_EVENT_READ) {
         if (conn->read_len + 4096 > conn->read_cap) {
             size_t ncap = conn->read_cap == 0 ? 8192 : conn->read_cap * 2;
-            if (ncap > (4u << 20)) {
-                close_conn(s, conn);
+            if (ncap > MCP_ASYNC_MAX_READ_CAP) { ncap = MCP_ASYNC_MAX_READ_CAP; }
+            if (conn->read_len + 4096 > conn->read_cap && conn->read_cap >= MCP_ASYNC_MAX_READ_CAP) {
+                conn_detach_and_close(s, conn);
                 return;
             }
             char *nread = srv_malloc(ctx, ncap);
             if (nread == NULL) {
-                close_conn(s, conn);
+                conn_detach_and_close(s, conn);
                 return;
             }
             if (conn->read_buf != NULL && conn->read_len > 0) {
@@ -662,9 +794,14 @@ static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t even
         conn->read_buf[conn->read_len] = '\0';
 
         if (conn->type == CONN_HTTP_INIT) {
-            if (strstr(conn->read_buf, "\r\n\r\n") != NULL) {
-                process_http_request(s, conn);
+            if (conn->http_in_flight) {
+                /* 已有 in-flight 请求，不分发下一个，粘包留在 read_buf */
+                return;
             }
+            /* 把滑窗消费后的剩余字节交给 process_http_request 继续解析 */
+            size_t consumed = process_http_request(s, conn);
+            /* POST in-flight 滑窗：body 已 memcpy 进 task，按本次消费量前移 */
+            http_slide_window(conn, consumed);
         } else if (conn->type == CONN_WS) {
             for (;;) {
                 mcp_ws_frame_t frame = {0};
@@ -682,19 +819,98 @@ static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t even
                 conn->read_len -= consumed;
 
                 if (frame.opcode == MCP_WS_OP_TEXT || frame.opcode == MCP_WS_OP_BINARY) {
-                    worker_task_t *task = srv_malloc(ctx, sizeof(*task));
-                    if (task != NULL) {
-                        conn_ref(conn);
-                        task->server = s;
-                        task->conn = conn;
-                        task->session = conn->session;
-                        task->entry = NULL;
-                        task->is_ws = true;
-                        task->is_init = false;
-                        task->session_id[0] = '\0';
-                        task->json_body = frame.payload;
-                        frame.payload = NULL; /* Transfer ownership */
-                        mcp_executor_submit(ctx, s->pool, worker_dispatch_fn, task);
+                    if (frame.fin) {
+                        /* 完整数据帧：若正在拼装分片则违规，安全断开 */
+                        if (conn->ws_frag_buf != NULL) {
+                            close_conn(s, conn);
+                            mcp_ws_frame_destroy(ctx, &frame);
+                            return;
+                        }
+                        worker_task_t *task = srv_malloc(ctx, sizeof(*task));
+                        if (task != NULL) {
+                            conn_ref(conn);
+                            task->server = s;
+                            task->conn = conn;
+                            task->session = conn->session;
+                            task->entry = NULL;
+                            task->is_ws = true;
+                            task->is_init = false;
+                            task->session_id[0] = '\0';
+                            task->json_body = frame.payload;
+                            frame.payload = NULL; /* Transfer ownership */
+                            mcp_executor_submit(ctx, s->pool, worker_dispatch_fn, task);
+                        }
+                    } else {
+                        /* 起始分片帧：开始重组，禁止双重启动 */
+                        if (conn->ws_frag_buf != NULL) {
+                            close_conn(s, conn);
+                            mcp_ws_frame_destroy(ctx, &frame);
+                            return;
+                        }
+                        size_t cap = (size_t)frame.payload_len + 1;
+                        char *nb = srv_malloc(ctx, cap);
+                        if (nb == NULL) {
+                            close_conn(s, conn);
+                            mcp_ws_frame_destroy(ctx, &frame);
+                            return;
+                        }
+                        memcpy(nb, frame.payload != NULL ? frame.payload : "", frame.payload_len);
+                        nb[frame.payload_len] = '\0';
+                        conn->ws_frag_buf = nb;
+                        conn->ws_frag_len = frame.payload_len;
+                        conn->ws_frag_cap = cap;
+                        conn->ws_frag_opcode = frame.opcode;
+                    }
+                } else if (frame.opcode == MCP_WS_OP_CONTINUATION) {
+                    /* 孤立 Continuation（无起始分片）：协议违规，安全断开 */
+                    if (conn->ws_frag_buf == NULL) {
+                        close_conn(s, conn);
+                        mcp_ws_frame_destroy(ctx, &frame);
+                        return;
+                    }
+                    /* DoS 上限：总重组长度不超过 MCP_ASYNC_MAX_BODY */
+                    size_t new_len = conn->ws_frag_len + (size_t)frame.payload_len;
+                    if (new_len > MCP_ASYNC_MAX_BODY) {
+                        close_conn(s, conn);
+                        mcp_ws_frame_destroy(ctx, &frame);
+                        return;
+                    }
+                    /* 按新长度扩容重组缓冲（保留旧内容） */
+                    if (conn->ws_frag_cap < new_len + 1) {
+                        char *nb = srv_malloc(ctx, new_len + 1);
+                        if (nb == NULL) {
+                            close_conn(s, conn);
+                            mcp_ws_frame_destroy(ctx, &frame);
+                            return;
+                        }
+                        memcpy(nb, conn->ws_frag_buf, conn->ws_frag_len);
+                        srv_free(ctx, conn->ws_frag_buf);
+                        conn->ws_frag_buf = nb;
+                        conn->ws_frag_cap = new_len + 1;
+                    }
+                    if (frame.payload != NULL) {
+                        memcpy(conn->ws_frag_buf + conn->ws_frag_len, frame.payload, frame.payload_len);
+                    }
+                    conn->ws_frag_len = new_len;
+                    conn->ws_frag_buf[new_len] = '\0';
+                    if (frame.fin) {
+                        /* 拼装完毕：所有权移交 worker */
+                        worker_task_t *task = srv_malloc(ctx, sizeof(*task));
+                        if (task != NULL) {
+                            conn_ref(conn);
+                            task->server = s;
+                            task->conn = conn;
+                            task->session = conn->session;
+                            task->entry = NULL;
+                            task->is_ws = true;
+                            task->is_init = false;
+                            task->session_id[0] = '\0';
+                            task->json_body = conn->ws_frag_buf;
+                            conn->ws_frag_buf = NULL;
+                            conn->ws_frag_len = 0;
+                            conn->ws_frag_cap = 0;
+                            mcp_executor_submit(ctx, s->pool, worker_dispatch_fn, task);
+                        }
                     }
                 } else if (frame.opcode == MCP_WS_OP_PING) {
                     mcp_ws_frame_t pong = {
@@ -710,8 +926,8 @@ static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t even
                         enqueue_response(s, conn, (char *)pbytes, plen, false);
                     }
                 } else if (frame.opcode == MCP_WS_OP_CLOSE) {
-                    close_conn(s, conn);
                     mcp_ws_frame_destroy(ctx, &frame);
+                    close_conn(s, conn);
                     return;
                 }
                 mcp_ws_frame_destroy(ctx, &frame);
