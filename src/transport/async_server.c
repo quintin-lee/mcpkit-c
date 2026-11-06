@@ -350,7 +350,6 @@ static session_entry_t *create_session_entry(mcp_async_server_t *s) {
 /* 5s 批次 reaper：锁内摘除过期会话 + 记 SSE 连接，锁外断开（死锁免疫） */
 #define MCP_SESSION_REAP_BATCH 32
 static void reap_expired_sessions(mcp_async_server_t *s) {
-    time_t now = time(NULL);
     async_conn_t *sse_to_close[MCP_SESSION_REAP_BATCH];
     size_t count = 0;
     time_t timeout_s = s->cfg.keepalive_timeout_s > 0 ? s->cfg.keepalive_timeout_s : 60;
@@ -358,7 +357,10 @@ static void reap_expired_sessions(mcp_async_server_t *s) {
     session_entry_t **pprev = &s->sessions;
     while (*pprev != NULL) {
         session_entry_t *e = *pprev;
-        if ((long)(now - (time_t)atomic_load(&e->last_active)) > (long)timeout_s) {
+        /* 先快照 last_active（acquire，与 worker 侧 release store 配对），
+         * 再决定是否过期，避免刚被 worker 触碰的活跃会话被误收割 */
+        intmax_t last = atomic_load_explicit(&e->last_active, memory_order_acquire);
+        if ((long)(time(NULL) - (time_t)last) > (long)timeout_s) {
             *pprev = e->next;
             atomic_store(&e->dead, true);
             if (e->sse_conn != NULL) {
@@ -415,7 +417,7 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
     }
 
     if (task->entry != NULL) {
-        atomic_store(&task->entry->last_active, (int64_t)time(NULL));
+        atomic_store_explicit(&task->entry->last_active, (int64_t)time(NULL), memory_order_release);
         mtx_unlock(&task->entry->session_lock);
     }
 
@@ -1251,6 +1253,14 @@ void mcp_async_server_destroy(mcp_context_t *ctx, mcp_async_server_t *s) {
         pthread_cond_wait(&s->pending_cv, &s->pending_mtx);
     }
     pthread_mutex_unlock(&s->pending_mtx);
+
+    /* A user-supplied reactor thread (mcp_async_server_run) may still be
+     * stepping on this struct while destroy runs: wait until it observes
+     * stop_requested, drains its final step, and clears running. */
+    while (atomic_load(&s->running)) {
+        struct timespec ts = {.tv_sec = 0, .tv_nsec = 1000 * 1000};
+        nanosleep(&ts, NULL);
+    }
 
     if (s->listen_fd >= 0) {
         mcp_reactor_remove(ctx, s->reactor, s->listen_fd);
