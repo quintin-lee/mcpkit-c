@@ -12,6 +12,7 @@ static int fail(mcp_context_t *ctx, mcp_client_t *c, mcp_transport_t *t, mcp_sta
         mcp_client_destroy(ctx, c);
     }
     if (t != NULL) {
+        mcp_transport_stop(ctx, t);
         mcp_transport_destroy(ctx, t);
     }
     mcp_context_destroy(ctx);
@@ -52,6 +53,7 @@ int main(int argc, char **argv) {
 
     mcp_client_t *c = mcp_client_create(ctx, t);
     if (c == NULL) {
+        mcp_transport_stop(ctx, t);
         mcp_transport_destroy(ctx, t);
         mcp_context_destroy(ctx);
         return 1;
@@ -99,12 +101,14 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "unknown command '%s'\n", cmd);
         mcp_client_destroy(ctx, c);
+        mcp_transport_stop(ctx, t);
         mcp_transport_destroy(ctx, t);
         mcp_context_destroy(ctx);
         return 2;
     }
 
     mcp_client_destroy(ctx, c);
+    mcp_transport_stop(ctx, t);
     mcp_transport_destroy(ctx, t);
     mcp_context_destroy(ctx);
     return 0;

@@ -110,7 +110,8 @@ int main(int argc, char **argv) {
     printf("Shutting down async server...\n");
     mcp_async_server_stop(ctx, srv);
     mcp_async_server_destroy(ctx, srv);
-    mcp_executor_destroy(ctx, pool);
+    mcp_executor_wait(ctx, pool);         /* drain in-flight tasks */
+    mcp_executor_destroy(ctx, pool);    /* then join threads */
     mcp_server_destroy(ctx, server);
     mcp_context_destroy(ctx);
     printf("Shutdown complete.\n");
