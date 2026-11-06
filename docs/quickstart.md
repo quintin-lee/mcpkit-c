@@ -122,3 +122,38 @@ mcp_transport_destroy(ctx, t);
 | `MCPKIT_BUILD_FUZZ`        | `OFF`   | Build fuzz-stdin target              |
 | `MCPKIT_ENABLE_ASAN`       | `OFF`   | Add AddressSanitizer flags           |
 | `MCPKIT_ENABLE_UBSAN`      | `OFF`   | Add UndefinedBehaviorSanitizer flags |
+| `MCPKIT_ENABLE_TSAN`       | `OFF`   | Add ThreadSanitizer flags (incompatible with ASAN) |
+
+## Sanitizer gate
+
+Recommended local / CI gate (builds, no source changes):
+
+```sh
+# ASan + UBSan in one build
+$ cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DMCPKIT_ENABLE_ASAN=ON -DMCPKIT_ENABLE_UBSAN=ON
+  -DMCPKIT_BUILD_HTTP=ON -DMCPKIT_BUILD_SOCKET=ON
+$ cmake --build build-asan -j
+$ ctest --test-dir build-asan
+
+# TSan is a separate build (mutually incompatible with ASan)
+$ cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Debug -DMCPKIT_ENABLE_TSAN=ON
+  -DMCPKIT_BUILD_HTTP=ON -DMCPKIT_BUILD_SOCKET=ON
+$ cmake --build build-tsan -j
+$ ctest --test-dir build-tsan
+```
+
+### Toolchain note: TSan + C11 threads on GCC 16
+
+On GCC 16.2.1 / glibc 2.44, TSan (`libtsan.so.2`) crashes with
+`SEGV on unknown address 0x18` for every process that calls
+`thrd_create()` (C11 `threads.h`). The same crash is reproduced with a
+15-line standalone program, confirming that this is a **toolchain-level
+incompatibility**, not a library defect. pthread-based TSan runs cleanly.
+
+Workarounds in the order of their invasiveness:
+1. Run TSan tests on a toolchain where TSan + C11 `threads.h` interop works
+   (Clang on supported distros).
+2. In the affected environments, gate TSan to pthread-only targets and
+   keep ASan + UBSan as the primary concurrency regression gate.
+   (This repo's `MCPKIT_ENABLE_ASAN` gate is the default; TSan is the
+   optional stronger gate.)
