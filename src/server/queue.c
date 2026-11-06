@@ -61,16 +61,26 @@ static mcp_status_t queue_grow(mcp_context_t *ctx, mcp_queue_t *q) {
     size_t ncap = q->cap == 0 ? 8 : q->cap * 2;
     mcp_message_t **om = q->msgs;
     struct mcp_session **os = q->sessions;
+    /* Both reallocs are all-or-nothing per call, but glibc's realloc
+     * consumes the old block when it moves: after a successful
+     * realloc(om, …), om is no longer a live pointer and must never
+     * be restored or freed again. If the sessions realloc fails, keep
+     * the freshly-grown msgs buffer committed (the ring still operates
+     * within the old cap, so the larger buffer is simply over-allocated
+     * but harmless) and return NOMEM; sessions stays at the old
+     * buffer, which is still valid and correctly sized for the ring. */
     mcp_message_t **nm = srv_realloc(ctx, om, ncap * sizeof(*nm));
     if (nm == NULL) {
         return MCP_ERR_NOMEM;
     }
-    /* Commit msgs before touching sessions: if the sessions realloc fails,
-     * q->msgs already points to a valid (possibly larger) buffer and the
-     * ring logic still operates within the old cap, so no dangling pointer. */
     q->msgs = nm;
     struct mcp_session **ns = srv_realloc(ctx, os, ncap * sizeof(*ns));
     if (ns == NULL) {
+        /* Cannot roll msgs back: om was consumed by the successful
+         * realloc above. Keep nm (valid buffer, ring still bounded by
+         * the old cap) and leave sessions untouched at os. The queue
+         * remains fully usable at its old cap; the next successful
+         * grow will realloc from nm/ns again. */
         return MCP_ERR_NOMEM;
     }
     q->sessions = ns;
