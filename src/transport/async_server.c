@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -122,6 +123,13 @@ struct mcp_async_server {
     mtx_t conns_mtx;
     async_conn_t *conns;
     atomic_size_t conns_count;
+
+    /* Tracks worker tasks in flight so destroy can wait for them to
+     * drain before tearing down sessions/responses (prevents UAF when a
+     * worker still holds a conn/session reference and enqueues a write). */
+    pthread_mutex_t pending_mtx;
+    pthread_cond_t pending_cv;
+    size_t pending;
 };
 
 static const mcp_allocator_t *alloc_of(mcp_context_t *ctx) {
@@ -498,6 +506,15 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
     conn_unref(task->conn);
     session_entry_unref(s, task->entry); /* task holds the caller's find/create ref */
     srv_free(ctx, task->json_body);
+
+    /* Signal the destroy-side waiter before freeing the task itself. */
+    pthread_mutex_lock(&s->pending_mtx);
+    s->pending--;
+    if (s->pending == 0) {
+        pthread_cond_broadcast(&s->pending_cv);
+    }
+    pthread_mutex_unlock(&s->pending_mtx);
+
     srv_free(ctx, task);
 }
 
@@ -732,6 +749,9 @@ static size_t process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
             task->json_body[body_len] = '\0';
         }
 
+        pthread_mutex_lock(&s->pending_mtx);
+        s->pending++;
+        pthread_mutex_unlock(&s->pending_mtx);
         mcp_executor_submit(ctx, s->pool, worker_dispatch_fn, task);
         conn->http_in_flight = true;
         mcp_http_request_destroy(ctx, req);
@@ -896,6 +916,9 @@ static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t even
                             task->session_id[0] = '\0';
                             task->json_body = frame.payload;
                             frame.payload = NULL; /* Transfer ownership */
+                            pthread_mutex_lock(&s->pending_mtx);
+                            s->pending++;
+                            pthread_mutex_unlock(&s->pending_mtx);
                             mcp_executor_submit(ctx, s->pool, worker_dispatch_fn, task);
                         }
                     } else {
@@ -967,6 +990,9 @@ static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t even
                             conn->ws_frag_buf = NULL;
                             conn->ws_frag_len = 0;
                             conn->ws_frag_cap = 0;
+                            pthread_mutex_lock(&s->pending_mtx);
+                            s->pending++;
+                            pthread_mutex_unlock(&s->pending_mtx);
                             mcp_executor_submit(ctx, s->pool, worker_dispatch_fn, task);
                         }
                     }
@@ -1076,6 +1102,9 @@ mcp_async_server_t *mcp_async_server_create(mcp_context_t *ctx, mcp_server_t *se
     mtx_init(&s->sessions_mtx, mtx_plain);
     mtx_init(&s->conns_mtx, mtx_plain);
     atomic_init(&s->conns_count, 0);
+    pthread_mutex_init(&s->pending_mtx, NULL);
+    pthread_cond_init(&s->pending_cv, NULL);
+    s->pending = 0;
 
     s->reactor = mcp_reactor_create(ctx);
     if (s->reactor == NULL) {
@@ -1214,6 +1243,15 @@ void mcp_async_server_destroy(mcp_context_t *ctx, mcp_async_server_t *s) {
     if (s == NULL) return;
     mcp_async_server_stop(ctx, s);
 
+    /* Wait for all in-flight worker tasks to finish before tearing down
+     * sessions and the response queue: a worker still running may hold a
+     * conn/session reference and enqueue a write that races with destroy. */
+    pthread_mutex_lock(&s->pending_mtx);
+    while (s->pending > 0) {
+        pthread_cond_wait(&s->pending_cv, &s->pending_mtx);
+    }
+    pthread_mutex_unlock(&s->pending_mtx);
+
     if (s->listen_fd >= 0) {
         mcp_reactor_remove(ctx, s->reactor, s->listen_fd);
         close(s->listen_fd);
@@ -1252,5 +1290,7 @@ void mcp_async_server_destroy(mcp_context_t *ctx, mcp_async_server_t *s) {
     mtx_destroy(&s->resp_mtx);
     mtx_destroy(&s->sessions_mtx);
     mtx_destroy(&s->conns_mtx);
+    pthread_mutex_destroy(&s->pending_mtx);
+    pthread_cond_destroy(&s->pending_cv);
     srv_free(ctx, s);
 }
