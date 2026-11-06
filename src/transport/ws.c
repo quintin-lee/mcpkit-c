@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/random.h>
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
@@ -236,6 +237,18 @@ void mcp_ws_frame_destroy(mcp_context_t *ctx, mcp_ws_frame_t *frame) {
     frame->payload_len = 0;
 }
 
+static int secure_random_bytes(unsigned char *buf, size_t len) {
+    size_t off = 0;
+    while (off < len) {
+        ssize_t n = getrandom(buf + off, len - off, 0);
+        if (n < 0) {
+            return -1;
+        }
+        off += (size_t)n;
+    }
+    return 0;
+}
+
 typedef struct {
     int fd;
     bool is_server;
@@ -270,7 +283,10 @@ static mcp_status_t ws_send(mcp_context_t *ctx, mcp_transport_t *t, const char *
     };
 
     if (frame.masked) {
-        uint32_t r = (uint32_t)rand() ^ (uint32_t)time(NULL);
+        uint32_t r;
+        if (secure_random_bytes((unsigned char *)&r, sizeof(r)) != 0) {
+            return MCP_ERR_IO;
+        }
         memcpy(frame.mask_key, &r, 4);
     }
 
@@ -337,7 +353,10 @@ static mcp_status_t ws_recv(mcp_context_t *ctx, mcp_transport_t *t, char **line_
                         .payload = frame.payload,
                     };
                     if (pong.masked) {
-                        uint32_t r = (uint32_t)rand();
+                        uint32_t r;
+                        if (secure_random_bytes((unsigned char *)&r, sizeof(r)) != 0) {
+                            return MCP_ERR_IO;
+                        }
                         memcpy(pong.mask_key, &r, 4);
                     }
                     uint8_t *pbytes = NULL;
@@ -497,8 +516,9 @@ mcp_transport_t *mcp_ws_client_connect(mcp_context_t *ctx, const char *url) {
 
     /* Generate 16-byte random key and base64-encode */
     uint8_t rand_bytes[16];
-    for (int i = 0; i < 16; i++) {
-        rand_bytes[i] = (uint8_t)(rand() & 0xFF);
+    if (secure_random_bytes(rand_bytes, sizeof(rand_bytes)) != 0) {
+        close(fd);
+        return NULL;
     }
     static const char kB64Chars[] =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
