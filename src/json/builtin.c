@@ -253,13 +253,20 @@ static mcp_json_value_t *builtin_new_string_n(mcp_context_t *ctx, const char *s,
     if (v == NULL) {
         return NULL;
     }
-    v->u.string = xmalloc(ctx, n + 1);
-    if (v->u.string == NULL) {
+    /* u.string is committed to NULL immediately so a partial node left
+     * on the heap can never be mistaken for a valid string payload by a
+     * later destroy (a STRING node with u.string still holding the raw
+     * garbage value_new returned would be xfree'd as an invalid
+     * pointer). */
+    v->u.string = NULL;
+    char *sbuf = xmalloc(ctx, n + 1);
+    if (sbuf == NULL) {
         xfree(ctx, v);
         return NULL;
     }
-    memcpy(v->u.string, s, n);
-    v->u.string[n] = '\0';
+    memcpy(sbuf, s, n);
+    sbuf[n] = '\0';
+    v->u.string = sbuf;
     return v;
 }
 
@@ -299,15 +306,29 @@ static mcp_status_t builtin_object_set(mcp_context_t *ctx, mcp_json_value_t *obj
     }
     if (obj->u.object.len == obj->u.object.cap) {
         size_t ncap = obj->u.object.cap != 0 ? obj->u.object.cap * 2 : 4;
+        /* Save the old keys buffer before the first realloc so the
+         * vals-grow failure path below can roll the keys back to it
+         * (mirroring the q->msgs/q->sessions rollback pattern in
+         * src/server/queue.c). */
+        char **old_keys = obj->u.object.keys;
         char **nkeys = xrealloc(ctx, obj->u.object.keys, ncap * sizeof(*nkeys));
         if (nkeys == NULL) {
             return MCP_ERR_NOMEM;
         }
-        obj->u.object.keys = nkeys;
         mcp_json_value_t **nvals = xrealloc(ctx, obj->u.object.vals, ncap * sizeof(*nvals));
         if (nvals == NULL) {
+            /* The keys realloc already committed its (possibly moved)
+             * buffer to obj->u.object.keys. A vals failure must roll it
+             * back to the old pointer and free the new buffer: if we
+             * keep the moved keys while cap stays at the old value,
+             * the old keys buffer dies with no live owner, and the
+             * next successful grow or destroy walks a half-grown
+             * object and frees a stale slot. */
+            obj->u.object.keys = old_keys;
+            xfree(ctx, nkeys);
             return MCP_ERR_NOMEM;
         }
+        obj->u.object.keys = nkeys;
         obj->u.object.vals = nvals;
         obj->u.object.cap = ncap;
     }
