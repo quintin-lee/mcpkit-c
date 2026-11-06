@@ -7,6 +7,8 @@
 
 #include "mcpkit/transport/ws.h"
 
+#include "internals.h"
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
@@ -403,6 +405,9 @@ static mcp_status_t ws_stop(mcp_context_t *ctx, mcp_transport_t *t) {
         }
         ws_free(ctx, b);
     }
+    /* Detach the backend pointer so the wrapper shell does not hold a
+     * dangling reference after the backend is freed (mirrors sock_stop). */
+    mcp_transport_set_backend(ctx, t, NULL);
     return MCP_OK;
 }
 

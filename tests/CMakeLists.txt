@@ -225,6 +225,20 @@ if(MCPKIT_BUILD_TOOLS AND MCPKIT_BUILD_EXAMPLES)
                    ${CMAKE_BINARY_DIR}/examples/async-server
                    ${CMAKE_BINARY_DIR}/examples/ws-client
                    ${CMAKE_BINARY_DIR}/tests/test_async_concurrency)
+  if(MCPKIT_ENABLE_ASAN OR MCPKIT_ENABLE_TSAN)
+    # This toolchain's libasan.so does not load as the first DSO when
+    # -fsanitize=address is baked into the executable; preloading it via
+    # CTest's ENVIRONMENT keeps the gate functional on this platform.
+    execute_process(COMMAND gcc -print-file-name=libasan.so
+                    OUTPUT_VARIABLE _asan_rt OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(EXISTS "${_asan_rt}")
+      set_tests_properties(async_acceptance PROPERTIES
+                          ENVIRONMENT "LD_PRELOAD=${_asan_rt};ASAN_OPTIONS=detect_leaks=0")
+      # detect_leaks=0: the acceptance script runs under /bin/sh (bash); leak
+      # reports from bash's own command parser are false positives. Real mcpkit
+      # leak coverage comes from the dedicated C unit tests.
+    endif()
+  endif()
 endif()
 
 if(MCPKIT_BUILD_FUZZ)
