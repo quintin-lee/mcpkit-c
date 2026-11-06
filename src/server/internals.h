@@ -113,9 +113,13 @@ struct mcp_server {
     // Outbox: caller-pushed server-originated notifications awaiting a
     // transport flush. Growable; drained by serve loops (stdio/loop) or by
     // a host that owns its own transport. Destroyed with the server.
+    // All outbox access is guarded by outbox_lock; next_server_id is atomic
+    // so mcp_server_request_client can run on concurrent dispatch threads.
     mcp_message_t **outbox;
     size_t n_outbox;
     size_t cap_outbox;
+    pthread_mutex_t outbox_lock;
+    atomic_uint_fast64_t next_server_id;
     // Advanced-method state (Phase 5): log floor consulted by dlogf on
     // dispatch routes, the resource-subscription uri set, and the
     // server-originated request id counter (starts 1.0, monotonic per-server).
@@ -125,7 +129,6 @@ struct mcp_server {
     char **subscribed_uris;
     size_t n_subscribed;
     size_t cap_subscribed;
-    double next_server_id;
     // List-response cache parameters; 0/NULL = omit from list responses.
     // Set via mcp_server_set_list_cache; overridable; no lock needed
     // (read in dispatch threads, written by host before serving starts).

@@ -65,7 +65,8 @@ mcp_server_t *mcp_server_create(mcp_context_t *ctx, const char *name, const char
     atomic_init(&srv->log_floor, MCP_LOG_DEBUG);
     pthread_mutex_init(&srv->subscribed_lock, NULL);
     pthread_mutex_init(&srv->sessions_lock, NULL);
-    srv->next_server_id = 1000.0;
+    pthread_mutex_init(&srv->outbox_lock, NULL);
+    atomic_init(&srv->next_server_id, 1000ULL);
     srv->list_ttl_ms = 0;
     srv->list_cache_scope = NULL;
     srv->response_meta = NULL;
@@ -123,12 +124,14 @@ static void free_all_completions(mcp_context_t *ctx, mcp_server_t *srv) {
 // Outbox entries are caller-built notifications; destroy any that were
 // pushed but never drained by a transport before the server tears down.
 static void free_outbox(mcp_context_t *ctx, mcp_server_t *srv) {
+    pthread_mutex_lock(&srv->outbox_lock);
     for (size_t i = 0; i < srv->n_outbox; i++) {
         mcp_message_destroy(ctx, srv->outbox[i]);
     }
     srv_free(ctx, srv->outbox);
     srv->n_outbox = 0;
     srv->cap_outbox = 0;
+    pthread_mutex_unlock(&srv->outbox_lock);
 }
 
 // Resource-subscription set: each entry is a srv_strdup'd uri owned by
@@ -165,9 +168,32 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     srv_free(ctx, srv->list_cache_scope);
     pthread_mutex_destroy(&srv->subscribed_lock);
     pthread_mutex_destroy(&srv->sessions_lock);
+    pthread_mutex_destroy(&srv->outbox_lock);
     srv_free(ctx, srv->name);
     srv_free(ctx, srv->version);
     srv_free(ctx, srv);
+}
+
+/* Push one owned message onto the outbox under outbox_lock.
+ * Grows the array as needed; on NOMEM the message is destroyed and
+ * MCP_ERR_NOMEM is returned. The caller retains no reference on success. */
+static mcp_status_t outbox_push(mcp_context_t *ctx, mcp_server_t *srv,
+                                mcp_message_t *msg) {
+    pthread_mutex_lock(&srv->outbox_lock);
+    if (srv->n_outbox == srv->cap_outbox) {
+        size_t ncap = srv->cap_outbox == 0 ? 4 : srv->cap_outbox * 2;
+        mcp_message_t **narr = srv_realloc(ctx, srv->outbox, ncap * sizeof(*narr));
+        if (narr == NULL) {
+            pthread_mutex_unlock(&srv->outbox_lock);
+            mcp_message_destroy(ctx, msg);
+            return MCP_ERR_NOMEM;
+        }
+        srv->outbox = narr;
+        srv->cap_outbox = ncap;
+    }
+    srv->outbox[srv->n_outbox++] = msg;
+    pthread_mutex_unlock(&srv->outbox_lock);
+    return MCP_OK;
 }
 
 static mcp_status_t append_ptr(mcp_context_t *ctx, void ***arr, size_t *n, size_t *cap, void *p) {
@@ -370,18 +396,7 @@ mcp_status_t mcp_server_session_notify(mcp_context_t *ctx, mcp_server_t *srv,
         /* Filtered out cleanly */
         return MCP_OK;
     }
-    if (srv->n_outbox == srv->cap_outbox) {
-        size_t ncap = srv->cap_outbox == 0 ? 4 : srv->cap_outbox * 2;
-        mcp_message_t **narr = srv_realloc(ctx, srv->outbox, ncap * sizeof(*narr));
-        if (narr == NULL) {
-            mcp_message_destroy(ctx, notif);
-            return MCP_ERR_NOMEM;
-        }
-        srv->outbox = narr;
-        srv->cap_outbox = ncap;
-    }
-    srv->outbox[srv->n_outbox++] = notif;
-    return MCP_OK;
+    return outbox_push(ctx, srv, notif);
 }
 
 mcp_status_t mcp_server_session_close_subscription(mcp_context_t *ctx, mcp_server_t *srv,
@@ -399,18 +414,7 @@ mcp_status_t mcp_server_session_close_subscription(mcp_context_t *ctx, mcp_serve
         *resp_out = resp;
         return MCP_OK;
     }
-    if (srv->n_outbox == srv->cap_outbox) {
-        size_t ncap = srv->cap_outbox == 0 ? 4 : srv->cap_outbox * 2;
-        mcp_message_t **narr = srv_realloc(ctx, srv->outbox, ncap * sizeof(*narr));
-        if (narr == NULL) {
-            mcp_message_destroy(ctx, resp);
-            return MCP_ERR_NOMEM;
-        }
-        srv->outbox = narr;
-        srv->cap_outbox = ncap;
-    }
-    srv->outbox[srv->n_outbox++] = resp;
-    return MCP_OK;
+    return outbox_push(ctx, srv, resp);
 }
 
 mcp_status_t mcp_server_notify_client(mcp_context_t *ctx, mcp_server_t *srv,
@@ -418,8 +422,14 @@ mcp_status_t mcp_server_notify_client(mcp_context_t *ctx, mcp_server_t *srv,
     if (srv == NULL || method == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
-    if (srv->n_sessions == 1 && srv->sessions[0]->subscription_active) {
-        return mcp_server_session_notify(ctx, srv, srv->sessions[0], method, params);
+    pthread_mutex_lock(&srv->sessions_lock);
+    bool fast_path = (srv->n_sessions == 1 &&
+                      srv->sessions[0] != NULL &&
+                      srv->sessions[0]->subscription_active);
+    mcp_session_t *fast_sess = fast_path ? srv->sessions[0] : NULL;
+    pthread_mutex_unlock(&srv->sessions_lock);
+    if (fast_path) {
+        return mcp_server_session_notify(ctx, srv, fast_sess, method, params);
     }
     // Server takes params on success only; the builder retains them on
     // failure, so the caller's value is never leaked on the error path.
@@ -427,18 +437,7 @@ mcp_status_t mcp_server_notify_client(mcp_context_t *ctx, mcp_server_t *srv,
     if (notif == NULL) {
         return MCP_ERR_NOMEM;
     }
-    if (srv->n_outbox == srv->cap_outbox) {
-        size_t ncap = srv->cap_outbox == 0 ? 4 : srv->cap_outbox * 2;
-        mcp_message_t **narr = srv_realloc(ctx, srv->outbox, ncap * sizeof(*narr));
-        if (narr == NULL) {
-            mcp_message_destroy(ctx, notif);
-            return MCP_ERR_NOMEM;
-        }
-        srv->outbox = narr;
-        srv->cap_outbox = ncap;
-    }
-    srv->outbox[srv->n_outbox++] = notif;
-    return MCP_OK;
+    return outbox_push(ctx, srv, notif);
 }
 
 mcp_status_t mcp_server_outbox_pop(mcp_context_t *ctx, mcp_server_t *srv,
@@ -448,11 +447,14 @@ mcp_status_t mcp_server_outbox_pop(mcp_context_t *ctx, mcp_server_t *srv,
         return MCP_ERR_INVALID_ARGUMENT;
     }
     *out = NULL;
+    pthread_mutex_lock(&srv->outbox_lock);
     if (srv->n_outbox == 0) {
+        pthread_mutex_unlock(&srv->outbox_lock);
         return MCP_ERR_NOT_FOUND;
     }
     *out = srv->outbox[--srv->n_outbox];
     srv->outbox[srv->n_outbox] = NULL;
+    pthread_mutex_unlock(&srv->outbox_lock);
     return MCP_OK;
 }
 
@@ -462,24 +464,12 @@ mcp_status_t mcp_server_request_client(mcp_context_t *ctx, mcp_server_t *srv,
         return MCP_ERR_INVALID_ARGUMENT;
     }
     // Server takes params on success; builder retains on failure (no leak).
-    double id = srv->next_server_id;
-    srv->next_server_id += 1.0;
-    mcp_message_t *req = mcp_request_new_number_id(ctx, id, method, params);
+    uint64_t id = atomic_fetch_add(&srv->next_server_id, 1);
+    mcp_message_t *req = mcp_request_new_number_id(ctx, (double)id, method, params);
     if (req == NULL) {
         return MCP_ERR_NOMEM;
     }
-    if (srv->n_outbox == srv->cap_outbox) {
-        size_t ncap = srv->cap_outbox == 0 ? 4 : srv->cap_outbox * 2;
-        mcp_message_t **narr = srv_realloc(ctx, srv->outbox, ncap * sizeof(*narr));
-        if (narr == NULL) {
-            mcp_message_destroy(ctx, req);
-            return MCP_ERR_NOMEM;
-        }
-        srv->outbox = narr;
-        srv->cap_outbox = ncap;
-    }
-    srv->outbox[srv->n_outbox++] = req;
-    return MCP_OK;
+    return outbox_push(ctx, srv, req);
 }
 
 mcp_status_t mcp_server_set_list_cache(mcp_context_t *ctx, mcp_server_t *srv,
