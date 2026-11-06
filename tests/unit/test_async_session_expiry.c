@@ -330,6 +330,11 @@ static void test_hanging_sse_no_crash(void) {
 }
 
 int main(void) {
+    /* NOTE: the last_active touch/reap race (worker release-store vs.
+     * reaper acquire-load in async_server.c) is covered by the
+     * acquire/release pairing itself; the touch is internal-only
+     * (atomic_store on session_entry_t->last_active), reachable only
+     * from the worker pool, so no separate public-API test is added. */
     test_session_expiry_404();
     test_hanging_sse_no_crash();
     printf("test_async_session_expiry: OK\n");

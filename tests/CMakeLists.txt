@@ -69,6 +69,10 @@ add_executable(test_visibility unit/test_visibility.c)
 target_link_libraries(test_visibility PRIVATE mcpkit_core)
 add_test(NAME test_visibility COMMAND test_visibility)
 
+add_executable(test_queue_nomem unit/test_queue_nomem.c)
+target_link_libraries(test_queue_nomem PRIVATE mcpkit_core)
+add_test(NAME test_queue_nomem COMMAND test_queue_nomem)
+
 add_executable(test_apps unit/test_apps.c)
 target_link_libraries(test_apps PRIVATE mcpkit_core)
 add_test(NAME test_apps COMMAND test_apps)
@@ -129,6 +133,10 @@ add_test(NAME test_ws_frame COMMAND test_ws_frame)
 add_executable(test_ws_transport unit/test_ws_transport.c)
 target_link_libraries(test_ws_transport PRIVATE mcpkit_core)
 add_test(NAME test_ws_transport COMMAND test_ws_transport)
+
+add_executable(test_ws_randomness unit/test_ws_randomness.c)
+target_link_libraries(test_ws_randomness PRIVATE mcpkit_core)
+add_test(NAME test_ws_randomness COMMAND test_ws_randomness)
 
 add_executable(test_async_server unit/test_async_server.c)
 target_link_libraries(test_async_server PRIVATE mcpkit_core)
