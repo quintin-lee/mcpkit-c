@@ -155,6 +155,14 @@ add_executable(test_async_p0_concurrency unit/test_async_p0_concurrency.c)
 target_link_libraries(test_async_p0_concurrency PRIVATE mcpkit_core)
 add_test(NAME test_async_p0_concurrency COMMAND test_async_p0_concurrency)
 
+add_executable(test_async_outbox_race unit/test_async_outbox_race.c)
+target_link_libraries(test_async_outbox_race PRIVATE mcpkit_core)
+add_test(NAME test_async_outbox_race COMMAND test_async_outbox_race)
+
+add_executable(test_async_destroy_inflight unit/test_async_destroy_inflight.c)
+target_link_libraries(test_async_destroy_inflight PRIVATE mcpkit_core)
+add_test(NAME test_async_destroy_inflight COMMAND test_async_destroy_inflight)
+
 add_executable(test_plugin unit/test_plugin.c)
 target_link_libraries(test_plugin PRIVATE mcpkit_core)
 add_test(NAME test_plugin COMMAND test_plugin)
