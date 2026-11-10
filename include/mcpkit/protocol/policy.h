@@ -64,4 +64,20 @@ bool mcp_proto_policy_cache_defaults_applied(mcp_context_t *ctx,
 bool mcp_proto_policy_sort_lists_by_name(mcp_context_t *ctx,
                                           const mcp_session_t *session);
 
+/**
+ * @brief Returns true when P3 authorization hardening is active for the
+ *        session's negotiated protocol version.
+ *
+ * P3 hardening (RFC 9207 issuer gate, RFC 9728 protected-resource
+ * metadata, CIMD, SEP-835 incremental scope) is gated to sessions that
+ * negotiated 2025-11-25 or later. Below that version the gates are
+ * inactive and 401 responses retain their legacy shape.
+ *
+ * @param ctx     Context; may be NULL.
+ * @param session Session whose negotiated version is used.
+ * @return true if P3 authorization hardening applies to this session.
+ */
+bool mcp_proto_policy_auth_hardening_active(mcp_context_t *ctx,
+                                             const mcp_session_t *session);
+
 #endif

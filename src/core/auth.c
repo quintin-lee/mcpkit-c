@@ -395,6 +395,13 @@ mcp_status_t mcp_oauth_token_response_parse(mcp_context_t *ctx,
         resp_out->scope = auth_strdup(ctx, s_scp);
     }
 
+    const mcp_json_value_t *v_iss = mcp_json_object_get(ctx, root, "iss");
+    if (v_iss != NULL && mcp_json_type(ctx, v_iss) == MCP_JSON_STRING) {
+        const char *s_iss = NULL;
+        mcp_json_string_value(ctx, v_iss, &s_iss);
+        resp_out->iss = auth_strdup(ctx, s_iss);
+    }
+
     mcp_json_destroy(ctx, root);
     if (resp_out->access_token == NULL || resp_out->token_type == NULL) {
         mcp_oauth_token_response_cleanup(ctx, resp_out);
@@ -410,7 +417,32 @@ void mcp_oauth_token_response_cleanup(mcp_context_t *ctx,
     mcp_oauth_free_string(ctx, resp->token_type);
     mcp_oauth_free_string(ctx, resp->refresh_token);
     mcp_oauth_free_string(ctx, resp->scope);
+    mcp_oauth_free_string(ctx, resp->iss);
     memset(resp, 0, sizeof(*resp));
+}
+
+mcp_status_t mcp_oauth_gate_issuer(mcp_context_t *ctx,
+                                   const mcp_oauth_token_response_t *resp,
+                                   const char *expected_issuer,
+                                   bool enforce_must) {
+    (void)ctx;
+    if (resp == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (expected_issuer == NULL) {
+        return MCP_OK; /* no recorded issuer to enforce */
+    }
+    if (resp->iss == NULL) {
+        return MCP_OK; /* SEP-2468: issuer omitted is valid */
+    }
+    if (mcp_oauth_validate_issuer(expected_issuer, resp->iss)) {
+        return MCP_OK;
+    }
+    /* Mismatch */
+    if (enforce_must) {
+        return MCP_ERR_PROTOCOL; /* RFC 9207 MUST-grade rejection (2026) */
+    }
+    return MCP_OK; /* SHOULD-grade: log at transport layer, do not block (2025) */
 }
 
 static char *url_encode(mcp_context_t *ctx, const char *str) {

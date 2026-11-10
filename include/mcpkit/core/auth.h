@@ -204,6 +204,10 @@ mcp_status_t mcp_oauth_metadata_parse(mcp_context_t *ctx,
 
 /**
  * @brief OAuth 2.0 / 2.1 Token Response (RFC 6749 Section 5.1).
+ *
+ * `iss` is populated when the token endpoint returns the RFC 9207
+ * issuer field (SEP-2468); NULL when omitted (which is valid per the
+ * SEP).
  */
 typedef struct mcp_oauth_token_response {
     char *access_token;
@@ -211,7 +215,33 @@ typedef struct mcp_oauth_token_response {
     uint32_t expires_in;
     char *refresh_token;
     char *scope;
+    char *iss;
 } mcp_oauth_token_response_t;
+
+/**
+ * @brief RFC 9207 issuer gate (P3).
+ *
+ * Validates `resp->iss` (if present) against `expected_issuer`. When
+ * `enforce_must` is true, a non-NULL `expected_issuer` paired with a
+ * mismatching `resp->iss` returns MCP_ERR_PROTOCOL (MUST-grade, used by
+ * 2026-07-28 sessions). When `enforce_must` is false, mismatches are
+ * treated as SHOULD-grade: the call returns MCP_OK; the caller may log
+ * a warning but must not block the response (used by 2025-11-25 sessions).
+ * A NULL `expected_issuer` always returns MCP_OK (no expectation recorded);
+ * a NULL `resp->iss` is accepted in both modes (SEP-2468: issuer omitted
+ * is valid).
+ *
+ * @param ctx           Context; may be NULL.
+ * @param resp          Parsed token response; must be non-NULL.
+ * @param expected_issuer Recorded issuer from discovery; NULL skips the check.
+ * @param enforce_must  true enforces MUST (reject on mismatch); false enforces SHOULD.
+ * @return MCP_OK on pass or SHOULD-grade warning; MCP_ERR_PROTOCOL on MUST-grade
+ *         mismatch; MCP_ERR_INVALID_ARGUMENT on NULL `resp`.
+ */
+mcp_status_t mcp_oauth_gate_issuer(mcp_context_t *ctx,
+                                   const mcp_oauth_token_response_t *resp,
+                                   const char *expected_issuer,
+                                   bool enforce_must);
 
 /**
  * @brief Parses an OAuth 2.0 / 2.1 Token Response JSON string.
