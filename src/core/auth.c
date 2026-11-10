@@ -280,6 +280,11 @@ mcp_status_t mcp_oauth_metadata_parse(mcp_context_t *ctx,
     copy_string_field(ctx, json_metadata, "registration_endpoint", out_metadata->registration_endpoint, sizeof(out_metadata->registration_endpoint));
     copy_string_field(ctx, json_metadata, "jwks_uri", out_metadata->jwks_uri, sizeof(out_metadata->jwks_uri));
 
+    /* P3: OIDC Discovery 1.0 endpoints (RFC 8414 §10 / OpenID Connect Discovery) */
+    copy_string_field(ctx, json_metadata, "end_session_endpoint", out_metadata->end_session_endpoint, sizeof(out_metadata->end_session_endpoint));
+    copy_string_field(ctx, json_metadata, "revocation_endpoint", out_metadata->revocation_endpoint, sizeof(out_metadata->revocation_endpoint));
+    copy_string_field(ctx, json_metadata, "introspection_endpoint", out_metadata->introspection_endpoint, sizeof(out_metadata->introspection_endpoint));
+
     if (out_metadata->issuer[0] == '\0' ||
         out_metadata->authorization_endpoint[0] == '\0' ||
         out_metadata->token_endpoint[0] == '\0') {
@@ -308,6 +313,43 @@ mcp_status_t mcp_oauth_metadata_parse(mcp_context_t *ctx,
             out_metadata->client_id_metadata_document_supported = b;
         }
     }
+
+    return MCP_OK;
+}
+
+mcp_status_t mcp_oauth_discovery_merge(mcp_context_t *ctx,
+                                       const mcp_oauth_metadata_t *base,
+                                       const mcp_oauth_metadata_t *oidc,
+                                       mcp_oauth_metadata_t *merged_out) {
+    (void)ctx;
+    if (base == NULL || oidc == NULL || merged_out == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    /* Copy base as the starting point */
+    *merged_out = *base;
+
+    /* Endpoint/issuer fields: base wins when non-empty, else fill from oidc */
+    if (merged_out->issuer[0] == '\0' && oidc->issuer[0] != '\0')
+        memcpy(merged_out->issuer, oidc->issuer, sizeof(oidc->issuer));
+    if (merged_out->authorization_endpoint[0] == '\0' && oidc->authorization_endpoint[0] != '\0')
+        memcpy(merged_out->authorization_endpoint, oidc->authorization_endpoint, sizeof(oidc->authorization_endpoint));
+    if (merged_out->token_endpoint[0] == '\0' && oidc->token_endpoint[0] != '\0')
+        memcpy(merged_out->token_endpoint, oidc->token_endpoint, sizeof(oidc->token_endpoint));
+    if (merged_out->registration_endpoint[0] == '\0' && oidc->registration_endpoint[0] != '\0')
+        memcpy(merged_out->registration_endpoint, oidc->registration_endpoint, sizeof(oidc->registration_endpoint));
+    if (merged_out->jwks_uri[0] == '\0' && oidc->jwks_uri[0] != '\0')
+        memcpy(merged_out->jwks_uri, oidc->jwks_uri, sizeof(oidc->jwks_uri));
+    if (merged_out->end_session_endpoint[0] == '\0' && oidc->end_session_endpoint[0] != '\0')
+        memcpy(merged_out->end_session_endpoint, oidc->end_session_endpoint, sizeof(oidc->end_session_endpoint));
+    if (merged_out->revocation_endpoint[0] == '\0' && oidc->revocation_endpoint[0] != '\0')
+        memcpy(merged_out->revocation_endpoint, oidc->revocation_endpoint, sizeof(oidc->revocation_endpoint));
+    if (merged_out->introspection_endpoint[0] == '\0' && oidc->introspection_endpoint[0] != '\0')
+        memcpy(merged_out->introspection_endpoint, oidc->introspection_endpoint, sizeof(oidc->introspection_endpoint));
+
+    /* Capability flags: OR of the two inputs */
+    merged_out->supports_pkce_s256 = base->supports_pkce_s256 || oidc->supports_pkce_s256;
+    merged_out->client_id_metadata_document_supported =
+        base->client_id_metadata_document_supported || oidc->client_id_metadata_document_supported;
 
     return MCP_OK;
 }

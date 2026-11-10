@@ -85,6 +85,10 @@ typedef struct mcp_oauth_metadata {
     char jwks_uri[256];
     bool supports_pkce_s256;
     bool client_id_metadata_document_supported;
+    /* P3: OIDC Discovery 1.0 (OpenID Connect Discovery, draft-ietf-oauth-openid-connect-discovery / RFC 8414 §10) */
+    char end_session_endpoint[256];
+    char revocation_endpoint[256];
+    char introspection_endpoint[256];
 } mcp_oauth_metadata_t;
 
 /**
@@ -211,6 +215,35 @@ mcp_status_t mcp_pkce_generate(mcp_context_t *ctx,
 mcp_status_t mcp_oauth_metadata_parse(mcp_context_t *ctx,
                                       const mcp_json_value_t *json_metadata,
                                       mcp_oauth_metadata_t *out_metadata);
+
+/**
+ * @brief Merges a base RFC 8414 metadata document with an OpenID Connect
+ *        Discovery 1.0 extension document into a single combined view (P3 T5).
+ *
+ * Merge semantics (both inputs must be non-NULL; out==base or out==oidc is
+ * accepted for in-place use):
+ *  - Endpoint / issuer fields: `base` value wins when non-empty; otherwise
+ *    the `oidc` value fills the slot (the OIDC document may repeat the
+ *    RFC 8414 fields with identical content).
+ *  - `supports_pkce_s256` and `client_id_metadata_document_supported`: OR of
+ *    the two inputs.
+ *  - All other fields are copied from `base`.
+ *  - `ctx` may be NULL (no allocation happens).
+ *
+ * @param ctx     Context; may be NULL.
+ * @param base    Base metadata (RFC 8414, possibly populated via
+ *                mcp_oauth_metadata_parse); must be non-NULL.
+ * @param oidc    OIDC Discovery 1.0 extension metadata (same struct, parsed
+ *                from the .well-known/openid-configuration document); must
+ *                be non-NULL.
+ * @param merged_out  Receives the merged result; must be non-NULL. May
+ *                alias `base` or `oidc` for in-place merge.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT on any NULL argument.
+ */
+mcp_status_t mcp_oauth_discovery_merge(mcp_context_t *ctx,
+                                       const mcp_oauth_metadata_t *base,
+                                       const mcp_oauth_metadata_t *oidc,
+                                       mcp_oauth_metadata_t *merged_out);
 
 /**
  * @brief OAuth 2.0 / 2.1 Token Response (RFC 6749 Section 5.1).

@@ -367,6 +367,10 @@ add_executable(test_auth_rfc9207_cimds unit/test_auth_rfc9207_cimds.c)
 target_link_libraries(test_auth_rfc9207_cimds PRIVATE mcpkit_core)
 add_test(NAME test_auth_rfc9207_cimds COMMAND test_auth_rfc9207_cimds)
 
+add_executable(test_oauth_discovery_oidc unit/test_oauth_discovery_oidc.c)
+target_link_libraries(test_oauth_discovery_oidc PRIVATE mcpkit_core)
+add_test(NAME test_oauth_discovery_oidc COMMAND test_oauth_discovery_oidc)
+
 add_executable(test_registry_manifest unit/test_registry_manifest.c)
 target_link_libraries(test_registry_manifest PRIVATE mcpkit_core)
 add_test(NAME test_registry_manifest COMMAND test_registry_manifest)
