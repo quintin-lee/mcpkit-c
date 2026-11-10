@@ -103,11 +103,48 @@ typedef struct mcp_oauth_metadata {
     char registration_endpoint[256];
     char jwks_uri[256];
     bool supports_pkce_s256;
+    bool client_id_metadata_document_supported;
+    /* P3: OIDC Discovery 1.0 endpoint capture (RFC 8414 §10 extension) */
+    char end_session_endpoint[256];
+    char revocation_endpoint[256];
+    char introspection_endpoint[256];
 } mcp_oauth_metadata_t;
 
 mcp_status_t mcp_oauth_metadata_parse(mcp_context_t *ctx,
                                       const mcp_json_value_t *json_metadata,
                                       mcp_oauth_metadata_t *out_metadata);
+/* P3 T1: RFC 9207 issuer gate — MUST-grade when enforce_must=true (2026),
+   SHOULD-grade when false (2025-11-25). NULL resp->iss always passes. */
+mcp_status_t mcp_oauth_gate_issuer(mcp_context_t *ctx,
+                                   const mcp_oauth_token_response_t *resp,
+                                   const char *expected_issuer,
+                                   bool enforce_must);
+/* P3 T3: RFC 9728 Protected Resource Metadata parse/serialize */
+typedef struct mcp_protected_resource_metadata {
+    char issuer[256];
+    char resource[512];              /* REQUIRED */
+    char authorization_server[512];  /* first element of authorization_servers */
+    char scope[256];                 /* first element of scopes_supported */
+    char jwks_uri[256];
+} mcp_protected_resource_metadata_t;
+mcp_status_t mcp_oauth_protected_resource_parse(mcp_context_t *ctx,
+                                                const char *json_str,
+                                                size_t len,
+                                                mcp_protected_resource_metadata_t *out_meta);
+char *mcp_oauth_protected_resource_serialize(mcp_context_t *ctx,
+                                             const mcp_protected_resource_metadata_t *meta);
+/* P3 T5: merge a base RFC 8414 document with an OIDC Discovery 1.0 extension */
+mcp_status_t mcp_oauth_discovery_merge(mcp_context_t *ctx,
+                                       const mcp_oauth_metadata_t *base,
+                                       const mcp_oauth_metadata_t *oidc,
+                                       mcp_oauth_metadata_t *merged_out);
+/* P3 T2: DCR deprecation header pair (Deprecation: true + Sunset) */
+mcp_status_t mcp_oauth_build_dcr_deprecation_headers(mcp_context_t *ctx,
+                                                     char **deprecation_out,
+                                                     char **sunset_out);
+/* RFC 9207 / SEP-2468 'iss' parameter validation (simple 2-arg form) */
+bool mcp_oauth_validate_issuer(const char *expected_issuer,
+                               const char *response_issuer);
 
 typedef struct {
     char *access_token;
@@ -115,6 +152,7 @@ typedef struct {
     uint32_t expires_in;
     char *refresh_token;
     char *scope;
+    char *iss;   /* P3 T1: RFC 9207 issuer field, NULL when omitted */
 } mcp_oauth_token_response_t;
 
 mcp_status_t mcp_oauth_token_response_parse(mcp_context_t *ctx, const char *json, size_t len,
@@ -538,6 +576,33 @@ mcp_json_value_t *mcp_sampling_content_tool_result_new(mcp_context_t *ctx, const
 ```
 Constructs and inspects `sampling/createMessage` requests carrying tool definitions and tool choice modes, and builds `tool_use` / `tool_result` content blocks for LLM message exchanges.
 
+### `policy.h`
+Version-dependent protocol policy queries for server routes.
+Centralizes 2026-07-28 behavior gates that would otherwise scatter through
+route handlers and transport code (deprecated method detection, deterministic
+list sorting, default cache hint injection, and P3 authorization hardening gates):
+```c
+/* 2026: deprecated methods (ping, logging/setLevel, resources/subscribe,
+   resources/unsubscribe are removed) */
+bool mcp_proto_policy_method_deprecated(mcp_context_t *ctx,
+                                        const mcp_session_t *session,
+                                        const char *method);
+/* 2026: default cache hints (ttlMs:0 + cacheScope:"private") when unset */
+bool mcp_proto_policy_cache_defaults_applied(mcp_context_t *ctx,
+                                             const mcp_session_t *session);
+/* 2026: sort tools/resources/prompts lists by name */
+bool mcp_proto_policy_sort_lists_by_name(mcp_context_t *ctx,
+                                         const mcp_session_t *session);
+/* P3: true when negotiated version >= 2025-11-25 (drives RFC 9207 MUST,
+   RFC 9728 resource_metadata, CIMD deprecation headers, SEP-835 scope) */
+bool mcp_proto_policy_auth_hardening_active(mcp_context_t *ctx,
+                                            const mcp_session_t *session);
+/* P3: true when negotiated version >= 2025-11-25 and DCR is in its
+   deprecation window (drives DCR deprecation headers / CIMD preferred) */
+bool mcp_proto_policy_cimd_preferred(mcp_context_t *ctx,
+                                     const mcp_session_t *session);
+```
+
 ---
 
 ## Server (`mcpkit/server/`)
@@ -604,6 +669,16 @@ typedef void (*mcp_trace_fn)(mcp_context_t *ctx, mcp_trace_event_t ev,
    ttl_ms=0 / scope=NULL omits the corresponding fields from list results. */
 mcp_status_t  mcp_server_set_list_cache(ctx, s, uint64_t ttl_ms, const char *scope_or_null);
 mcp_status_t  mcp_server_set_response_meta(ctx, s, mcp_json_value_t *meta_or_null);
+
+/* P3 T3: RFC 9728 Protected Resource Metadata configuration.
+   Value-copy semantics; has_pr_meta=false (default) -> GET
+   /.well-known/oauth-protected-resource returns 404, 401 challenge
+   omits resource_metadata. Once set, 401 under 2025-11-25+ sessions
+   includes resource_metadata=\"<resource>\" in WWW-Authenticate. */
+mcp_status_t mcp_server_set_protected_resource_metadata(ctx, s,
+    const mcp_protected_resource_metadata_t *pr_meta);
+const mcp_protected_resource_metadata_t *mcp_server_get_protected_resource_metadata(
+    ctx, s);   /* borrowed; NULL when has_pr_meta==false */
 ```
 
 ### `tool.h`
@@ -854,6 +929,30 @@ typedef bool (*mcp_http_auth_fn)(mcp_context_t *ctx,
                                   const char *bearer_token, void *user_data);
 mcp_status_t mcp_http_serve_with_auth(ctx, mcp_server_t *, mcp_http_io_t *,
                                        mcp_http_auth_fn auth_fn, void *auth_ud);
+
+/* P3 T4: SEP-835 incremental scope consent.
+   The v2 callback returns a structured result so a host can distinguish
+   a plain DENY from a SCOPE_INSUFFICIENT rejection; the 401 challenge
+   composes RFC 6750 / RFC 9728 / SEP-835 fragments (scope,
+   resource_metadata, error_description), each NULL fragment omitted. */
+typedef enum mcp_http_auth_result_code {
+    MCP_HTTP_AUTH_OK = 0,
+    MCP_HTTP_AUTH_DENY,
+    MCP_HTTP_AUTH_SCOPE_INSUFFICIENT
+} mcp_http_auth_result_code_t;
+typedef struct mcp_http_auth_result {
+    mcp_http_auth_result_code_t code;
+    const char *scope;             /* space-separated, SCOPE_INSUFFICIENT only */
+    const char *resource_metadata; /* RFC 9728 URL, optional */
+    const char *error_description; /* free-form reason, optional */
+} mcp_http_auth_result_t;
+typedef void (*mcp_http_auth_result_v2_fn)(mcp_context_t *ctx,
+                                           const char *bearer_token,
+                                           void *user_data,
+                                           mcp_http_auth_result_t *out);
+mcp_status_t mcp_http_serve_with_auth_v2(ctx, mcp_server_t *, mcp_http_io_t *,
+                                          mcp_http_auth_result_v2_fn auth_fn_v2,
+                                          void *auth_user_data);
 ```
 Accepts `POST` (JSON-RPC body), `GET` (SSE stream or 405), `DELETE`
 (session teardown). Sessions are loop-local (up to 16, `sess-N` ids);
@@ -861,6 +960,15 @@ destroyed when the loop exits. Validates `MCP-Protocol-Version`,
 `Mcp-Method`, and `Mcp-Name` header mirroring on POST requests per
 SEP-2243, rejecting mismatches with HTTP 400 and standard JSON-RPC errors
 (`MCP_RPC_HEADER_MISMATCH` -32020 / `MCP_RPC_UNSUPPORTED_PROTOCOL_VERSION` -32022).
+
+**P3 T3 routing:** `GET /.well-known/oauth-protected-resource` is a public
+endpoint (no auth) that returns 200 + the configured PRM JSON when
+`mcp_server_set_protected_resource_metadata` has been called, or 404
+otherwise. When the PRM is configured and the request's
+`MCP-Protocol-Version` header is at or above 2025-11-25, `send_unauthorized`
+in `handle_post` appends `resource_metadata="<resource>"` to the
+`WWW-Authenticate` Bearer challenge (MUST-grade under 2026; the gate is
+the same boolean, MUST/SHOULD distinction is documented in the P3 spec).
 
 ### `sse.h`
 W3C Server-Sent Events (SSE) streaming frame parser:
