@@ -58,6 +58,7 @@
 #include "mcpkit/json/schema.h"
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/protocol/initialize.h"
+#include "mcpkit/protocol/policy.h"
 #include "mcpkit/protocol/validate.h"
 #include "mcpkit/server/server.h"
 #include "mcpkit/server/tool.h"

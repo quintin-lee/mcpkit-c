@@ -9,7 +9,6 @@
  * callers should fall back to MCP_PROTOCOL_VERSION_LATEST in that case.
  */
 #include "mcpkit/protocol/initialize.h"
-#include "mcpkit/protocol/version.h"
 
 #include <string.h>
 
