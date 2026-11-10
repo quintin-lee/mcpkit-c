@@ -80,4 +80,20 @@ bool mcp_proto_policy_sort_lists_by_name(mcp_context_t *ctx,
 bool mcp_proto_policy_auth_hardening_active(mcp_context_t *ctx,
                                              const mcp_session_t *session);
 
+/**
+ * @brief Returns true when the session prefers Client ID Metadata Documents
+ *        (SEP-991 / CIMD) over the deprecated RFC 7591 Dynamic Client
+ *        Registration (DCR) endpoint.
+ *
+ * Active at 2025-11-25 and later. DCR responses in this regime carry the
+ * `Deprecation: true` + `Sunset` header pair (see
+ * mcp_oauth_build_dcr_deprecation_headers).
+ *
+ * @param ctx     Context; may be NULL.
+ * @param session Session whose negotiated version is used.
+ * @return true if CIMD is the preferred registration mechanism.
+ */
+bool mcp_proto_policy_cimd_preferred(mcp_context_t *ctx,
+                                      const mcp_session_t *session);
+
 #endif

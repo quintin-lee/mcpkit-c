@@ -41,3 +41,8 @@ bool mcp_proto_policy_auth_hardening_active(mcp_context_t *ctx,
                                              const mcp_session_t *session) {
     return mcp_proto_at_least(mcp_session_negotiated(ctx, session), MCP_PROTO_2025_11_25);
 }
+
+bool mcp_proto_policy_cimd_preferred(mcp_context_t *ctx,
+                                      const mcp_session_t *session) {
+    return mcp_proto_at_least(mcp_session_negotiated(ctx, session), MCP_PROTO_2025_11_25);
+}

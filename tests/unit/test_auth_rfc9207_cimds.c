@@ -97,28 +97,48 @@ int main(void) {
     CHECK(mcp_oauth_validate_issuer("https://auth.example.com", NULL)); /* omitted -> OK */
     CHECK(!mcp_oauth_validate_issuer(NULL, "https://auth.example.com")); /* no expectation */
 
-    /* 9. P3 policy hook: auth_hardening_active true at >=2025-11-25, false below */
+    /* 9. P3 policy hooks: auth_hardening_active & cimd_preferred version matrix */
     mcp_server_t *srv = mcp_server_create(ctx, "rfc9207-test", "1.0");
     CHECK(srv != NULL);
 
     mcp_session_t *s = mcp_server_create_session(ctx, srv);
     CHECK(s != NULL);
+
     CHECK(mcp_session_set_negotiated(ctx, s, MCP_PROTO_2025_11_25) == MCP_OK);
     CHECK(mcp_proto_policy_auth_hardening_active(ctx, s) == true);
+    CHECK(mcp_proto_policy_cimd_preferred(ctx, s) == true);
 
     CHECK(mcp_session_set_negotiated(ctx, s, MCP_PROTO_2026_07_28) == MCP_OK);
     CHECK(mcp_proto_policy_auth_hardening_active(ctx, s) == true);
+    CHECK(mcp_proto_policy_cimd_preferred(ctx, s) == true);
 
     CHECK(mcp_session_set_negotiated(ctx, s, MCP_PROTO_2025_06_18) == MCP_OK);
     CHECK(mcp_proto_policy_auth_hardening_active(ctx, s) == false);
+    CHECK(mcp_proto_policy_cimd_preferred(ctx, s) == false);
 
     CHECK(mcp_session_set_negotiated(ctx, s, MCP_PROTO_2024_11_05) == MCP_OK);
     CHECK(mcp_proto_policy_auth_hardening_active(ctx, s) == false);
+    CHECK(mcp_proto_policy_cimd_preferred(ctx, s) == false);
 
     mcp_server_destroy_session(ctx, srv, s);
 
-    /* NULL session -> 2024 baseline -> false */
+    /* NULL session -> 2024 baseline -> both hooks false */
     CHECK(mcp_proto_policy_auth_hardening_active(ctx, NULL) == false);
+    CHECK(mcp_proto_policy_cimd_preferred(ctx, NULL) == false);
+
+    /* 10. CIMD DCR deprecation headers (SEP-991: DCR sunset) */
+    char *deprecation = NULL;
+    char *sunset = NULL;
+    CHECK(mcp_oauth_build_dcr_deprecation_headers(ctx, &deprecation, &sunset) == MCP_OK);
+    CHECK(deprecation != NULL && strcmp(deprecation, "true") == 0);
+    CHECK(sunset != NULL && sunset[0] != '\0');
+    /* Sunset must be an RFC 1123 date ending in GMT and not shorter than 10 chars */
+    CHECK(strstr(sunset, "GMT") != NULL);
+    CHECK(strlen(sunset) >= 10);
+    mcp_oauth_free_string(ctx, deprecation);
+    mcp_oauth_free_string(ctx, sunset);
+    /* NULL out pointer -> INVALID_ARGUMENT */
+    CHECK(mcp_oauth_build_dcr_deprecation_headers(ctx, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
 
     mcp_server_destroy(ctx, srv);
 

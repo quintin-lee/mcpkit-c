@@ -30,6 +30,16 @@ extern "C" {
 /** @brief RFC 8693 OAuth 2.0 Token Exchange grant type */
 #define MCP_OAUTH_GRANT_TYPE_TOKEN_EXCHANGE "urn:ietf:params:oauth:grant-type:token-exchange"
 
+/**
+ * @brief Number of days between the deprecation announcement of the RFC 7591
+ *        Dynamic Client Registration endpoint and its scheduled Sunset.
+ *
+ * P3: when the server serves a DCR endpoint and the negotiated session is at
+ *        or above the P3 gate (mcp_proto_policy_cimd_preferred), the response
+ *        carries `Deprecation: true` and `Sunset: <now + this many days>`.
+ */
+#define MCP_OAUTH_DCR_DEPRECATION_WINDOW_DAYS 365
+
 /** @brief RFC 8693 Standard Security Token Types */
 #define MCP_OAUTH_TOKEN_TYPE_ACCESS_TOKEN   "urn:ietf:params:oauth:token-type:access_token"
 #define MCP_OAUTH_TOKEN_TYPE_REFRESH_TOKEN  "urn:ietf:params:oauth:token-type:refresh_token"
@@ -298,6 +308,30 @@ mcp_status_t mcp_oauth_build_client_credentials_request(mcp_context_t *ctx,
                                                         const char *client_secret,
                                                         const char *scope,
                                                         char **body_out);
+
+/**
+ * @brief Builds the Deprecation / Sunset response header pair announcing
+ *        that the RFC 7591 Dynamic Client Registration (DCR) endpoint is
+ *        deprecated in favor of Client ID Metadata Documents (SEP-991).
+ *
+ * The two returned owned strings are:
+ *  - `Deprecation: true`
+ *  - `Sunset: <RFC 1123 date>`, computed as the current time plus
+ *    MCP_OAUTH_DCR_DEPRECATION_WINDOW_DAYS.
+ *
+ * Both are freed via mcp_oauth_free_string(). Callers that are not
+ * serving a DCR endpoint should skip the call.
+ *
+ * @param ctx           Context; may be NULL.
+ * @param deprecation_out Receives `"true"` (owned) on MCP_OK.
+ * @param sunset_out    Receives `"Wed, 04 Nov 2027 12:00:00 GMT"`-style
+ *                      string (owned) on MCP_OK.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if either out pointer
+ *         is NULL; MCP_ERR_NOMEM on allocation failure.
+ */
+mcp_status_t mcp_oauth_build_dcr_deprecation_headers(mcp_context_t *ctx,
+                                                     char **deprecation_out,
+                                                     char **sunset_out);
 
 /**
  * @brief Builds application/x-www-form-urlencoded body for RFC 8693 Token Exchange.

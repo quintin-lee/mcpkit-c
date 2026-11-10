@@ -520,6 +520,62 @@ mcp_status_t mcp_oauth_build_token_request_pkce(mcp_context_t *ctx,
     return MCP_OK;
 }
 
+mcp_status_t mcp_oauth_build_dcr_deprecation_headers(mcp_context_t *ctx,
+                                                     char **deprecation_out,
+                                                     char **sunset_out) {
+    if (deprecation_out == NULL || sunset_out == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    *deprecation_out = NULL;
+    *sunset_out = NULL;
+
+    const mcp_allocator_t *a = alloc_of(ctx);
+    *deprecation_out = a->malloc_fn(5, a->userdata);
+    if (*deprecation_out == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    memcpy(*deprecation_out, "true", 5);
+
+    time_t now = time(NULL);
+    time_t sunset_epoch = now + MCP_OAUTH_DCR_DEPRECATION_WINDOW_DAYS * 86400;
+    struct tm tm_buf;
+    if (gmtime_r(&sunset_epoch, &tm_buf) == NULL) {
+        mcp_oauth_free_string(ctx, *deprecation_out);
+        *deprecation_out = NULL;
+        return MCP_ERR_NOMEM;
+    }
+    /* RFC 1123 / HTTP-date (RFC 9110 § 5.6.7): "Www, DD Mon YYYY HH:MM:SS GMT" */
+    static const char *const k_days[7] = {
+        "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    static const char *const k_months[12] = {
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    if (tm_buf.tm_wday < 0 || tm_buf.tm_wday > 6 ||
+        tm_buf.tm_mon < 0 || tm_buf.tm_mon > 11) {
+        mcp_oauth_free_string(ctx, *deprecation_out);
+        *deprecation_out = NULL;
+        return MCP_ERR_NOMEM;
+    }
+    char tmp[64];
+    int n = snprintf(tmp, sizeof(tmp), "%s, %02d %s %d %02d:%02d:%02d GMT",
+                     k_days[tm_buf.tm_wday], tm_buf.tm_mday, k_months[tm_buf.tm_mon],
+                     tm_buf.tm_year + 1900, tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
+    if (n < 0 || (size_t)n >= sizeof(tmp)) {
+        mcp_oauth_free_string(ctx, *deprecation_out);
+        *deprecation_out = NULL;
+        return MCP_ERR_NOMEM;
+    }
+    size_t len = (size_t)n + 1;
+    *sunset_out = a->malloc_fn(len, a->userdata);
+    if (*sunset_out == NULL) {
+        mcp_oauth_free_string(ctx, *deprecation_out);
+        *deprecation_out = NULL;
+        return MCP_ERR_NOMEM;
+    }
+    memcpy(*sunset_out, tmp, len);
+    return MCP_OK;
+}
+
 mcp_status_t mcp_oauth_build_refresh_request(mcp_context_t *ctx,
                                              const char *refresh_token,
                                              const char *client_id,
