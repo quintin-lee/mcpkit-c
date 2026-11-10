@@ -5,6 +5,7 @@
 #include "mcpkit/json/json.h"
 #include "mcpkit/json/object.h"
 #include "mcpkit/protocol/initialize.h"
+#include "mcpkit/protocol/policy.h"
 #include "mcpkit/protocol/version.h"
 #include "mcpkit/server/server.h"
 #include "mcpkit/server/session.h"
@@ -83,6 +84,18 @@ int main(void) {
     mcp_session_t *sess = mcp_server_create_session(ctx, srv);
     CHECK(sess != NULL);
     CHECK(mcp_session_negotiated(ctx, sess) == MCP_PROTO_2024_11_05);
+
+    /* 7. Protocol policy gates: legacy session vs 2026 session */
+    CHECK(mcp_proto_policy_method_deprecated(ctx, sess, "ping") == false);
+    CHECK(mcp_proto_policy_sort_lists_by_name(ctx, sess) == false);
+
+    CHECK(mcp_session_set_negotiated(ctx, sess, MCP_PROTO_2026_07_28) == MCP_OK);
+    CHECK(mcp_proto_policy_method_deprecated(ctx, sess, "ping") == true);
+    CHECK(mcp_proto_policy_method_deprecated(ctx, sess, "logging/setLevel") == true);
+    CHECK(mcp_proto_policy_method_deprecated(ctx, sess, "resources/subscribe") == true);
+    CHECK(mcp_proto_policy_method_deprecated(ctx, sess, "resources/unsubscribe") == true);
+    CHECK(mcp_proto_policy_method_deprecated(ctx, sess, "tools/list") == false);
+    CHECK(mcp_proto_policy_sort_lists_by_name(ctx, sess) == true);
 
     mcp_server_destroy_session(ctx, srv, sess);
     mcp_server_destroy(ctx, srv);

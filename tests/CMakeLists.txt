@@ -45,6 +45,10 @@ add_executable(test_proto_negotiate unit/test_proto_negotiate.c)
 target_link_libraries(test_proto_negotiate PRIVATE mcpkit_core)
 add_test(NAME test_proto_negotiate COMMAND test_proto_negotiate)
 
+add_executable(test_proto_policy_matrix unit/test_proto_policy_matrix.c)
+target_link_libraries(test_proto_policy_matrix PRIVATE mcpkit_core)
+add_test(NAME test_proto_policy_matrix COMMAND test_proto_policy_matrix)
+
 add_executable(test_schema unit/test_schema.c)
 target_link_libraries(test_schema PRIVATE mcpkit_core)
 add_test(NAME test_schema COMMAND test_schema)
