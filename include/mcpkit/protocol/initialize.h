@@ -16,6 +16,7 @@
 
 #include "mcpkit/core/error.h"
 #include "mcpkit/json/value.h"
+#include "mcpkit/protocol/version.h"
 
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_message mcp_message_t;
@@ -28,7 +29,7 @@ typedef struct mcp_message mcp_message_t;
  */
 #define MCP_PROTOCOL_VERSION_2026_07_28 "2026-07-28"
 #define MCP_PROTOCOL_VERSION_2025_11_25 "2025-11-25"
-#define MCP_PROTOCOL_VERSION_LATEST "2025-06-18"
+#define MCP_PROTOCOL_VERSION_LATEST "2025-11-25"
 
 /**
  * @brief Builds the "params" JSON object for an initialize request using
@@ -91,6 +92,22 @@ const char *mcp_protocol_negotiate(mcp_context_t *ctx, const char *client_versio
  * @return Caller-owned result value; free with mcp_json_destroy.
  */
 mcp_json_value_t *mcp_initialize_result_new(mcp_context_t *ctx, const char *server_name,
+                                              const char *server_version);
+
+/**
+ * @brief Builds the "result" JSON object for an initialize response using
+ * an explicit negotiated protocol version.
+ *
+ * @param ctx             Context; NULL uses the default allocator.
+ * @param negotiated      Negotiated version enum. If MCP_PROTO_NONE, falls back
+ *                        to MCP_PROTOCOL_VERSION_LATEST.
+ * @param server_name     Server name (must be non-NULL).
+ * @param server_version  Server version (must be non-NULL).
+ * @return Caller-owned result value; free with mcp_json_destroy.
+ */
+mcp_json_value_t *mcp_initialize_result_new_v(mcp_context_t *ctx,
+                                              mcp_proto_version_t negotiated,
+                                              const char *server_name,
                                               const char *server_version);
 
 /**

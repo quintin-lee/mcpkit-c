@@ -9,6 +9,7 @@
  * callers should fall back to MCP_PROTOCOL_VERSION_LATEST in that case.
  */
 #include "mcpkit/protocol/initialize.h"
+#include "mcpkit/protocol/version.h"
 
 #include <string.h>
 
@@ -16,9 +17,44 @@
 #include "mcpkit/json/object.h"
 #include "mcpkit/protocol/message.h"
 
+const char *mcp_proto_version_string(mcp_proto_version_t v) {
+    switch (v) {
+        case MCP_PROTO_2026_07_28: return MCP_PROTOCOL_VERSION_2026_07_28;
+        case MCP_PROTO_2025_11_25: return MCP_PROTOCOL_VERSION_2025_11_25;
+        case MCP_PROTO_2025_06_18: return "2025-06-18";
+        case MCP_PROTO_2025_03_26: return "2025-03-26";
+        case MCP_PROTO_2024_11_05: return "2024-11-05";
+        case MCP_PROTO_NONE:
+        default:
+            return NULL;
+    }
+}
+
+mcp_proto_version_t mcp_proto_version_parse(const char *s) {
+    if (s == NULL) {
+        return MCP_PROTO_NONE;
+    }
+    if (strcmp(s, MCP_PROTOCOL_VERSION_2026_07_28) == 0) return MCP_PROTO_2026_07_28;
+    if (strcmp(s, MCP_PROTOCOL_VERSION_2025_11_25) == 0) return MCP_PROTO_2025_11_25;
+    if (strcmp(s, "2025-06-18") == 0) return MCP_PROTO_2025_06_18;
+    if (strcmp(s, "2025-03-26") == 0) return MCP_PROTO_2025_03_26;
+    if (strcmp(s, "2024-11-05") == 0) return MCP_PROTO_2024_11_05;
+    return MCP_PROTO_NONE;
+}
+
+bool mcp_proto_at_least(mcp_proto_version_t v, mcp_proto_version_t min) {
+    if (v == MCP_PROTO_NONE || min == MCP_PROTO_NONE) {
+        return false;
+    }
+    return v >= min;
+}
+
 // Supported protocol versions, most-recent first.
 static const char *const k_supported[] = {
-    MCP_PROTOCOL_VERSION_LATEST,
+    MCP_PROTOCOL_VERSION_2026_07_28,
+    MCP_PROTOCOL_VERSION_2025_11_25,
+    "2025-06-18",
+    "2025-03-26",
     "2024-11-05",
 };
 
@@ -142,7 +178,10 @@ const char *mcp_protocol_negotiate(mcp_context_t *ctx, const char *client_versio
     if (client_version == NULL) {
         return NULL;
     }
-    for (size_t i = 0; i < sizeof(k_supported) / sizeof(k_supported[0]); i++) {
+    if (strcmp(client_version, MCP_PROTOCOL_VERSION_2026_07_28) == 0) {
+        return MCP_PROTOCOL_VERSION_2025_11_25;
+    }
+    for (size_t i = 1; i < sizeof(k_supported) / sizeof(k_supported[0]); i++) {
         if (strcmp(client_version, k_supported[i]) == 0) {
             return k_supported[i];
         }
@@ -150,14 +189,19 @@ const char *mcp_protocol_negotiate(mcp_context_t *ctx, const char *client_versio
     return NULL;
 }
 
-mcp_json_value_t *mcp_initialize_result_new(mcp_context_t *ctx, const char *server_name,
-                                            const char *server_version) {
+mcp_json_value_t *mcp_initialize_result_new_v(mcp_context_t *ctx,
+                                              mcp_proto_version_t negotiated,
+                                              const char *server_name,
+                                              const char *server_version) {
     if (server_name == NULL || server_version == NULL) {
         return NULL;
     }
+    const char *ver_str = mcp_proto_version_string(negotiated);
+    if (ver_str == NULL) {
+        ver_str = MCP_PROTOCOL_VERSION_LATEST;
+    }
     mcp_json_value_t *res = mcp_json_object_new(ctx);
-    mcp_json_value_t *pv = res != NULL ? mcp_json_string_new(ctx, MCP_PROTOCOL_VERSION_LATEST)
-                                       : NULL;
+    mcp_json_value_t *pv = res != NULL ? mcp_json_string_new(ctx, ver_str) : NULL;
     mcp_json_value_t *caps = pv != NULL ? mcp_json_object_new(ctx) : NULL;
     mcp_json_value_t *si = caps != NULL ? info_block(ctx, server_name, server_version) : NULL;
     if (res == NULL || pv == NULL || caps == NULL || si == NULL) {
@@ -194,6 +238,11 @@ mcp_json_value_t *mcp_initialize_result_new(mcp_context_t *ctx, const char *serv
         return NULL;
     }
     return res;
+}
+
+mcp_json_value_t *mcp_initialize_result_new(mcp_context_t *ctx, const char *server_name,
+                                            const char *server_version) {
+    return mcp_initialize_result_new_v(ctx, MCP_PROTO_NONE, server_name, server_version);
 }
 
 mcp_message_t *mcp_initialized_notification_new(mcp_context_t *ctx) {

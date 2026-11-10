@@ -42,8 +42,11 @@ int main(void) {
     CHECK(old != NULL);
     CHECK(mcp_initialize_params_validate(ctx, old) == MCP_OK);
 
-    // negotiation
+    // negotiation matrix (5 versions)
+    CHECK(strcmp(mcp_protocol_negotiate(ctx, "2026-07-28"), "2025-11-25") == 0);
+    CHECK(strcmp(mcp_protocol_negotiate(ctx, "2025-11-25"), "2025-11-25") == 0);
     CHECK(strcmp(mcp_protocol_negotiate(ctx, "2025-06-18"), "2025-06-18") == 0);
+    CHECK(strcmp(mcp_protocol_negotiate(ctx, "2025-03-26"), "2025-03-26") == 0);
     CHECK(strcmp(mcp_protocol_negotiate(ctx, "2024-11-05"), "2024-11-05") == 0);
     CHECK(mcp_protocol_negotiate(ctx, "1999-01-01") == NULL);
     CHECK(mcp_protocol_negotiate(ctx, NULL) == NULL);
