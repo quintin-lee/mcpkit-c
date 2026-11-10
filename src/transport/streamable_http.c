@@ -303,7 +303,8 @@ static mcp_status_t validate_http_metadata(mcp_context_t *ctx, mcp_http_request_
 static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
                                 http_session_table_t *table, mcp_http_io_t *io,
                                 mcp_http_request_t *req,
-                                mcp_http_auth_fn auth_fn, void *auth_ud) {
+                                mcp_http_auth_fn auth_fn, void *auth_ud,
+                                mcp_http_auth_result_v2_fn auth_fn_v2) {
     /* P3 T3: 401 challenges carry the resource_metadata fragment when the
        request's protocol version (MCP-Protocol-Version header, or the
        _meta version once parsed below — the header is the conservative
@@ -324,6 +325,33 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
         }
         const char *token = auth_hdr + 7;
         if (!auth_fn(ctx, token, auth_ud)) {
+            return send_unauthorized(ctx, io, NULL, pr_resource, NULL);
+        }
+    } else if (auth_fn_v2 != NULL) {
+        const char *auth_hdr = mcp_http_header(ctx, req, "Authorization");
+        if (auth_hdr == NULL || !ci_prefix_eq(auth_hdr, 7, "bearer ")) {
+            return send_unauthorized(ctx, io, NULL, pr_resource, NULL);
+        }
+        const char *token = auth_hdr + 7;
+        mcp_http_auth_result_t res;
+        res.code = MCP_HTTP_AUTH_OK;
+        res.scope = NULL;
+        res.resource_metadata = NULL;
+        res.error_description = NULL;
+        auth_fn_v2(ctx, token, auth_ud, &res);
+        switch (res.code) {
+        case MCP_HTTP_AUTH_OK:
+            break; /* proceed */
+        case MCP_HTTP_AUTH_DENY:
+            /* Bare 401 (or resource_metadata only, per P3 T3 gate). */
+            return send_unauthorized(ctx, io, NULL, pr_resource, NULL);
+        case MCP_HTTP_AUTH_SCOPE_INSUFFICIENT:
+            return send_unauthorized(ctx, io, res.scope,
+                                    res.resource_metadata != NULL ? res.resource_metadata : pr_resource,
+                                    res.error_description);
+        default:
+            /* Unknown code: treat as DENY so a future enum extension cannot
+               ever silently allow a request. */
             return send_unauthorized(ctx, io, NULL, pr_resource, NULL);
         }
     }
@@ -517,7 +545,8 @@ static mcp_status_t handle_delete(mcp_context_t *ctx, mcp_server_t *server,
 
 static mcp_status_t http_serve_impl(mcp_context_t *ctx, mcp_server_t *server,
                                      mcp_http_io_t *io, mcp_http_auth_fn auth_fn,
-                                     void *auth_ud) {
+                                     void *auth_ud,
+                                     mcp_http_auth_result_v2_fn auth_fn_v2) {
     http_session_table_t table;
     memset(&table, 0, sizeof(table));
     table.next_id = 1;
@@ -601,7 +630,7 @@ static mcp_status_t http_serve_impl(mcp_context_t *ctx, mcp_server_t *server,
         mcp_http_method_t m = mcp_http_request_method(ctx, req);
         mcp_status_t st;
         if (m == MCP_HTTP_POST) {
-            st = handle_post(ctx, server, &table, io, req, auth_fn, auth_ud);
+            st = handle_post(ctx, server, &table, io, req, auth_fn, auth_ud, auth_fn_v2);
         } else if (m == MCP_HTTP_GET) {
             st = handle_get(ctx, server, io, req);
         } else if (m == MCP_HTTP_DELETE) {
@@ -634,7 +663,7 @@ mcp_status_t mcp_http_serve(mcp_context_t *ctx, mcp_server_t *server, mcp_http_i
     if (server == NULL || io == NULL || io->read == NULL || io->write == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
-    return http_serve_impl(ctx, server, io, NULL, NULL);
+    return http_serve_impl(ctx, server, io, NULL, NULL, NULL);
 }
 
 mcp_status_t mcp_http_serve_with_auth(mcp_context_t *ctx, mcp_server_t *server,
@@ -643,5 +672,15 @@ mcp_status_t mcp_http_serve_with_auth(mcp_context_t *ctx, mcp_server_t *server,
     if (server == NULL || io == NULL || io->read == NULL || io->write == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
-    return http_serve_impl(ctx, server, io, auth_fn, auth_user_data);
+    return http_serve_impl(ctx, server, io, auth_fn, auth_user_data, NULL);
+}
+
+mcp_status_t mcp_http_serve_with_auth_v2(mcp_context_t *ctx, mcp_server_t *server,
+                                          mcp_http_io_t *io,
+                                          mcp_http_auth_result_v2_fn auth_fn_v2,
+                                          void *auth_user_data) {
+    if (server == NULL || io == NULL || io->read == NULL || io->write == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    return http_serve_impl(ctx, server, io, NULL, auth_user_data, auth_fn_v2);
 }

@@ -140,6 +140,39 @@ static char *make_post(const char *body, const char *extra_hdrs, char *buf, size
     return buf;
 }
 
+typedef struct {
+    mcp_http_auth_result_code_t code;
+    const char *scope;
+    const char *resource_metadata;
+    const char *error_description;
+} v2_expected_t;
+
+static void auth_v2_fixed(mcp_context_t *ctx, const char *tok, void *ud,
+                          mcp_http_auth_result_t *out) {
+    (void)ctx;
+    (void)tok;
+    v2_expected_t *e = ud;
+    out->code = e->code;
+    out->scope = e->scope;
+    out->resource_metadata = e->resource_metadata;
+    out->error_description = e->error_description;
+}
+
+static char *run_script_auth_v2(mcp_context_t *ctx, mcp_server_t *srv,
+                                 const char **reqs, size_t n, mcp_status_t *st_out,
+                                 mcp_http_auth_result_v2_fn fn, void *ud) {
+    mem_io_t m;
+    memset(&m, 0, sizeof(m));
+    m.reqs = reqs;
+    m.nreqs = n;
+    mcp_http_io_t io;
+    io.user = &m;
+    io.read = mem_read;
+    io.write = mem_write;
+    *st_out = mcp_http_serve_with_auth_v2(ctx, srv, &io, fn, ud);
+    return m.out;
+}
+
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
     CHECK(ctx != NULL);
@@ -267,6 +300,130 @@ int main(void) {
         out = run_script_auth(ctx, srv, reqs, 1, &st, auth_always_false, NULL);
         CHECK(st == MCP_OK && out != NULL);
         CHECK(strstr(out, "WWW-Authenticate: Bearer\r\n") != NULL);
+        CHECK(strstr(out, "resource_metadata") == NULL);
+        free(out);
+    }
+
+    /* ---- P3 T4: SEP-835 incremental scope consent via auth_fn_v2 ---- */
+
+    /* A 2026 protocol-version header MUST agree with the initialize body's
+       protocolVersion or validate_http_metadata rejects it as -32020 before
+       auth is ever consulted; use a matching 2026-07-28 body for these cases. */
+    const char *init_2026_body =
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2026-07-28\","
+        "\"capabilities\":{},\"clientInfo\":{\"name\":\"t\",\"version\":\"0.1.0\"}}}";
+    const char *scope_hdrs =
+        "Authorization: Bearer tok\r\nMCP-Protocol-Version: 2026-07-28\r\n";
+    const char *scope_hdrs_2025_11_25 =
+        "Authorization: Bearer tok\r\nMCP-Protocol-Version: 2025-11-25\r\n";
+    const char *scope_hdrs_pre_p3 =
+        "Authorization: Bearer tok\r\nMCP-Protocol-Version: 2025-06-18\r\n";
+
+    /* 8. v2 SCOPE_INSUFFICIENT with scope + resource_metadata +
+          error_description (2026 MUST) -> all three fragments in the
+          WWW-Authenticate challenge */
+    {
+        static const char kScope[] = "mcp.read mcp.write";
+        static const char kResMeta[] = "https://mcp.example.com/api";
+        static const char kDesc[] = "token lacks mcp.write";
+        v2_expected_t exp = { .code = MCP_HTTP_AUTH_SCOPE_INSUFFICIENT,
+                              .scope = kScope, .resource_metadata = kResMeta,
+                              .error_description = kDesc };
+        req = make_post(init_2026_body, scope_hdrs, buf, sizeof(buf));
+        const char *reqs[] = { req };
+        out = run_script_auth_v2(ctx, srv, reqs, 1, &st, auth_v2_fixed, &exp);
+        CHECK(st == MCP_OK && out != NULL);
+        CHECK(strstr(out, "HTTP/1.1 401 Unauthorized") != NULL);
+        CHECK(strstr(out, "scope=\"mcp.read mcp.write\"") != NULL);
+        CHECK(strstr(out, "resource_metadata=\"https://mcp.example.com/api\"") != NULL);
+        CHECK(strstr(out, "error_description=\"token lacks mcp.write\"") != NULL);
+        free(out);
+    }
+
+    /* 9. v2 DENY -> bare 401 (no scope fragment); resource_metadata is
+          still present because pr_meta is configured + 2026 header (T3 gate)
+          but the callback's own fields are unused for DENY */
+    {
+        v2_expected_t exp = { .code = MCP_HTTP_AUTH_DENY, .scope = NULL,
+                              .resource_metadata = NULL, .error_description = NULL };
+        req = make_post(init_2026_body, scope_hdrs, buf, sizeof(buf));
+        const char *reqs[] = { req };
+        out = run_script_auth_v2(ctx, srv, reqs, 1, &st, auth_v2_fixed, &exp);
+        CHECK(st == MCP_OK && out != NULL);
+        CHECK(strstr(out, "HTTP/1.1 401 Unauthorized") != NULL);
+        CHECK(strstr(out, "scope=") == NULL);
+        /* resource_metadata comes from the T3 gate, not from the callback */
+        CHECK(strstr(out, "resource_metadata=\"https://mcp.example.com/api\"") != NULL);
+        free(out);
+    }
+
+    /* 10. v2 SCOPE_INSUFFICIENT with resource_metadata=NULL -> the T3 gate
+           still supplies resource_metadata from the configured pr_meta */
+    {
+        static const char kScope[] = "mcp.read";
+        v2_expected_t exp = { .code = MCP_HTTP_AUTH_SCOPE_INSUFFICIENT,
+                              .scope = kScope, .resource_metadata = NULL,
+                              .error_description = NULL };
+        req = make_post(init_2026_body, scope_hdrs, buf, sizeof(buf));
+        const char *reqs[] = { req };
+        out = run_script_auth_v2(ctx, srv, reqs, 1, &st, auth_v2_fixed, &exp);
+        CHECK(st == MCP_OK && out != NULL);
+        CHECK(strstr(out, "HTTP/1.1 401 Unauthorized") != NULL);
+        CHECK(strstr(out, "scope=\"mcp.read\"") != NULL);
+        CHECK(strstr(out, "resource_metadata=\"https://mcp.example.com/api\"") != NULL);
+        free(out);
+    }
+
+    /* 11. v2 SCOPE_INSUFFICIENT under 2025-11-25 (SHOULD grade): same
+           fragments emitted; the grade difference is advisory (MUST-grade
+           2026 makes resource_metadata mandatory, but this library's gate
+           is the same boolean — documented in the P3 spec). */
+    {
+        static const char kScope[] = "mcp.read";
+        v2_expected_t exp = { .code = MCP_HTTP_AUTH_SCOPE_INSUFFICIENT,
+                              .scope = kScope, .resource_metadata = NULL,
+                              .error_description = NULL };
+        req = make_post(init_body, scope_hdrs_2025_11_25, buf, sizeof(buf));
+        const char *reqs[] = { req };
+        out = run_script_auth_v2(ctx, srv, reqs, 1, &st, auth_v2_fixed, &exp);
+        CHECK(st == MCP_OK && out != NULL);
+        CHECK(strstr(out, "scope=\"mcp.read\"") != NULL);
+        CHECK(strstr(out, "resource_metadata=\"https://mcp.example.com/api\"") != NULL);
+        free(out);
+    }
+
+    /* 12. v2 OK -> request proceeds to dispatch (200); a valid 2026 request
+           must carry the SEP-2243 header trio (Mcp-Method/Mcp-Name match the
+           body) or it is rejected -32020 before auth; here the body has no
+           params.name so Mcp-Name is not required, but Mcp-Method is */
+    {
+        const char *hdrs =
+            "Authorization: Bearer tok\r\nMCP-Protocol-Version: 2026-07-28\r\n"
+            "Mcp-Method: initialize\r\n";
+        v2_expected_t exp = { .code = MCP_HTTP_AUTH_OK, .scope = NULL,
+                              .resource_metadata = NULL, .error_description = NULL };
+        req = make_post(init_2026_body, hdrs, buf, sizeof(buf));
+        const char *reqs[] = { req };
+        out = run_script_auth_v2(ctx, srv, reqs, 1, &st, auth_v2_fixed, &exp);
+        CHECK(st == MCP_OK && out != NULL);
+        CHECK(strstr(out, "HTTP/1.1 200 OK") != NULL);
+        CHECK(strstr(out, "\"serverInfo\"") != NULL);
+        free(out);
+    }
+
+    /* 13. v2 SCOPE_INSUFFICIENT under a pre-P3 version header (2025-06-18):
+           p3_active=false, so pr_resource=NULL; only the callback's own
+           scope fragment is emitted, no resource_metadata at all. */
+    {
+        static const char kScope[] = "mcp.read";
+        v2_expected_t exp = { .code = MCP_HTTP_AUTH_SCOPE_INSUFFICIENT,
+                              .scope = kScope, .resource_metadata = NULL,
+                              .error_description = NULL };
+        req = make_post(init_body, scope_hdrs_pre_p3, buf, sizeof(buf));
+        const char *reqs[] = { req };
+        out = run_script_auth_v2(ctx, srv, reqs, 1, &st, auth_v2_fixed, &exp);
+        CHECK(st == MCP_OK && out != NULL);
+        CHECK(strstr(out, "scope=\"mcp.read\"") != NULL);
         CHECK(strstr(out, "resource_metadata") == NULL);
         free(out);
     }

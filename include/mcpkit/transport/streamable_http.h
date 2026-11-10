@@ -110,4 +110,76 @@ mcp_status_t mcp_http_serve_with_auth(mcp_context_t *ctx, mcp_server_t *server,
                                        mcp_http_auth_fn auth_fn,
                                        void *auth_user_data);
 
+/**
+ * @brief Outcome codes for mcp_http_auth_result_v2_fn().
+ *
+ * P3 T4 (SEP-835 incremental scope consent): DETERMINED lets the caller
+ * distinguish a plain denial from an "insufficient scope" rejection so the
+ * 401 challenge can carry RFC 6750 `error`/`scope`/`resource_metadata`
+ * fragments; the pre-P3 bool callback has no way to express that and maps
+ * to DENY. `scope` and `resource_metadata` in the result struct are only
+ * meaningful for SCOPE_INSUFFICIENT (and MAY be NULL).
+ */
+typedef enum mcp_http_auth_result_code {
+    MCP_HTTP_AUTH_OK = 0,              /**< Allow the request to proceed. */
+    MCP_HTTP_AUTH_DENY,               /**< Reject with a bare 401. */
+    MCP_HTTP_AUTH_SCOPE_INSUFFICIENT   /**< Reject with a scoped 401 challenge. */
+} mcp_http_auth_result_code_t;
+
+/**
+ * @brief Rich 401-reason carrier returned by mcp_http_auth_result_v2_fn.
+ *
+ * `scope` / `resource_metadata` / `error_description` are pointers owned by
+ * the host for the callback's duration; NULL means "omit that fragment".
+ */
+typedef struct mcp_http_auth_result {
+    mcp_http_auth_result_code_t code;
+    const char *scope;                /**< Space-separated, SCOPE_INSUFFICIENT only. */
+    const char *resource_metadata;    /**< RFC 9728 URL, optional. */
+    const char *error_description;    /**< Free-form reason, optional. */
+} mcp_http_auth_result_t;
+
+/**
+ * @brief Host-supplied Bearer-token validation callback v2 (P3 T4).
+ *
+ * Same contract as mcp_http_auth_fn, but returns a structured result so the
+ * caller can emit an incremental-scope 401 challenge (SEP-835) rather than
+ * a bare one. The host fills `out` before returning; the transport never
+ * reads host-owned pointers after the callback returns.
+ *
+ * @param ctx Context; may be NULL.
+ * @param bearer_token Token portion after the case-insensitive "Bearer "
+ *        prefix (may be empty).
+ * @param user_data Opaque host context.
+ * @param out Receives the structured result (non-NULL).
+ */
+typedef void (*mcp_http_auth_result_v2_fn)(mcp_context_t *ctx,
+                                           const char *bearer_token,
+                                           void *user_data,
+                                           mcp_http_auth_result_t *out);
+
+/**
+ * @brief Runs a synchronous HTTP serve loop with structured Bearer-token
+ *        authentication on every POST request (P3 T4).
+ *
+ * Behaviour is identical to mcp_http_serve_with_auth() except the callback
+ * may return MCP_HTTP_AUTH_SCOPE_INSUFFICIENT, in which case the 401
+ * challenge is composed from the result's `scope` / `resource_metadata` /
+ * `error_description` fields per RFC 6750 + SEP-835 + RFC 9728 §3.2, with
+ * any NULL field omitted. When all three are NULL the challenge falls back
+ * to the bare form.
+ *
+ * @param ctx Context; may be NULL.
+ * @param server Target server to dispatch to.
+ * @param io I/O backend; must outlive the call.
+ * @param auth_fn_v2 Structured validation callback, or NULL to disable
+ *        authentication entirely (same as mcp_http_serve()).
+ * @param auth_user_data Opaque context passed through to auth_fn_v2.
+ * @return MCP_OK on clean EOF; MCP_ERR_IO on I/O failure.
+ */
+mcp_status_t mcp_http_serve_with_auth_v2(mcp_context_t *ctx, mcp_server_t *server,
+                                          mcp_http_io_t *io,
+                                          mcp_http_auth_result_v2_fn auth_fn_v2,
+                                          void *auth_user_data);
+
 #endif
