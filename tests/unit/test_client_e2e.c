@@ -137,7 +137,7 @@ int main(void) {
 
     mcp_json_value_t *info = NULL;
     CHECK(mcp_client_initialize(ctx, c, "e2e", "0.1.0", &info) == MCP_OK);
-    CHECK(strcmp(mcp_client_protocol_version(ctx, c), "2025-06-18") == 0);
+    CHECK(strcmp(mcp_client_protocol_version(ctx, c), MCP_PROTOCOL_VERSION_LATEST) == 0);
     CHECK(info != NULL);
     const char *sname = NULL;
     CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, info, "name"), &sname) == MCP_OK);

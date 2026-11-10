@@ -54,6 +54,24 @@ bool mcp_session_is_initialized(mcp_context_t *ctx, const mcp_session_t *session
     return session != NULL && session->initialized;
 }
 
+mcp_proto_version_t mcp_session_negotiated(mcp_context_t *ctx, const mcp_session_t *session) {
+    (void)ctx;
+    if (session == NULL || session->negotiated == MCP_PROTO_NONE) {
+        return MCP_PROTO_2024_11_05;
+    }
+    return session->negotiated;
+}
+
+mcp_status_t mcp_session_set_negotiated(mcp_context_t *ctx, mcp_session_t *session,
+                                         mcp_proto_version_t version) {
+    (void)ctx;
+    if (session == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    session->negotiated = version;
+    return MCP_OK;
+}
+
 mcp_status_t mcp_session_set_apps_host(mcp_context_t *ctx, mcp_session_t *session,
                                        bool apps_host) {
     if (ctx == NULL || session == NULL) {
@@ -96,6 +114,24 @@ const mcp_json_value_t *mcp_session_client_meta(mcp_context_t *ctx,
         return NULL;
     }
     return session->client_meta;
+}
+
+mcp_status_t mcp_session_set_client_meta(mcp_context_t *ctx, mcp_session_t *session,
+                                         const mcp_json_value_t *meta) {
+    if (session == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (session->client_meta != NULL) {
+        mcp_json_destroy(ctx, session->client_meta);
+        session->client_meta = NULL;
+    }
+    if (meta != NULL) {
+        session->client_meta = mcp_json_clone(ctx, meta);
+        if (session->client_meta == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+    }
+    return MCP_OK;
 }
 
 mcp_session_t *mcp_server_create_session(mcp_context_t *ctx, mcp_server_t *srv) {

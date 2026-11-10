@@ -108,7 +108,7 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
             }
         }
     }
-    bool is_stateless = (req_meta != NULL);
+    bool is_stateless = (req_meta != NULL) || (session->negotiated == MCP_PROTO_2026_07_28);
     bool is_discover = (strcmp(method, "server/discover") == 0);
     if (!session->initialized && strcmp(method, "initialize") != 0 && !is_discover && !is_stateless) {
         dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=uninitialized method=%s", method);

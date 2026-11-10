@@ -5,6 +5,7 @@
 #define _DEFAULT_SOURCE
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "internals.h"
@@ -110,11 +111,36 @@ static mcp_prompt_t *find_prompt(mcp_server_t *srv, const char *name) {
     return NULL;
 }
 
+static int tool_cmp_name(const void *a, const void *b) {
+    const mcp_tool_t *ta = *(const mcp_tool_t * const *)a;
+    const mcp_tool_t *tb = *(const mcp_tool_t * const *)b;
+    const char *na = (ta != NULL && ta->name != NULL) ? ta->name : "";
+    const char *nb = (tb != NULL && tb->name != NULL) ? tb->name : "";
+    return strcmp(na, nb);
+}
+
+static int resource_cmp_name(const void *a, const void *b) {
+    const mcp_resource_t *ra = *(const mcp_resource_t * const *)a;
+    const mcp_resource_t *rb = *(const mcp_resource_t * const *)b;
+    const char *na = (ra != NULL && ra->name != NULL) ? ra->name : "";
+    const char *nb = (rb != NULL && rb->name != NULL) ? rb->name : "";
+    return strcmp(na, nb);
+}
+
+static int prompt_cmp_name(const void *a, const void *b) {
+    const mcp_prompt_t *pa = *(const mcp_prompt_t * const *)a;
+    const mcp_prompt_t *pb = *(const mcp_prompt_t * const *)b;
+    const char *na = (pa != NULL && pa->name != NULL) ? pa->name : "";
+    const char *nb = (pb != NULL && pb->name != NULL) ? pb->name : "";
+    return strcmp(na, nb);
+}
+
 // Internal helper: decorates a result object before mcp_response_ok_new.
 // - is_list=true:  inject resultType + ttlMs + cacheScope + _meta
 // - is_list=false: inject resultType only
 // NOMEM: caller must destroy result and return NULL from the route.
 static mcp_status_t decorate_result(mcp_context_t *ctx, mcp_server_t *srv,
+                                    mcp_session_t *s,
                                     mcp_json_value_t *result, bool is_list) {
     if (mcp_result_inject_result_type(ctx, result) != MCP_OK) {
         return MCP_ERR_NOMEM;
@@ -122,8 +148,18 @@ static mcp_status_t decorate_result(mcp_context_t *ctx, mcp_server_t *srv,
     if (!is_list) {
         return MCP_OK;
     }
+    mcp_proto_version_t nv = mcp_session_negotiated(ctx, s);
+    bool is_2026 = mcp_proto_at_least(nv, MCP_PROTO_2026_07_28);
     if (srv->list_ttl_ms != 0) {
         mcp_json_value_t *ttl = mcp_json_number_new(ctx, (double)srv->list_ttl_ms);
+        if (ttl == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+        if (mcp_json_object_set_take(ctx, result, "ttlMs", ttl) != MCP_OK) {
+            return MCP_ERR_NOMEM;
+        }
+    } else if (is_2026) {
+        mcp_json_value_t *ttl = mcp_json_number_new(ctx, 0.0);
         if (ttl == NULL) {
             return MCP_ERR_NOMEM;
         }
@@ -139,6 +175,15 @@ static mcp_status_t decorate_result(mcp_context_t *ctx, mcp_server_t *srv,
         if (mcp_json_object_set_take(ctx, result, "cacheScope", scope) != MCP_OK) {
             return MCP_ERR_NOMEM;
         }
+    } else if (is_2026) {
+        mcp_json_value_t *scope = mcp_json_string_new(ctx, "private");
+        if (scope == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+        if (mcp_json_object_set_take(ctx, result, "cacheScope", scope) != MCP_OK) {
+            return MCP_ERR_NOMEM;
+        }
+        dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=cache_hint_default version=2026");
     }
     if (srv->response_meta != NULL) {
         mcp_json_value_t *meta_clone = mcp_json_clone(ctx, srv->response_meta);
@@ -154,6 +199,7 @@ static mcp_status_t decorate_result(mcp_context_t *ctx, mcp_server_t *srv,
 }
 
 static mcp_message_t *route_server_discover(mcp_context_t *ctx, mcp_server_t *srv,
+                                              mcp_session_t *s,
                                               const mcp_message_t *req) {
     mcp_json_value_t *result = mcp_json_object_new(ctx);
     if (result == NULL) {
@@ -170,7 +216,11 @@ static mcp_message_t *route_server_discover(mcp_context_t *ctx, mcp_server_t *sr
         mcp_json_destroy(ctx, result);
         return NULL;
     }
-    if ((v = mcp_json_string_new(ctx, MCP_PROTOCOL_VERSION_LATEST)) == NULL ||
+    const char *pver = mcp_proto_version_string(mcp_session_negotiated(ctx, s));
+    if (pver == NULL) {
+        pver = MCP_PROTOCOL_VERSION_LATEST;
+    }
+    if ((v = mcp_json_string_new(ctx, pver)) == NULL ||
         mcp_json_object_set_take(ctx, result, "protocolVersion", v) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
@@ -250,7 +300,7 @@ static mcp_message_t *route_server_discover(mcp_context_t *ctx, mcp_server_t *sr
             }
         }
     }
-    if (decorate_result(ctx, srv, result, true) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, true) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -268,9 +318,11 @@ static mcp_message_t *route_initialize(mcp_context_t *ctx, mcp_server_t *srv, mc
     if (get_string(ctx, params, "protocolVersion", &ver) != MCP_OK || ver == NULL) {
         return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "initialize: missing protocolVersion");
     }
-    if (mcp_protocol_negotiate(ctx, ver) == NULL) {
+    const char *neg_str = mcp_protocol_negotiate(ctx, ver);
+    if (neg_str == NULL) {
         return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "initialize: unsupported version");
     }
+    s->negotiated = mcp_proto_version_parse(ver);
     const mcp_json_value_t *info = mcp_json_object_get(ctx, params, "clientInfo");
     if (info != NULL) {
         const char *name = NULL;
@@ -292,7 +344,8 @@ static mcp_message_t *route_initialize(mcp_context_t *ctx, mcp_server_t *srv, mc
             s->client_version = copy;
         }
     }
-    mcp_json_value_t *result = mcp_initialize_result_new(ctx, srv->name, srv->version);
+    mcp_proto_version_t resp_ver = mcp_proto_version_parse(neg_str);
+    mcp_json_value_t *result = mcp_initialize_result_new_v(ctx, resp_ver, srv->name, srv->version);
     if (result == NULL) {
         return NULL;
     }
@@ -306,7 +359,7 @@ static mcp_message_t *route_initialize(mcp_context_t *ctx, mcp_server_t *srv, mc
         mcp_json_destroy(ctx, s->client_meta);
         s->client_meta = clone;
     }
-    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -330,22 +383,40 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
         mcp_json_destroy(ctx, arr);
         return NULL;
     }
+    const mcp_tool_t **tlist = NULL;
+    if (srv->n_tools > 0) {
+        tlist = srv_malloc(ctx, sizeof(const mcp_tool_t *) * srv->n_tools);
+        if (tlist == NULL) {
+            mcp_json_destroy(ctx, result);
+            mcp_json_destroy(ctx, arr);
+            return NULL;
+        }
+    }
     size_t visible = 0;
     for (size_t i = 0; i < srv->n_tools; i++) {
         const mcp_tool_t *t = srv->tools[i];
-        if (t->vis != MCP_TOOL_VIS_BOTH && (t->vis == MCP_TOOL_VIS_APP) != s->apps_host) {
+        if (t->vis != MCP_TOOL_VIS_BOTH && (t->vis == MCP_TOOL_VIS_APP) != (s != NULL && s->apps_host)) {
             continue;
         }
-        size_t idx = visible++;
-        if (idx < offset || idx >= offset + MCP_LIST_PAGE_SIZE) {
-            continue;
+        if (tlist != NULL) {
+            tlist[visible] = t;
         }
+        visible++;
+    }
+    mcp_proto_version_t nv = mcp_session_negotiated(ctx, s);
+    if (mcp_proto_at_least(nv, MCP_PROTO_2026_07_28) && visible > 1 && tlist != NULL) {
+        qsort((void *)tlist, visible, sizeof(const mcp_tool_t *), tool_cmp_name);
+    }
+    size_t end = offset + MCP_LIST_PAGE_SIZE < visible ? offset + MCP_LIST_PAGE_SIZE : visible;
+    for (size_t i = offset; i < end; i++) {
+        const mcp_tool_t *t = tlist[i];
         mcp_json_value_t *entry = mcp_json_object_new(ctx);
         if (entry == NULL || set_string(ctx, entry, "name", t->name) != MCP_OK ||
             (t->description != NULL && set_string(ctx, entry, "description", t->description) != MCP_OK)) {
             mcp_json_destroy(ctx, entry);
             mcp_json_destroy(ctx, result);
             mcp_json_destroy(ctx, arr);
+            srv_free(ctx, (void *)tlist);
             return NULL;
         }
         if (t->schema != NULL) {
@@ -355,6 +426,7 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
                 mcp_json_destroy(ctx, entry);
                 mcp_json_destroy(ctx, result);
                 mcp_json_destroy(ctx, arr);
+                srv_free(ctx, (void *)tlist);
                 return NULL;
             }
         }
@@ -365,6 +437,7 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
                 mcp_json_destroy(ctx, entry);
                 mcp_json_destroy(ctx, result);
                 mcp_json_destroy(ctx, arr);
+                srv_free(ctx, (void *)tlist);
                 return NULL;
             }
         }
@@ -375,6 +448,7 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
                 mcp_json_destroy(ctx, entry);
                 mcp_json_destroy(ctx, result);
                 mcp_json_destroy(ctx, arr);
+                srv_free(ctx, (void *)tlist);
                 return NULL;
             }
         }
@@ -382,9 +456,11 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
             mcp_json_destroy(ctx, entry);
             mcp_json_destroy(ctx, result);
             mcp_json_destroy(ctx, arr);
+            srv_free(ctx, (void *)tlist);
             return NULL;
         }
     }
+    srv_free(ctx, (void *)tlist);
     if (mcp_json_object_set_take(ctx, result, "tools", arr) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
@@ -394,7 +470,7 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
         mcp_json_destroy(ctx, result);
         return NULL;
     }
-    if (decorate_result(ctx, srv, result, true) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, true) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -512,7 +588,7 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
                 }
             }
         }
-        if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+        if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
             mcp_json_destroy(ctx, result);
             return NULL;
         }
@@ -525,6 +601,7 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
 }
 
 static mcp_message_t *route_resources_list(mcp_context_t *ctx, mcp_server_t *srv,
+                                           mcp_session_t *s,
                                            const mcp_message_t *req) {
     size_t offset = page_offset(ctx, req);
     if (offset == (size_t)-1) {
@@ -537,10 +614,26 @@ static mcp_message_t *route_resources_list(mcp_context_t *ctx, mcp_server_t *srv
         mcp_json_destroy(ctx, arr);
         return NULL;
     }
+    const mcp_resource_t **rlist = NULL;
+    if (srv->n_resources > 0) {
+        rlist = srv_malloc(ctx, sizeof(const mcp_resource_t *) * srv->n_resources);
+        if (rlist == NULL) {
+            mcp_json_destroy(ctx, result);
+            mcp_json_destroy(ctx, arr);
+            return NULL;
+        }
+        for (size_t i = 0; i < srv->n_resources; i++) {
+            rlist[i] = srv->resources[i];
+        }
+    }
+    mcp_proto_version_t nv = mcp_session_negotiated(ctx, s);
+    if (mcp_proto_at_least(nv, MCP_PROTO_2026_07_28) && srv->n_resources > 1 && rlist != NULL) {
+        qsort((void *)rlist, srv->n_resources, sizeof(const mcp_resource_t *), resource_cmp_name);
+    }
     size_t end = offset + MCP_LIST_PAGE_SIZE < srv->n_resources ? offset + MCP_LIST_PAGE_SIZE
                                                                 : srv->n_resources;
     for (size_t i = offset; i < end; i++) {
-        const mcp_resource_t *r = srv->resources[i];
+        const mcp_resource_t *r = rlist[i];
         mcp_json_value_t *entry = mcp_json_object_new(ctx);
         if (entry == NULL || set_string(ctx, entry, "uri", r->uri) != MCP_OK ||
             set_string(ctx, entry, "name", r->name) != MCP_OK ||
@@ -549,9 +642,11 @@ static mcp_message_t *route_resources_list(mcp_context_t *ctx, mcp_server_t *srv
             mcp_json_destroy(ctx, entry);
             mcp_json_destroy(ctx, result);
             mcp_json_destroy(ctx, arr);
+            srv_free(ctx, (void *)rlist);
             return NULL;
         }
     }
+    srv_free(ctx, (void *)rlist);
     if (mcp_json_object_set_take(ctx, result, "resources", arr) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
@@ -560,7 +655,7 @@ static mcp_message_t *route_resources_list(mcp_context_t *ctx, mcp_server_t *srv
         mcp_json_destroy(ctx, result);
         return NULL;
     }
-    if (decorate_result(ctx, srv, result, true) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, true) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -603,7 +698,7 @@ static mcp_message_t *route_resources_read(mcp_context_t *ctx, mcp_server_t *srv
         mcp_json_destroy(ctx, result);
         return NULL;
     }
-    if (decorate_result(ctx, srv, result, true) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, true) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -615,6 +710,7 @@ static mcp_message_t *route_resources_read(mcp_context_t *ctx, mcp_server_t *srv
 }
 
 static mcp_message_t *route_prompts_list(mcp_context_t *ctx, mcp_server_t *srv,
+                                         mcp_session_t *s,
                                          const mcp_message_t *req) {
     size_t offset = page_offset(ctx, req);
     if (offset == (size_t)-1) {
@@ -627,10 +723,26 @@ static mcp_message_t *route_prompts_list(mcp_context_t *ctx, mcp_server_t *srv,
         mcp_json_destroy(ctx, arr);
         return NULL;
     }
+    const mcp_prompt_t **plist = NULL;
+    if (srv->n_prompts > 0) {
+        plist = srv_malloc(ctx, sizeof(const mcp_prompt_t *) * srv->n_prompts);
+        if (plist == NULL) {
+            mcp_json_destroy(ctx, result);
+            mcp_json_destroy(ctx, arr);
+            return NULL;
+        }
+        for (size_t i = 0; i < srv->n_prompts; i++) {
+            plist[i] = srv->prompts[i];
+        }
+    }
+    mcp_proto_version_t nv = mcp_session_negotiated(ctx, s);
+    if (mcp_proto_at_least(nv, MCP_PROTO_2026_07_28) && srv->n_prompts > 1 && plist != NULL) {
+        qsort((void *)plist, srv->n_prompts, sizeof(const mcp_prompt_t *), prompt_cmp_name);
+    }
     size_t end = offset + MCP_LIST_PAGE_SIZE < srv->n_prompts ? offset + MCP_LIST_PAGE_SIZE
                                                               : srv->n_prompts;
     for (size_t i = offset; i < end; i++) {
-        const mcp_prompt_t *p = srv->prompts[i];
+        const mcp_prompt_t *p = plist[i];
         mcp_json_value_t *entry = mcp_json_object_new(ctx);
         if (entry == NULL || set_string(ctx, entry, "name", p->name) != MCP_OK ||
             (p->description != NULL &&
@@ -639,9 +751,11 @@ static mcp_message_t *route_prompts_list(mcp_context_t *ctx, mcp_server_t *srv,
             mcp_json_destroy(ctx, entry);
             mcp_json_destroy(ctx, result);
             mcp_json_destroy(ctx, arr);
+            srv_free(ctx, (void *)plist);
             return NULL;
         }
     }
+    srv_free(ctx, (void *)plist);
     if (mcp_json_object_set_take(ctx, result, "prompts", arr) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
@@ -650,7 +764,7 @@ static mcp_message_t *route_prompts_list(mcp_context_t *ctx, mcp_server_t *srv,
         mcp_json_destroy(ctx, result);
         return NULL;
     }
-    if (decorate_result(ctx, srv, result, true) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, true) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -698,7 +812,7 @@ static mcp_message_t *route_prompts_get(mcp_context_t *ctx, mcp_server_t *srv, m
         mcp_json_destroy(ctx, result);
         return NULL;
     }
-    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -710,6 +824,7 @@ static mcp_message_t *route_prompts_get(mcp_context_t *ctx, mcp_server_t *srv, m
 }
 
 static mcp_message_t *route_completion_list(mcp_context_t *ctx, mcp_server_t *srv,
+                                            mcp_session_t *s,
                                             const mcp_message_t *req) {
     // Return an empty array – completion/list has no meaningful payload.
     // The cursor is still validated so a bad cursor fails consistently
@@ -728,7 +843,7 @@ static mcp_message_t *route_completion_list(mcp_context_t *ctx, mcp_server_t *sr
         mcp_json_destroy(ctx, result);
         return NULL;
     }
-    if (decorate_result(ctx, srv, result, true) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, true) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -794,7 +909,7 @@ static mcp_message_t *route_completion_complete(mcp_context_t *ctx, mcp_server_t
                 mcp_json_destroy(ctx, result);
                 return NULL;
             }
-            if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+            if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
                 mcp_json_destroy(ctx, result);
                 return NULL;
             }
@@ -817,7 +932,7 @@ static mcp_message_t *route_completion_complete(mcp_context_t *ctx, mcp_server_t
         mcp_json_destroy(ctx, result);
         return NULL;
     }
-    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -856,7 +971,7 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
         if (result == NULL) {
             return NULL;
         }
-        if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+        if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
             mcp_json_destroy(ctx, result);
             return NULL;
         }
@@ -917,7 +1032,7 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
         if (result == NULL) {
             return NULL;
         }
-        if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+        if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
             mcp_json_destroy(ctx, result);
             return NULL;
         }
@@ -940,7 +1055,7 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
             mcp_json_destroy(ctx, result);
             return NULL;
         }
-        if (decorate_result(ctx, srv, result, true) != MCP_OK) {
+        if (decorate_result(ctx, srv, s, result, true) != MCP_OK) {
             mcp_json_destroy(ctx, result);
             return NULL;
         }
@@ -1089,6 +1204,7 @@ static mcp_message_t *route_subscriptions_listen(mcp_context_t *ctx, mcp_server_
 }
 
 static mcp_message_t *route_tasks_get(mcp_context_t *ctx, mcp_server_t *srv,
+                                      mcp_session_t *s,
                                       const mcp_message_t *req) {
     if (srv->task_mgr == NULL) {
         return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "tasks extension not enabled");
@@ -1106,7 +1222,7 @@ static mcp_message_t *route_tasks_get(mcp_context_t *ctx, mcp_server_t *srv,
     if (result == NULL) {
         return NULL;
     }
-    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -1118,6 +1234,7 @@ static mcp_message_t *route_tasks_get(mcp_context_t *ctx, mcp_server_t *srv,
 }
 
 static mcp_message_t *route_tasks_update(mcp_context_t *ctx, mcp_server_t *srv,
+                                         mcp_session_t *s,
                                          const mcp_message_t *req) {
     if (srv->task_mgr == NULL) {
         return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "tasks extension not enabled");
@@ -1143,7 +1260,7 @@ static mcp_message_t *route_tasks_update(mcp_context_t *ctx, mcp_server_t *srv,
         mcp_json_destroy(ctx, result);
         return NULL;
     }
-    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -1155,6 +1272,7 @@ static mcp_message_t *route_tasks_update(mcp_context_t *ctx, mcp_server_t *srv,
 }
 
 static mcp_message_t *route_tasks_cancel(mcp_context_t *ctx, mcp_server_t *srv,
+                                         mcp_session_t *s,
                                          const mcp_message_t *req) {
     if (srv->task_mgr == NULL) {
         return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "tasks extension not enabled");
@@ -1176,7 +1294,7 @@ static mcp_message_t *route_tasks_cancel(mcp_context_t *ctx, mcp_server_t *srv,
         mcp_json_destroy(ctx, result);
         return NULL;
     }
-    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -1188,6 +1306,7 @@ static mcp_message_t *route_tasks_cancel(mcp_context_t *ctx, mcp_server_t *srv,
 }
 
 static mcp_message_t *route_skills_list(mcp_context_t *ctx, mcp_server_t *srv,
+                                        mcp_session_t *s,
                                         const mcp_message_t *req) {
     if (srv->skill_reg == NULL) {
         return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "skills extension not enabled");
@@ -1231,7 +1350,7 @@ static mcp_message_t *route_skills_list(mcp_context_t *ctx, mcp_server_t *srv,
             return NULL;
         }
     }
-    if (decorate_result(ctx, srv, result, true) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, true) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -1243,6 +1362,7 @@ static mcp_message_t *route_skills_list(mcp_context_t *ctx, mcp_server_t *srv,
 }
 
 static mcp_message_t *route_skills_get(mcp_context_t *ctx, mcp_server_t *srv,
+                                       mcp_session_t *s,
                                        const mcp_message_t *req) {
     if (srv->skill_reg == NULL) {
         return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "skills extension not enabled");
@@ -1264,7 +1384,7 @@ static mcp_message_t *route_skills_get(mcp_context_t *ctx, mcp_server_t *srv,
     if (result == NULL) {
         return NULL;
     }
-    if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+    if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
         mcp_json_destroy(ctx, result);
         return NULL;
     }
@@ -1278,6 +1398,16 @@ static mcp_message_t *route_skills_get(mcp_context_t *ctx, mcp_server_t *srv,
 mcp_message_t *mcp_server_route_request(mcp_context_t *ctx, mcp_server_t *srv,
                                         mcp_session_t *s, const mcp_message_t *req,
                                         const char *method) {
+    mcp_proto_version_t nv = mcp_session_negotiated(ctx, s);
+    if (mcp_proto_at_least(nv, MCP_PROTO_2026_07_28)) {
+        if (strcmp(method, "ping") == 0 ||
+            strcmp(method, "logging/setLevel") == 0 ||
+            strcmp(method, "resources/subscribe") == 0 ||
+            strcmp(method, "resources/unsubscribe") == 0) {
+            dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=deprecated_method method=%s version=2026", method);
+            return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "method deprecated in 2026-07-28");
+        }
+    }
     if (strcmp(method, k_mcp_server_methods[0]) == 0) {
         return route_initialize(ctx, srv, s, req);
     }
@@ -1286,7 +1416,7 @@ mcp_message_t *mcp_server_route_request(mcp_context_t *ctx, mcp_server_t *srv,
         if (result == NULL) {
             return NULL;
         }
-        if (decorate_result(ctx, srv, result, false) != MCP_OK) {
+        if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
             mcp_json_destroy(ctx, result);
             return NULL;
         }
@@ -1303,19 +1433,19 @@ mcp_message_t *mcp_server_route_request(mcp_context_t *ctx, mcp_server_t *srv,
         return route_tools_call(ctx, srv, s, req);
     }
     if (strcmp(method, k_mcp_server_methods[4]) == 0) {
-        return route_resources_list(ctx, srv, req);
+        return route_resources_list(ctx, srv, s, req);
     }
     if (strcmp(method, k_mcp_server_methods[5]) == 0) {
         return route_resources_read(ctx, srv, s, req);
     }
     if (strcmp(method, k_mcp_server_methods[6]) == 0) {
-        return route_prompts_list(ctx, srv, req);
+        return route_prompts_list(ctx, srv, s, req);
     }
     if (strcmp(method, k_mcp_server_methods[7]) == 0) {
         return route_prompts_get(ctx, srv, s, req);
     }
     if (strcmp(method, k_mcp_server_methods[8]) == 0) {
-        return route_completion_list(ctx, srv, req);
+        return route_completion_list(ctx, srv, s, req);
     }
     if (strcmp(method, k_mcp_server_methods[9]) == 0) {
         return route_completion_complete(ctx, srv, s, req);
@@ -1325,25 +1455,25 @@ mcp_message_t *mcp_server_route_request(mcp_context_t *ctx, mcp_server_t *srv,
         return adv;
     }
     if (strcmp(method, k_mcp_server_methods[15]) == 0) {
-        return route_server_discover(ctx, srv, req);
+        return route_server_discover(ctx, srv, s, req);
     }
     if (strcmp(method, k_mcp_server_methods[16]) == 0) {
         return route_subscriptions_listen(ctx, srv, s, req);
     }
     if (strcmp(method, k_mcp_server_methods[17]) == 0) {
-        return route_tasks_get(ctx, srv, req);
+        return route_tasks_get(ctx, srv, s, req);
     }
     if (strcmp(method, k_mcp_server_methods[18]) == 0) {
-        return route_tasks_update(ctx, srv, req);
+        return route_tasks_update(ctx, srv, s, req);
     }
     if (strcmp(method, k_mcp_server_methods[19]) == 0) {
-        return route_tasks_cancel(ctx, srv, req);
+        return route_tasks_cancel(ctx, srv, s, req);
     }
     if (strcmp(method, k_mcp_server_methods[20]) == 0) {
-        return route_skills_list(ctx, srv, req);
+        return route_skills_list(ctx, srv, s, req);
     }
     if (strcmp(method, k_mcp_server_methods[21]) == 0) {
-        return route_skills_get(ctx, srv, req);
+        return route_skills_get(ctx, srv, s, req);
     }
     dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=unknown_method method=%s", method);
     return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "unknown method");

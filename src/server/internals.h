@@ -28,6 +28,7 @@
 #include "mcpkit/server/server.h"
 #include "mcpkit/protocol/tasks.h"
 #include "mcpkit/protocol/skills.h"
+#include "mcpkit/protocol/version.h"
 
 typedef struct {
     char *ref_prefix;
@@ -68,6 +69,7 @@ struct mcp_session {
     bool initialized;
     bool apps_host;
     uint32_t granted;
+    mcp_proto_version_t negotiated;
     char *client_name;
     char *client_version;
     mcp_idset_t *ids;

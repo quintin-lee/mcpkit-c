@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "mcpkit/core/error.h"
+#include "mcpkit/protocol/version.h"
 
 typedef struct mcp_json_value mcp_json_value_t;
 typedef struct mcp_context mcp_context_t;
@@ -37,6 +38,29 @@ typedef struct mcp_message mcp_message_t;
  * @return true if initialized, false otherwise.
  */
 bool mcp_session_is_initialized(mcp_context_t *ctx, const mcp_session_t *session);
+
+/**
+ * @brief Returns the negotiated MCP protocol version for the session.
+ *
+ * If session is NULL or the version has not been negotiated (MCP_PROTO_NONE),
+ * returns MCP_PROTO_2024_11_05 as the conservative baseline.
+ *
+ * @param ctx     Context; may be NULL.
+ * @param session Session to inspect; NULL returns MCP_PROTO_2024_11_05.
+ * @return The negotiated protocol version enum.
+ */
+mcp_proto_version_t mcp_session_negotiated(mcp_context_t *ctx, const mcp_session_t *session);
+
+/**
+ * @brief Sets the negotiated protocol version for the session.
+ *
+ * @param ctx      Context; may be NULL.
+ * @param session  Target session.
+ * @param version  Negotiated protocol version enum.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if session is NULL.
+ */
+mcp_status_t mcp_session_set_negotiated(mcp_context_t *ctx, mcp_session_t *session,
+                                         mcp_proto_version_t version);
 
 /**
  * @brief Sets the MCP Apps host flag for the session.
@@ -110,6 +134,17 @@ bool mcp_session_grants(mcp_context_t *ctx, const mcp_session_t *session,
  */
 const mcp_json_value_t *mcp_session_client_meta(mcp_context_t *ctx,
                                                  const mcp_session_t *session);
+
+/**
+ * @brief Sets the client _meta object for the session by cloning @p meta.
+ *
+ * @param ctx     Context; may be NULL.
+ * @param session Target session.
+ * @param meta    JSON object to clone; may be NULL to clear.
+ * @return MCP_OK on success; error code otherwise.
+ */
+mcp_status_t mcp_session_set_client_meta(mcp_context_t *ctx, mcp_session_t *session,
+                                         const mcp_json_value_t *meta);
 
 /**
  * @brief Checks whether the session has an active subscription stream.

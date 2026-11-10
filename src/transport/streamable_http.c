@@ -18,7 +18,9 @@
 #include "mcpkit/json/value.h"
 #include "mcpkit/json/json.h"
 #include "mcpkit/protocol/message.h"
+#include "mcpkit/protocol/version.h"
 #include "mcpkit/server/server.h"
+#include "mcpkit/server/session.h"
 #include "mcpkit/transport/http.h"
 
 #define SESSION_ID_CAP 32
@@ -170,18 +172,7 @@ static bool is_supported_protocol_version(const char *ver) {
     if (ver == NULL) {
         return false;
     }
-    static const char *const k_supported_versions[] = {
-        "2026-07-28",
-        "2025-11-25",
-        "2025-06-18",
-        "2024-11-05",
-    };
-    for (size_t i = 0; i < sizeof(k_supported_versions) / sizeof(k_supported_versions[0]); i++) {
-        if (strcmp(ver, k_supported_versions[i]) == 0) {
-            return true;
-        }
-    }
-    return false;
+    return mcp_proto_version_parse(ver) != MCP_PROTO_NONE;
 }
 
 static mcp_status_t validate_http_metadata(mcp_context_t *ctx, mcp_http_request_t *req,
@@ -331,7 +322,25 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
     const char *method = kind == MCP_MSG_REQUEST ? mcp_message_method(ctx, msg) : NULL;
     bool is_init = method != NULL && strcmp(method, "initialize") == 0;
     bool is_discover = method != NULL && strcmp(method, "server/discover") == 0;
-    bool is_stateless = mcp_message_meta(ctx, msg) != NULL || is_discover;
+    const char *proto_hdr = mcp_http_header(ctx, req, "MCP-Protocol-Version");
+    const mcp_json_value_t *req_meta = mcp_message_meta(ctx, msg);
+    const char *meta_ver = NULL;
+    if (req_meta != NULL) {
+        const mcp_json_value_t *pv = mcp_json_object_get(ctx, req_meta, "io.modelcontextprotocol/protocolVersion");
+        if (pv == NULL) {
+            pv = mcp_json_object_get(ctx, req_meta, "protocolVersion");
+        }
+        if (pv != NULL) {
+            mcp_json_string_value(ctx, pv, &meta_ver);
+        }
+    }
+    const char *active_ver = (proto_hdr != NULL) ? proto_hdr : meta_ver;
+    bool is_2026 = (active_ver != NULL && strcmp(active_ver, "2026-07-28") == 0);
+    if (is_2026) {
+        /* P2-T13: 2026 requests ignore Mcp-Session-Id header, do not associate with old session */
+        sid = NULL;
+    }
+    bool is_stateless = (req_meta != NULL) || is_discover || is_2026;
     bool is_new = false;
     http_session_slot_t *slot = NULL;
     mcp_session_t *sess = NULL;
@@ -342,6 +351,12 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
             if (sess == NULL) {
                 mcp_message_destroy(ctx, msg);
                 return send_bytes(ctx, io, 500, "Internal Server Error", NULL, NULL, 0, NULL, NULL);
+            }
+            if (active_ver != NULL) {
+                mcp_session_set_negotiated(ctx, sess, mcp_proto_version_parse(active_ver));
+            }
+            if (req_meta != NULL) {
+                mcp_session_set_client_meta(ctx, sess, req_meta);
             }
         } else if (!is_init) {
             mcp_message_destroy(ctx, msg);
