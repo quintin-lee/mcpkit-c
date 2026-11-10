@@ -81,6 +81,27 @@ mcp_server_t *mcp_server_create(mcp_context_t *ctx, const char *name, const char
     return srv;
 }
 
+mcp_status_t mcp_server_set_protected_resource_metadata(
+    mcp_context_t *ctx, mcp_server_t *srv,
+    const mcp_protected_resource_metadata_t *pr_meta) {
+    (void)ctx;
+    if (srv == NULL || pr_meta == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    srv->pr_meta = *pr_meta;
+    srv->has_pr_meta = true;
+    return MCP_OK;
+}
+
+const mcp_protected_resource_metadata_t *
+mcp_server_get_protected_resource_metadata(mcp_context_t *ctx, mcp_server_t *srv) {
+    (void)ctx;
+    if (srv == NULL || !srv->has_pr_meta) {
+        return NULL;
+    }
+    return &srv->pr_meta;
+}
+
 static void free_all_tools(mcp_context_t *ctx, mcp_server_t *srv) {
     for (size_t i = 0; i < srv->n_tools; i++) {
         mcp_tool_destroy(ctx, srv->tools[i]);

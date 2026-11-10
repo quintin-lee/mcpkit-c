@@ -13,11 +13,13 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "mcpkit/core/auth.h"
 #include "mcpkit/core/context.h"
 #include "mcpkit/core/types.h"
 #include "mcpkit/json/value.h"
 #include "mcpkit/json/json.h"
 #include "mcpkit/protocol/message.h"
+#include "mcpkit/protocol/policy.h"
 #include "mcpkit/protocol/version.h"
 #include "mcpkit/server/server.h"
 #include "mcpkit/server/session.h"
@@ -123,18 +125,44 @@ static bool ci_prefix_eq(const char *s, size_t len, const char *pattern) {
     return true;
 }
 
-static mcp_status_t send_unauthorized(mcp_context_t *ctx, mcp_http_io_t *io) {
+static mcp_status_t send_unauthorized(mcp_context_t *ctx, mcp_http_io_t *io,
+                                      const char *scope, const char *resource_metadata,
+                                      const char *error_description) {
     mcp_http_response_t *resp = mcp_http_response_new(ctx, 401, "Unauthorized");
     if (resp == NULL) {
         return MCP_ERR_NOMEM;
     }
-    mcp_status_t st = mcp_http_response_set_header(ctx, resp, "WWW-Authenticate",
-                                                   "Bearer");
+    /* RFC 6750 + SEP-835 (scope) + RFC 9728 §3.2 (resource_metadata) composed
+       challenge. Each optional fragment is omitted when its argument is NULL,
+       so the bare pre-P3 form is `Bearer` alone. */
+    size_t cap = 8 +
+                (scope != NULL ? strlen(scope) + 10 : 0) +
+                (resource_metadata != NULL ? strlen(resource_metadata) + 24 : 0) +
+                (error_description != NULL ? strlen(error_description) + 20 : 0) +
+                64;
+    const mcp_allocator_t *a = alloc_of(ctx);
+    char *challenge = a->malloc_fn(cap, a->userdata);
+    if (challenge == NULL) {
+        mcp_http_response_destroy(ctx, resp);
+        return MCP_ERR_NOMEM;
+    }
+    size_t off = (size_t)snprintf(challenge, cap, "Bearer");
+    if (error_description != NULL) {
+        off += (size_t)snprintf(challenge + off, cap - off,
+                                ", error_description=\"%s\"", error_description);
+    }
+    if (scope != NULL) {
+        off += (size_t)snprintf(challenge + off, cap - off, ", scope=\"%s\"", scope);
+    }
+    if (resource_metadata != NULL) {
+        off += (size_t)snprintf(challenge + off, cap - off,
+                                ", resource_metadata=\"%s\"", resource_metadata);
+    }
+
+    mcp_status_t st = mcp_http_response_set_header(ctx, resp, "WWW-Authenticate", challenge);
+    h_free(ctx, challenge);
     if (st == MCP_OK) {
         st = mcp_http_response_set_body(ctx, resp, "", 0);
-    }
-    if (st == MCP_OK) {
-        st = mcp_http_response_set_header(ctx, resp, "Content-Length", "0");
     }
     const char *bytes = NULL;
     if (st == MCP_OK) {
@@ -276,14 +304,27 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
                                 http_session_table_t *table, mcp_http_io_t *io,
                                 mcp_http_request_t *req,
                                 mcp_http_auth_fn auth_fn, void *auth_ud) {
+    /* P3 T3: 401 challenges carry the resource_metadata fragment when the
+       request's protocol version (MCP-Protocol-Version header, or the
+       _meta version once parsed below — the header is the conservative
+       gate) is at or above 2025-11-25 AND the host has injected RFC 9728
+       protected-resource metadata. Pre-P3 requests keep the bare `Bearer`
+       challenge (zero regression). */
+    const char *proto_hdr_chk = mcp_http_header(ctx, req, "MCP-Protocol-Version");
+    mcp_proto_version_t chk_ver = mcp_proto_version_parse(proto_hdr_chk);
+    bool p3_active = mcp_proto_at_least(chk_ver, MCP_PROTO_2025_11_25);
+    const mcp_protected_resource_metadata_t *pr =
+        mcp_server_get_protected_resource_metadata(ctx, server);
+    const char *pr_resource = (p3_active && pr != NULL) ? pr->resource : NULL;
+
     if (auth_fn != NULL) {
         const char *auth_hdr = mcp_http_header(ctx, req, "Authorization");
         if (auth_hdr == NULL || !ci_prefix_eq(auth_hdr, 7, "bearer ")) {
-            return send_unauthorized(ctx, io);
+            return send_unauthorized(ctx, io, NULL, pr_resource, NULL);
         }
         const char *token = auth_hdr + 7;
         if (!auth_fn(ctx, token, auth_ud)) {
-            return send_unauthorized(ctx, io);
+            return send_unauthorized(ctx, io, NULL, pr_resource, NULL);
         }
     }
     size_t body_len = 0;
@@ -420,7 +461,32 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
     return st;
 }
 
-static mcp_status_t handle_get(mcp_context_t *ctx, mcp_http_io_t *io, mcp_http_request_t *req) {
+static mcp_status_t handle_get(mcp_context_t *ctx, mcp_server_t *server,
+                               mcp_http_io_t *io, mcp_http_request_t *req) {
+    /* P3 T3: RFC 9728 protected-resource-metadata + OIDC discovery routes
+       are public (no auth) and take precedence over the SSE-ping default. */
+    const char *target = mcp_http_request_target(ctx, req);
+    if (target != NULL && strcmp(target, "/.well-known/oauth-protected-resource") == 0) {
+        const mcp_protected_resource_metadata_t *pr =
+            mcp_server_get_protected_resource_metadata(ctx, server);
+        if (pr == NULL) {
+            return send_bytes(ctx, io, 404, "Not Found", NULL, NULL, 0, NULL, NULL);
+        }
+        char *json = mcp_oauth_protected_resource_serialize(ctx, pr);
+        if (json == NULL) {
+            return send_bytes(ctx, io, 500, "Internal Server Error", NULL, NULL, 0, NULL, NULL);
+        }
+        mcp_status_t st = send_bytes(ctx, io, 200, "OK", "application/json", json,
+                                     strlen(json), NULL, NULL);
+        mcp_oauth_free_string(ctx, json);
+        return st;
+    }
+
+    /* OIDC Discovery 1.0 document reuses mcp_oauth_metadata_parse/serialize
+       (T5). No route for /.well-known/cim/... yet: that document is client-
+       authored and served by the client host, not by this library (P3 spec
+       non-goal, issuer auto-discovery deferred to P4). */
+
     const char *accept = mcp_http_header(ctx, req, "Accept");
     if (accept == NULL || strstr(accept, "text/event-stream") == NULL) {
         return send_bytes(ctx, io, 405, "Method Not Allowed", NULL, NULL, 0, NULL, NULL);
@@ -537,7 +603,7 @@ static mcp_status_t http_serve_impl(mcp_context_t *ctx, mcp_server_t *server,
         if (m == MCP_HTTP_POST) {
             st = handle_post(ctx, server, &table, io, req, auth_fn, auth_ud);
         } else if (m == MCP_HTTP_GET) {
-            st = handle_get(ctx, io, req);
+            st = handle_get(ctx, server, io, req);
         } else if (m == MCP_HTTP_DELETE) {
             st = handle_delete(ctx, server, &table, io, req);
         } else {

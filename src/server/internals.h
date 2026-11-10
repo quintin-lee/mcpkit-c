@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "mcpkit/core/context.h"
+#include "mcpkit/core/auth.h"
 #include "mcpkit/json/value.h"
 #include "mcpkit/logging/log.h"
 #include "mcpkit/protocol/validate.h"
@@ -148,6 +149,11 @@ struct mcp_server {
     mcp_task_mgr_t *task_mgr;
     // MCP Skills extension registry (SEP-2640). NULL if not enabled.
     mcp_skill_registry_t *skill_reg;
+    // P3 T3: host-injected RFC 9728 Protected Resource Metadata. has_pr_meta
+    // gates both the /.well-known/oauth-protected-resource route and the
+    // resource_metadata= fragment in 401 challenges.
+    mcp_protected_resource_metadata_t pr_meta;
+    bool has_pr_meta;
 };
 
 // Shared allocation helpers (server.c). NULL ctx falls back to the

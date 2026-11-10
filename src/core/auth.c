@@ -317,6 +317,118 @@ mcp_status_t mcp_oauth_metadata_parse(mcp_context_t *ctx,
     return MCP_OK;
 }
 
+/* RFC 9728 Protected Resource Metadata (P3 T3) */
+static void pr_copy_str(char *dst, size_t dst_cap, const char *src) {
+    if (src == NULL || dst == NULL || dst_cap == 0) {
+        return;
+    }
+    size_t n = strlen(src);
+    if (n >= dst_cap) {
+        n = dst_cap - 1;
+    }
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
+mcp_status_t mcp_oauth_protected_resource_parse(mcp_context_t *ctx,
+                                               const char *json_str,
+                                               size_t len,
+                                               mcp_protected_resource_metadata_t *out_meta) {
+    if (json_str == NULL || out_meta == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    memset(out_meta, 0, sizeof(*out_meta));
+    mcp_json_value_t *root = mcp_json_parse(ctx, json_str, len);
+    if (root == NULL || mcp_json_type(ctx, root) != MCP_JSON_OBJECT) {
+        if (root != NULL) {
+            mcp_json_destroy(ctx, root);
+        }
+        return MCP_ERR_PROTOCOL;
+    }
+
+    const mcp_json_value_t *v_res = mcp_json_object_get(ctx, root, "resource");
+    if (v_res == NULL || mcp_json_type(ctx, v_res) != MCP_JSON_STRING) {
+        mcp_json_destroy(ctx, root);
+        return MCP_ERR_PROTOCOL;
+    }
+    const char *s_res = NULL;
+    mcp_json_string_value(ctx, v_res, &s_res);
+    pr_copy_str(out_meta->resource, sizeof(out_meta->resource), s_res);
+
+    const mcp_json_value_t *v_iss = mcp_json_object_get(ctx, root, "issuer");
+    if (v_iss != NULL && mcp_json_type(ctx, v_iss) == MCP_JSON_STRING) {
+        const char *s_iss = NULL;
+        mcp_json_string_value(ctx, v_iss, &s_iss);
+        pr_copy_str(out_meta->issuer, sizeof(out_meta->issuer), s_iss);
+    }
+
+    const mcp_json_value_t *v_as = mcp_json_object_get(ctx, root, "authorization_servers");
+    if (v_as != NULL && mcp_json_type(ctx, v_as) == MCP_JSON_ARRAY) {
+        const mcp_json_value_t *first = mcp_json_array_get(ctx, v_as, 0);
+        if (first != NULL && mcp_json_type(ctx, first) == MCP_JSON_STRING) {
+            const char *s_as = NULL;
+            mcp_json_string_value(ctx, first, &s_as);
+            pr_copy_str(out_meta->authorization_server, sizeof(out_meta->authorization_server), s_as);
+        }
+    }
+
+    const mcp_json_value_t *v_sc = mcp_json_object_get(ctx, root, "scopes_supported");
+    if (v_sc != NULL && mcp_json_type(ctx, v_sc) == MCP_JSON_ARRAY) {
+        const mcp_json_value_t *first = mcp_json_array_get(ctx, v_sc, 0);
+        if (first != NULL && mcp_json_type(ctx, first) == MCP_JSON_STRING) {
+            const char *s_sc = NULL;
+            mcp_json_string_value(ctx, first, &s_sc);
+            pr_copy_str(out_meta->scope, sizeof(out_meta->scope), s_sc);
+        }
+    }
+
+    const mcp_json_value_t *v_jwks = mcp_json_object_get(ctx, root, "jwks_uri");
+    if (v_jwks != NULL && mcp_json_type(ctx, v_jwks) == MCP_JSON_STRING) {
+        const char *s_jwks = NULL;
+        mcp_json_string_value(ctx, v_jwks, &s_jwks);
+        pr_copy_str(out_meta->jwks_uri, sizeof(out_meta->jwks_uri), s_jwks);
+    }
+
+    mcp_json_destroy(ctx, root);
+    return MCP_OK;
+}
+
+char *mcp_oauth_protected_resource_serialize(mcp_context_t *ctx,
+                                             const mcp_protected_resource_metadata_t *meta) {
+    if (meta == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *root = mcp_json_object_new(ctx);
+    if (root == NULL) {
+        return NULL;
+    }
+    /* resource is the only REQUIRED field per RFC 9728 §2 */
+    mcp_json_object_set_take(ctx, root, "resource", mcp_json_string_new(ctx, meta->resource));
+    if (meta->issuer[0] != '\0') {
+        mcp_json_object_set_take(ctx, root, "issuer", mcp_json_string_new(ctx, meta->issuer));
+    }
+    if (meta->authorization_server[0] != '\0') {
+        mcp_json_value_t *arr = mcp_json_array_new(ctx);
+        if (arr != NULL) {
+            mcp_json_array_append(ctx, arr, mcp_json_string_new(ctx, meta->authorization_server));
+            mcp_json_object_set_take(ctx, root, "authorization_servers", arr);
+        }
+    }
+    if (meta->scope[0] != '\0') {
+        mcp_json_value_t *arr = mcp_json_array_new(ctx);
+        if (arr != NULL) {
+            mcp_json_array_append(ctx, arr, mcp_json_string_new(ctx, meta->scope));
+            mcp_json_object_set_take(ctx, root, "scopes_supported", arr);
+        }
+    }
+    if (meta->jwks_uri[0] != '\0') {
+        mcp_json_object_set_take(ctx, root, "jwks_uri", mcp_json_string_new(ctx, meta->jwks_uri));
+    }
+    char *out = mcp_json_serialize(ctx, root);
+    mcp_json_destroy(ctx, root);
+    return out;
+}
+
 mcp_status_t mcp_oauth_discovery_merge(mcp_context_t *ctx,
                                        const mcp_oauth_metadata_t *base,
                                        const mcp_oauth_metadata_t *oidc,

@@ -217,6 +217,59 @@ mcp_status_t mcp_oauth_metadata_parse(mcp_context_t *ctx,
                                       mcp_oauth_metadata_t *out_metadata);
 
 /**
+ * @brief RFC 9728 Protected Resource Metadata (P3 T3).
+ *
+ * Serialized form of a document served at
+ * `/.well-known/oauth-protected-resource`. `authorization_server` holds
+ * the first entry of the `authorization_servers` array (RFC 9728 §2); the
+ * plan keeps the rest out of scope (single-AS assumption, documented in
+ * the P3 spec).
+ */
+typedef struct mcp_protected_resource_metadata {
+    char issuer[256];
+    char resource[512];
+    char authorization_server[512];
+    char scope[256];
+    char jwks_uri[256];
+} mcp_protected_resource_metadata_t;
+
+/**
+ * @brief Parses an RFC 9728 Protected Resource Metadata document.
+ *
+ * Recognized keys: `resource` (string, REQUIRED), `authorization_servers`
+ * (array; first string element taken into authorization_server, optional),
+ * `scopes_supported` (array; first element into scope, optional),
+ * `issuer` and `jwks_uri` (strings, optional). A missing `resource` key
+ * returns MCP_ERR_PROTOCOL.
+ *
+ * @param ctx       Context; may be NULL.
+ * @param json_str JSON document text.
+ * @param len       Length of json_str.
+ * @param out_meta  Receives populated metadata (zero-initialized on entry).
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT on NULL args or
+ *         malformed JSON; MCP_ERR_PROTOCOL if `resource` is absent;
+ *         MCP_ERR_NOMEM on allocation failure.
+ */
+mcp_status_t mcp_oauth_protected_resource_parse(mcp_context_t *ctx,
+                                                const char *json_str,
+                                                size_t len,
+                                                mcp_protected_resource_metadata_t *out_meta);
+
+/**
+ * @brief Serializes a Protected Resource Metadata document to JSON.
+ *
+ * Emits only non-empty fields; the result is suitable as the body of a
+ * 200 response for GET /.well-known/oauth-protected-resource.
+ *
+ * @param ctx  Context; may be NULL.
+ * @param meta Metadata to serialize (non-NULL).
+ * @return Heap-allocated JSON string; free with mcp_oauth_free_string().
+ *         NULL on allocation failure.
+ */
+char *mcp_oauth_protected_resource_serialize(mcp_context_t *ctx,
+                                              const mcp_protected_resource_metadata_t *meta);
+
+/**
  * @brief Merges a base RFC 8414 metadata document with an OpenID Connect
  *        Discovery 1.0 extension document into a single combined view (P3 T5).
  *

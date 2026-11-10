@@ -53,6 +53,8 @@ typedef struct mcp_json_value mcp_json_value_t;
 typedef struct mcp_task_mgr mcp_task_mgr_t;
 typedef struct mcp_skill_registry mcp_skill_registry_t;
 
+#include "mcpkit/core/auth.h" /* mcp_protected_resource_metadata_t (P3 T3) */
+
 /**
  * @brief Creates a named server.
  *
@@ -70,6 +72,36 @@ mcp_server_t *mcp_server_create(mcp_context_t *ctx, const char *name, const char
  * @param server Handle to destroy; NULL is a no-op.
  */
 void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *server);
+
+/**
+ * @brief Host-injected RFC 9728 Protected Resource Metadata (P3 T3).
+ *
+ * When set, the Streamable-HTTP transport serves GET
+ * /.well-known/oauth-protected-resource with the serialized document and
+ * includes resource_metadata="<resource>" in 401 WWW-Authenticate
+ * challenges when the session's negotiated version activates the P3 auth
+ * hardening gate. Omit (never call) to keep the endpoint 404 and 401
+ * challenges bare, which is the pre-P3 zero-regression behavior.
+ *
+ * @param ctx    Context; may be NULL.
+ * @param srv    Target server (non-NULL).
+ * @param pr_meta Metadata to store (copied; non-NULL).
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT on NULL srv/pr_meta.
+ */
+mcp_status_t mcp_server_set_protected_resource_metadata(
+    mcp_context_t *ctx, mcp_server_t *srv,
+    const struct mcp_protected_resource_metadata *pr_meta);
+
+/**
+ * @brief Returns the host-injected Protected Resource Metadata, or NULL when
+ *        mcp_server_set_protected_resource_metadata was never called.
+ *
+ * The returned pointer aliases the server-owned copy; valid until the
+ * server is destroyed. Read-only: do not modify in place.
+ */
+const struct mcp_protected_resource_metadata *
+mcp_server_get_protected_resource_metadata(mcp_context_t *ctx,
+                                           mcp_server_t *srv);
 
 /**
  * @brief Adds a tool to the server's registry.
