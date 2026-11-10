@@ -47,8 +47,9 @@ P4-b 是**配置驱动**而非版本驱动——与 P3 版本门控的本质区�
    bool mcp_server_lockout_active(const mcp_server_t *srv);
    ```
    - 状态码统一为 **429**（审查修正：原 spec 混用 401/429，现锁定期间统一 429——"暂时锁定，N 秒后重试"；401 仅用于正常认证失败，429 用于锁定期间的快速拒绝）：
-   - 计数规则：v2 回调返回 `DENY` → 该会话 `auth_fail_count++`；返回 `OK` → 重置 `auth_fail_count=0`；`auth_fail_count >= max_fails` → `lockout_until = now_ms() + lockout_ms`，重置计数。锁定期间（`now_ms() < lockout_until`）该会话所有请求在 auth 回调**前**快速 429 锁定响应（附 `Retry-After` + `X-Auth-Lockout`，不走 auth 回调）。
+   - 计数规则：v2 回调返回 `DENY` → 该会话 `auth_fail_count++`；返回 `OK` → 重置 `auth_fail_count=0`；`auth_fail_count >= max_fails` → `lockout_until = now_ms() + lockout_ms`，重置计数。锁定期间（`now_ms() < lockout_until`）该会话所有请求在 auth 回调**前**（计数检查点短路，不执行 auth 回调）直接 429 锁定响应（附 `Retry-After` + `X-Auth-Lockout`）。
    - `mcp_session` 新增字段 `auth_fail_count`（`uint32_t`）、`lockout_until`（`int64_t` epoch ms，0=未锁定）。
+   - **计数身份键（审查修正）**：锁out 计数身份键是 `Mcp-Session-Id` 头值（非 bearer token、非 session 对象指针）。2026 无状态请求（`sid==NULL`）的 `Mcp-Session-Id` 头存在但请求作用域 session 用完即弃（P2 行为），故 2026 无状态路径的锁out 身份键仍取 `Mcp-Session-Id` 头字符串（请求携带时才有效）；无 `Mcp-Session-Id` 头的 2026 无状态请求 **不进入锁out 计数**（零回归，host 须自行用 client_id 等标识）。
    - 计数挂点（审查修正）：v2 回调在 `handle_post` 中位于会话解析**之前**（此时 `sess==NULL`），故认证失败计数**不**在回调处直接挂 `mcp_session_t`，而是在 v2 回调返回后、`sess` 已 resolve 处（`handle_post` 中 dispatch 前）累计。`mcp_session` 新增 `auth_fail_count`/`lockout_until` 字段，随会话销毁释放。
 
 ### TLS 层 API（`tls.h` + `tls.c`）
