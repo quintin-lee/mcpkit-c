@@ -200,6 +200,27 @@ mcp_status_t mcp_http_request_set_mcp_metadata(mcp_context_t *ctx, mcp_http_requ
                                                const char *name_or_uri);
 
 /**
+ * @brief Sets a SEP-2243 x-mcp-header annotated parameter value as a
+ *        `Mcp-Param-{Name}` HTTP header on an outgoing request.
+ *
+ * Sibling to mcp_http_request_set_mcp_metadata; use it after the base
+ * metadata headers are already set. The header name is built as
+ * "Mcp-Param-<name>" (name not owned; copied internally). The header
+ * value may be a base64 sentinel of the form
+ * "=?base64?<b64>?=" — it is stored verbatim; decoding is the
+ * server's responsibility.
+ *
+ * @param ctx    Context; may be NULL.
+ * @param req    Target HTTP request.
+ * @param name   Parameter name (e.g. "Region"); not owned.
+ * @param value  Header value string; not owned.
+ * @return MCP_OK on success; MCP_ERR_NOMEM on allocation failure;
+ *         MCP_ERR_INVALID_ARGUMENT on bad arguments.
+ */
+mcp_status_t mcp_http_request_set_xmcp_param(mcp_context_t *ctx, mcp_http_request_t *req,
+                                              const char *name, const char *value);
+
+/**
  * @brief Creates an HTTP response.
  *
  * Caller owns the response; destroy with mcp_http_response_destroy().

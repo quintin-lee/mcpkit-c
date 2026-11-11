@@ -537,6 +537,64 @@ mcp_status_t mcp_client_set_bearer_token(mcp_context_t *ctx, mcp_client_t *clien
  */
 const char *mcp_client_get_bearer_token(mcp_context_t *ctx, const mcp_client_t *client);
 
+/**
+ * @brief Registers a tool's input schema for SEP-2243 Mcp-Param-* mirroring.
+ *
+ * The schema is deep-cloned and stored in the client's internal schema
+ * cache. When mcp_client_call_tool or mcp_client_call_tool_mrtr is
+ * called for the named tool, the client walks the cached schema for
+ * x-mcp-header annotations and sets the corresponding Mcp-Param-*
+ * headers on the outgoing HTTP request (5-step encoding:
+ * type conversion, leading/trailing whitespace check, ASCII check,
+ * control-char check, base64 sentinel when needed).
+ *
+ * Clients that never call this function will not send any Mcp-Param-*
+ * headers (spec: no-schema clients SHOULD not send them).
+ *
+ * The mirroring is gated: only when client->version >= 2026-07-28.
+ * 2025-11-25 clients skip mirroring entirely even if a schema is set.
+ *
+ * @param ctx        Context; may be NULL (default allocator).
+ * @param client     Target client; must not be NULL.
+ * @param tool_name  Tool name; copied internally.
+ * @param input_schema Input schema JSON object (borrowed); must not be NULL.
+ * @return MCP_OK on success; MCP_ERR_NOMEM on allocation failure;
+ *         MCP_ERR_INVALID_ARGUMENT on NULL client or schema.
+ */
+mcp_status_t mcp_client_set_tool_schema(mcp_context_t *ctx, mcp_client_t *client,
+                                       const char *tool_name,
+                                       const mcp_json_value_t *input_schema);
+
+/**
+ * @brief Borrowed view of one Mcp-Param-* header computed for a tools/call.
+ *
+ * Returned by mcp_client_get_xmcp_params; both fields are BORROWED
+ * pointers valid only while the client is alive (or until the next
+ * mcp_client_call_tool / mcp_client_call_tool_mrtr rebuilds the list).
+ */
+typedef struct mcp_client_xmcp_param_view {
+    const char *name;   /* header suffix, e.g. "Region" */
+    const char *value;  /* encoded value (plain or base64 sentinel) */
+} mcp_client_xmcp_param_view_t;
+
+/**
+ * @brief Returns the Mcp-Param-* headers computed for the most recent
+ *        tools/call mirroring pass.
+ *
+ * The list is rebuilt on every mcp_client_call_tool /
+ * mcp_client_call_tool_mrtr. For a non-2026 client, a client with no
+ * cached schema, or a tool with no x-mcp-header annotations the list is
+ * empty. The host's HTTP transport reads this list and, for each entry,
+ * calls mcp_http_request_set_xmcp_param(ctx, req, entry->name,
+ * entry->value) before serializing and sending the request.
+ *
+ * @param client  Target client; may be NULL (yields an empty view).
+ * @param n_out   Receives the entry count (0 if none).
+ * @return Borrowed array of n_out entries (may be NULL when n_out is 0).
+ */
+const mcp_client_xmcp_param_view_t *mcp_client_get_xmcp_params(const mcp_client_t *client,
+                                                               size_t *n_out);
+
 /** @} */
 
 #endif

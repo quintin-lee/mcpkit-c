@@ -142,6 +142,23 @@ mcp_status_t mcp_oauth_discovery_merge(mcp_context_t *ctx,
 mcp_status_t mcp_oauth_build_dcr_deprecation_headers(mcp_context_t *ctx,
                                                      char **deprecation_out,
                                                      char **sunset_out);
+/* P4-a T2: RFC 9728 AS auto-discovery.
+   Builds the RFC 8414 probe URL from the authorization_server, fetches via
+   the host-supplied callback, parses the AS document, and merges with
+   existing OIDC metadata.  The library does not perform network I/O itself. */
+typedef int (*mcp_http_fetch_fn)(void *ud, const char *url,
+                                  char **body_out, size_t *body_len_out);
+mcp_status_t mcp_oauth_discover_as(mcp_context_t *ctx,
+                                    const mcp_protected_resource_metadata_t *prm,
+                                    mcp_http_fetch_fn fetch, void *fetch_ud,
+                                    const mcp_oauth_metadata_t *existing_as,
+                                    mcp_oauth_metadata_t *out_merged);
+/* P4-a T0: RFC 4648 §4 std base64 + sentinel codec (used for SEP-2243
+   Mcp-Param-* header encoding when a value is not plain-ASCII-safe) */
+char *mcp_base64_encode(mcp_context_t *ctx, const uint8_t *in, size_t in_len);
+int   mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
+                       uint8_t **out, size_t *out_len);
+mcp_status_t mcp_base64_sentinel_decode(mcp_context_t *ctx, const char *in, char **out);
 /* RFC 9207 / SEP-2468 'iss' parameter validation (simple 2-arg form) */
 bool mcp_oauth_validate_issuer(const char *expected_issuer,
                                const char *response_issuer);
@@ -601,6 +618,10 @@ bool mcp_proto_policy_auth_hardening_active(mcp_context_t *ctx,
    deprecation window (drives DCR deprecation headers / CIMD preferred) */
 bool mcp_proto_policy_cimd_preferred(mcp_context_t *ctx,
                                      const mcp_session_t *session);
+/* P4-a T0: true when negotiated version >= 2026-07-28
+   (drives SEP-2243 Mcp-Param-* consistency check and client mirroring) */
+bool mcp_proto_policy_sep2243_active(mcp_context_t *ctx,
+                                     const mcp_session_t *session);
 ```
 
 ---
@@ -908,6 +929,11 @@ mcp_status_t                 mcp_http_request_set_header(ctx, mcp_http_request_t
 mcp_status_t                 mcp_http_request_set_body(ctx, mcp_http_request_t *req, const char *body, size_t len);
 const char         *mcp_http_request_serialize(ctx, mcp_http_request_t *req);
 mcp_status_t                 mcp_http_request_set_mcp_metadata(ctx, mcp_http_request_t *req, const char *proto_ver, const char *method, const char *name);
+/* P4-a T4: set a Mcp-Param-{Name} header (SEP-2243 client-side mirroring).
+   `name` is the suffix (e.g. "Region"); the library prefixes "Mcp-Param-".
+   The value is the encoded result (plain string, or =?base64?…?= sentinel
+   when the original value was not plain-ASCII-safe). */
+mcp_status_t                 mcp_http_request_set_xmcp_param(ctx, mcp_http_request_t *req, const char *name, const char *value);
 
 mcp_http_response_t *mcp_http_response_new(ctx, int status, const char *reason);
 mcp_status_t                  mcp_http_response_set_header(ctx, resp, const char *name, const char *value);
@@ -1127,6 +1153,26 @@ mcp_status_t          mcp_client_handle_server_request(ctx, c, const mcp_message
 mcp_status_t mcp_client_set_bearer_token(mcp_context_t *ctx, mcp_client_t *client,
                                          const char *bearer_token);
 const char  *mcp_client_get_bearer_token(mcp_context_t *ctx, const mcp_client_t *client);
+
+/* P4-a T4: SEP-2243 Mcp-Param-* client-side mirroring.
+   Register a tool's input schema (deep-cloned) so that
+   mcp_client_call_tool can walk x-mcp-header annotations before sending
+   and compute the Mcp-Param-* header values via 5-step encoding.
+   Gate: only active when the negotiated version is 2026-07-28. */
+mcp_status_t mcp_client_set_tool_schema(mcp_context_t *ctx, mcp_client_t *client,
+                                       const char *tool_name,
+                                       const mcp_json_value_t *input_schema);
+/* View of the Mcp-Param-* headers computed for the most recent tools/call.
+   Rebuilt on every mcp_client_call_tool.  For a non-2026 client, a client
+   with no cached schema, or a tool with no x-mcp-header annotations the
+   list is empty.  The host's HTTP transport reads this list and calls
+   mcp_http_request_set_xmcp_param per entry before serializing the request. */
+typedef struct mcp_client_xmcp_param_view {
+    const char *name;   /* header suffix, e.g. "Region" */
+    const char *value;  /* encoded value (plain or =?base64?…?= sentinel) */
+} mcp_client_xmcp_param_view_t;
+const mcp_client_xmcp_param_view_t *mcp_client_get_xmcp_params(
+    const mcp_client_t *client, size_t *n_out);
 ```
 
 ---

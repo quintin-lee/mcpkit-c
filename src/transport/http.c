@@ -448,6 +448,28 @@ mcp_status_t mcp_http_request_set_mcp_metadata(mcp_context_t *ctx, mcp_http_requ
     return MCP_OK;
 }
 
+mcp_status_t mcp_http_request_set_xmcp_param(mcp_context_t *ctx, mcp_http_request_t *req,
+                                              const char *name, const char *value) {
+    if (req == NULL || name == NULL || value == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    /* Build header name "Mcp-Param-<name>" */
+    const mcp_allocator_t *a = alloc_of(ctx);
+    size_t hdr_len = 10 + strlen(name) + 1; /* "Mcp-Param-" + name + NUL */
+    char *hdr_name = a->malloc_fn(hdr_len, a->userdata);
+    if (hdr_name == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    int n = snprintf(hdr_name, hdr_len, "Mcp-Param-%s", name);
+    if (n < 0 || (size_t)n >= hdr_len) {
+        a->free_fn(hdr_name, a->userdata);
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_status_t st = mcp_http_request_set_header(ctx, req, hdr_name, value);
+    a->free_fn(hdr_name, a->userdata);
+    return st;
+}
+
 bool mcp_http_request_wants_close(mcp_context_t *ctx,
                                   const mcp_http_request_t *req) {
     (void)ctx;

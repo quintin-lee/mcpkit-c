@@ -341,6 +341,107 @@ int main(void) {
     mcp_client_destroy(ctx, c_disc);
     mcp_transport_destroy(ctx, t_disc);
 
+    /* ----------------------------------------------------------------
+     * P4-a T4: Mcp-Param-* client-side mirroring
+     * ---------------------------------------------------------------- */
+
+    /* A fresh fake transport scripted to answer a tools/call. */
+    fake_t fake4;
+    memset(&fake4, 0, sizeof(fake4));
+    static const char *kCall[] = {
+        "{\"jsonrpc\":\"2.0\",\"id\":1,"
+        "\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}",
+    };
+    fake4.script = kCall;
+    fake4.nscript = 1;
+    mcp_transport_t *t4 = mcp_transport_create(ctx, &kFake, &fake4);
+    CHECK(t4 != NULL);
+    mcp_client_t *c4 = mcp_client_create(ctx, t4);
+    CHECK(c4 != NULL);
+
+    /* No schema set: get_xmcp_params yields an empty view. */
+    size_t n_params = 999;
+    CHECK(mcp_client_get_xmcp_params(c4, &n_params) == NULL && n_params == 0);
+    n_params = 7;
+    CHECK(mcp_client_get_xmcp_params(NULL, &n_params) == NULL && n_params == 0);
+    CHECK(mcp_client_get_xmcp_params(c4, NULL) == NULL);
+
+    /* set_tool_schema rejects NULL args. */
+    const char *schema_json =
+        "{\"type\":\"object\","
+        "\"properties\":{"
+        "  \"region\":{\"type\":\"string\",\"x-mcp-header\":\"Region\"},"
+        "  \"debug\":{\"type\":\"boolean\",\"x-mcp-header\":\"Debug\"},"
+        "  \"count\":{\"type\":\"number\",\"x-mcp-header\":\"Count\"},"
+        "  \"note\":{\"type\":\"string\",\"x-mcp-header\":\"Note\"}"
+        "}}";
+    mcp_json_value_t *schema = mcp_json_parse(ctx, schema_json, strlen(schema_json));
+    CHECK(schema != NULL);
+    CHECK(mcp_client_set_tool_schema(ctx, NULL, "echo", schema) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_set_tool_schema(ctx, c4, NULL, schema) == MCP_ERR_INVALID_ARGUMENT);
+    CHECK(mcp_client_set_tool_schema(ctx, c4, "echo", NULL) == MCP_ERR_INVALID_ARGUMENT);
+
+    /* Register the schema. */
+    CHECK(mcp_client_set_tool_schema(ctx, c4, "echo", schema) == MCP_OK);
+    mcp_json_destroy(ctx, schema);
+    schema = NULL;
+
+    /* 2026 client: initialize with the 2026-07-28 version so mirroring is on. */
+    static const char *kInit2026[] = {
+        "{\"jsonrpc\":\"2.0\",\"id\":1,"
+        "\"result\":{\"protocolVersion\":\"2026-07-28\","
+        "\"serverInfo\":{\"name\":\"s\",\"version\":\"1\"},"
+        "\"capabilities\":{}}}",
+        "{\"jsonrpc\":\"2.0\",\"id\":2,"
+        "\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}",
+    };
+    fake4.script = kInit2026;
+    fake4.nscript = 2;
+    fake4.cursor = 0;
+    mcp_json_value_t *init_info = NULL;
+    CHECK(mcp_client_initialize(ctx, c4, "n", "v", &init_info) == MCP_OK);
+    mcp_json_destroy(ctx, init_info);
+    CHECK(strcmp(mcp_client_protocol_version(ctx, c4), "2026-07-28") == 0);
+
+    /* Build args: string (plain), bool, number, and a leading-space string. */
+    mcp_json_value_t *args4 = mcp_json_object_new(ctx);
+    CHECK(args4 != NULL);
+    CHECK(mcp_json_object_set(ctx, args4, "region",
+                              mcp_json_string_new(ctx, "us-east-1")) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, args4, "debug", mcp_json_bool_new(ctx, true)) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, args4, "count", mcp_json_number_new(ctx, 42.0)) == MCP_OK);
+    CHECK(mcp_json_object_set(ctx, args4, "note",
+                              mcp_json_string_new(ctx, " leading")) == MCP_OK);
+
+    mcp_json_value_t *call_res = NULL;
+    CHECK(mcp_client_call_tool(ctx, c4, "echo", args4, &call_res) == MCP_OK);
+    /* args4 was consumed by call_tool; call_res is caller-owned. */
+    mcp_json_destroy(ctx, call_res);
+
+    /* After the call, the client exposes 4 computed Mcp-Param-* headers. */
+    size_t got = 0;
+    const mcp_client_xmcp_param_view_t *view = mcp_client_get_xmcp_params(c4, &got);
+    CHECK(got == 4);
+    CHECK(view != NULL);
+    for (size_t i = 0; i < got; i++) {
+        if (strcmp(view[i].name, "Region") == 0) {
+            CHECK(strcmp(view[i].value, "us-east-1") == 0);
+        } else if (strcmp(view[i].name, "Debug") == 0) {
+            CHECK(strcmp(view[i].value, "true") == 0);
+        } else if (strcmp(view[i].name, "Count") == 0) {
+            CHECK(strcmp(view[i].value, "42") == 0);
+        } else if (strcmp(view[i].name, "Note") == 0) {
+            /* leading space -> base64 sentinel */
+            CHECK(strncmp(view[i].value, "=?base64?", 9) == 0);
+            CHECK(strchr(view[i].value, '?') != NULL);
+        } else {
+            CHECK(false); /* unexpected header */
+        }
+    }
+
+    mcp_client_destroy(ctx, c4);
+    mcp_transport_destroy(ctx, t4);
+
     mcp_client_destroy(ctx, c2);
     mcp_transport_destroy(ctx, t2);
     mcp_client_destroy(ctx, NULL);
