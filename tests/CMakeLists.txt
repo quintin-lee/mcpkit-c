@@ -380,6 +380,12 @@ target_link_libraries(test_oauth_discovery_oidc PRIVATE mcpkit_core)
 add_test(NAME test_oauth_discovery_oidc COMMAND test_oauth_discovery_oidc)
 
 if(MCPKIT_BUILD_HTTP)
+  add_executable(test_http_mcp_param unit/test_http_mcp_param.c)
+  target_link_libraries(test_http_mcp_param PRIVATE mcpkit_core)
+  add_test(NAME test_http_mcp_param COMMAND test_http_mcp_param)
+endif()
+
+if(MCPKIT_BUILD_HTTP)
   add_executable(test_http_9728_scp835 unit/test_http_9728_scp835.c)
   target_link_libraries(test_http_9728_scp835 PRIVATE mcpkit_core)
   add_test(NAME test_http_9728_scp835 COMMAND test_http_9728_scp835)

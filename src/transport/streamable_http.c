@@ -10,7 +10,9 @@
 #include "mcpkit/transport/streamable_http.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "mcpkit/core/auth.h"
@@ -300,6 +302,257 @@ static mcp_status_t validate_http_metadata(mcp_context_t *ctx, mcp_http_request_
     return MCP_OK;
 }
 
+/* -------------------------------------------------------------------------
+ * P4-a T3: SEP-2243 Mcp-Param-* consistency check.
+ *
+ * Walks the tool's inputSchema for `x-mcp-header` annotations, reads the
+ * corresponding `Mcp-Param-{Name}` HTTP headers, decodes base64 sentinels,
+ * and compares with the body parameter value.
+ * Mismatch, missing header (when body has a value), or decode failure →
+ * returns false (caller sends 400 + -32001).
+ * ---------------------------------------------------------------------- */
+
+#define XMCP_MAX_ANNOTATIONS 32
+typedef struct {
+    char param_name[64];    /* JSON property name (body key) */
+    char header_name[64];   /* x-mcp-header annotation value (header suffix) */
+    int cmp_mode;           /* 0=string, 1=numeric, 2=boolean */
+} xmcp_anno_t;
+
+/* Classify the comparison mode from a property schema's "type" constraint.
+   The SEP-2243 registry (S1) guarantees the annotation sits on a property
+   whose type allows string/integer/boolean, so the classification is:
+   - exactly "integer" or a union containing integer -> numeric compare
+   - exactly "boolean" or a union containing boolean -> boolean compare
+   - otherwise -> string compare */
+static int xmcp_classify_type(mcp_context_t *ctx, const mcp_json_value_t *schema) {
+    const mcp_json_value_t *type_v = mcp_json_object_get(ctx, schema, "type");
+    if (type_v == NULL) {
+        return 0; /* unspecified type -> string compare */
+    }
+    int t = mcp_json_type(ctx, type_v);
+    bool has_int = false, has_bool = false, has_other = false;
+    if (t == MCP_JSON_STRING) {
+        const char *s = NULL;
+        mcp_json_string_value(ctx, type_v, &s);
+        if (s != NULL) {
+            if (strcmp(s, "integer") == 0) has_int = true;
+            else if (strcmp(s, "boolean") == 0) has_bool = true;
+            else has_other = true;
+        }
+    } else if (t == MCP_JSON_ARRAY) {
+        size_t n = mcp_json_array_size(ctx, type_v);
+        for (size_t i = 0; i < n; i++) {
+            const char *s = NULL;
+            mcp_json_string_value(ctx, mcp_json_array_get(ctx, type_v, i), &s);
+            if (s == NULL) {
+                continue;
+            }
+            if (strcmp(s, "integer") == 0) has_int = true;
+            else if (strcmp(s, "boolean") == 0) has_bool = true;
+            else has_other = true;
+        }
+    }
+    if (has_int && !has_bool && !has_other) {
+        return 1;
+    }
+    if (has_bool && !has_int && !has_other) {
+        return 2;
+    }
+    return 0;
+}
+
+/* Key-aware recursive walk: when a node's "x-mcp-header" key is found
+   AND its parent context is a properties-object, record (param_name, header_name).
+   We track the current property name via a stack passed as `cur_prop_name`.
+   At the top level the caller passes NULL. */
+static int xmcp_collect_anno(mcp_context_t *ctx, const mcp_json_value_t *node,
+                             const char *cur_prop_name,
+                             xmcp_anno_t *out, int *count, int cap) {
+    if (node == NULL || *count >= cap) {
+        return *count;
+    }
+    int t = mcp_json_type(ctx, node);
+    if (t == MCP_JSON_ARRAY) {
+        size_t n = mcp_json_array_size(ctx, node);
+        for (size_t i = 0; i < n && *count < cap; i++) {
+            xmcp_collect_anno(ctx, mcp_json_array_get(ctx, node, i),
+                              cur_prop_name, out, count, cap);
+        }
+        return *count;
+    }
+    if (t != MCP_JSON_OBJECT) {
+        return *count;
+    }
+
+    /* Check if this object itself carries an x-mcp-header annotation. */
+    if (mcp_json_object_has(ctx, node, "x-mcp-header") && cur_prop_name != NULL) {
+        const mcp_json_value_t *hdr_v = mcp_json_object_get(ctx, node, "x-mcp-header");
+        const char *hdr = NULL;
+        if (mcp_json_string_value(ctx, hdr_v, &hdr) == MCP_OK && hdr != NULL && hdr[0] != '\0') {
+            xmcp_anno_t *e = &out[*count];
+            snprintf(e->param_name, sizeof(e->param_name), "%s", cur_prop_name);
+            snprintf(e->header_name, sizeof(e->header_name), "%s", hdr);
+            e->cmp_mode = xmcp_classify_type(ctx, node);
+            (*count)++;
+        }
+    }
+
+    /* Recurse into all object members, passing each key as the property name. */
+    size_t n_members = mcp_json_object_size(ctx, node);
+    for (size_t i = 0; i < n_members && *count < cap; i++) {
+        const char *key = mcp_json_object_key_at(ctx, node, i);
+        if (key == NULL) {
+            continue;
+        }
+        const mcp_json_value_t *val = mcp_json_object_get(ctx, node, key);
+        /* When the key is "properties", its children are property schemas.
+           Each child's key is the parameter name, so recurse with the child's
+           key as cur_prop_name. */
+        if (strcmp(key, "properties") == 0 && mcp_json_type(ctx, val) == MCP_JSON_OBJECT) {
+            size_t n_props = mcp_json_object_size(ctx, val);
+            for (size_t j = 0; j < n_props && *count < cap; j++) {
+                const char *pname = mcp_json_object_key_at(ctx, val, j);
+                if (pname == NULL) {
+                    continue;
+                }
+                xmcp_collect_anno(ctx, mcp_json_object_get(ctx, val, pname),
+                                  pname, out, count, cap);
+            }
+        } else if (strcmp(key, "items") == 0) {
+            /* items may be an object schema or an array of schemas */
+            xmcp_collect_anno(ctx, val, cur_prop_name, out, count, cap);
+        } else {
+            xmcp_collect_anno(ctx, val, NULL, out, count, cap);
+        }
+    }
+    return *count;
+}
+
+/* Collect all x-mcp-header annotations from a tool's inputSchema.
+   Returns the number collected (0 if none or schema is NULL). */
+static int xmcp_collect_annotations(mcp_context_t *ctx, const mcp_json_value_t *schema,
+                                   xmcp_anno_t *out, int cap) {
+    int count = 0;
+    if (schema == NULL) {
+        return 0;
+    }
+    xmcp_collect_anno(ctx, schema, NULL, out, &count, cap);
+    return count;
+}
+
+/* Compare a decoded header value against the body parameter value.
+   Numeric comparison for integer-typed annotations, boolean textual compare
+   for boolean-typed, string equality otherwise. */
+static bool xmcp_values_match(const xmcp_anno_t *anno,
+                              const char *decoded_header,
+                              mcp_context_t *ctx,
+                              const mcp_json_value_t *body_val) {
+    if (body_val == NULL || decoded_header == NULL) {
+        return false;
+    }
+    if (anno->cmp_mode == 1) {
+        /* Numeric comparison: parse body number and header string as int64 */
+        double body_num = 0;
+        int rc = mcp_json_number_value(ctx, body_val, &body_num);
+        if (rc == MCP_OK) {
+            char *end = NULL;
+            int64_t hdr_int = strtoll(decoded_header, &end, 10);
+            return end != NULL && *end == '\0' && (double)hdr_int == body_num;
+        }
+        return false; /* body value is not a number */
+    }
+    if (anno->cmp_mode == 2) {
+        bool bval = false;
+        int rc = mcp_json_bool_value(ctx, body_val, &bval);
+        if (rc == MCP_OK) {
+            return (bval ? strcmp(decoded_header, "true") == 0 : strcmp(decoded_header, "false") == 0);
+        }
+        return false; /* body value is not a boolean */
+    }
+    /* Default: string equality */
+    const char *body_str = NULL;
+    if (mcp_json_string_value(ctx, body_val, &body_str) == MCP_OK && body_str != NULL) {
+        return strcmp(decoded_header, body_str) == 0;
+    }
+    return false;
+}
+
+/* Returns true if the check passes (headers consistent or no annotations).
+   On failure copies the failing parameter name into *err_param (buf of at
+   least 64 bytes); leaves it as empty string on success. */
+static bool xmcp_check_headers(mcp_context_t *ctx, mcp_server_t *server,
+                               mcp_http_request_t *req,
+                               const mcp_json_value_t *params_obj,
+                               const char *tool_name,
+                               char *err_param, size_t err_cap) {
+    if (err_param != NULL && err_cap > 0) {
+        err_param[0] = '\0';
+    }
+
+    /* Get the tool's inputSchema */
+    const mcp_json_value_t *schema = mcp_server_get_tool_schema(ctx, server, tool_name);
+    if (schema == NULL) {
+        return true; /* tool not in registry or no schema → skip check */
+    }
+
+    /* Collect x-mcp-header annotations */
+    xmcp_anno_t annos[XMCP_MAX_ANNOTATIONS];
+    int n_annos = xmcp_collect_annotations(ctx, schema, annos, XMCP_MAX_ANNOTATIONS);
+    if (n_annos == 0) {
+        return true; /* no annotations → nothing to check */
+    }
+
+    for (int i = 0; i < n_annos; i++) {
+        const xmcp_anno_t *anno = &annos[i];
+
+        /* Read the body parameter value */
+        const mcp_json_value_t *body_val =
+            (params_obj != NULL) ? mcp_json_object_get(ctx, params_obj, anno->param_name) : NULL;
+
+        /* Construct the header name: Mcp-Param-{HeaderName} */
+        char hdr_name_buf[128];
+        int n = snprintf(hdr_name_buf, sizeof(hdr_name_buf), "Mcp-Param-%s", anno->header_name);
+        if (n <= 0 || (size_t)n >= sizeof(hdr_name_buf)) {
+            if (err_param != NULL && err_cap > 0) {
+                snprintf(err_param, err_cap, "%s", anno->param_name);
+            }
+            return false; /* header name too long to form */
+        }
+        const char *hdr_val = mcp_http_header(ctx, req, hdr_name_buf);
+
+        /* Body has a value but header is missing → fail */
+        if (body_val != NULL && hdr_val == NULL) {
+            if (err_param != NULL && err_cap > 0) {
+                snprintf(err_param, err_cap, "%s", anno->param_name);
+            }
+            return false;
+        }
+
+        /* Header present: decode sentinel and compare */
+        if (hdr_val != NULL) {
+            char *decoded = NULL;
+            mcp_status_t st = mcp_base64_sentinel_decode(ctx, hdr_val, &decoded);
+            if (st != MCP_OK) {
+                mcp_oauth_free_string(ctx, decoded); /* may be NULL on error */
+                if (err_param != NULL && err_cap > 0) {
+                    snprintf(err_param, err_cap, "%s", anno->param_name);
+                }
+                return false;
+            }
+            if (!xmcp_values_match(anno, decoded, ctx, body_val)) {
+                mcp_oauth_free_string(ctx, decoded);
+                if (err_param != NULL && err_cap > 0) {
+                    snprintf(err_param, err_cap, "%s", anno->param_name);
+                }
+                return false;
+            }
+            mcp_oauth_free_string(ctx, decoded);
+        }
+    }
+    return true;
+}
+
 static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
                                 http_session_table_t *table, mcp_http_io_t *io,
                                 mcp_http_request_t *req,
@@ -469,6 +722,45 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
         }
         return send_bytes(ctx, io, 202, "Accepted", NULL, NULL, 0, NULL, NULL);
     }
+    /* P4-a T3: SEP-2243 Mcp-Param-* consistency check (2026 only, session-gated).
+       Runs AFTER session resolution (negotiated version is written) and BEFORE
+       dispatch. Only fires when sep2243_active is true; all other versions skip
+       entirely (zero regression). */
+    if (is_2026 && mcp_proto_policy_sep2243_active(ctx, sess)) {
+        const char *tool_name = mcp_http_header(ctx, req, "Mcp-Name");
+        const char *msg_method = mcp_message_method(ctx, msg);
+        if (tool_name != NULL && msg_method != NULL
+            && strcmp(msg_method, "tools/call") == 0) {
+            /* tools/call params = { name, arguments } — the body parameter
+               values live under `params.arguments`, not at the params root. */
+            const mcp_json_value_t *params_root = mcp_message_params(ctx, msg);
+            const mcp_json_value_t *arguments_obj =
+                (params_root != NULL) ? mcp_json_object_get(ctx, params_root, "arguments") : NULL;
+            char err_param[64] = {0};
+            if (!xmcp_check_headers(ctx, server, req, arguments_obj, tool_name,
+                                    err_param, sizeof(err_param))) {
+                /* err_param names the failing body parameter; embed it in the
+                   error message when available for host diagnostics. */
+                char detail[200];
+                if (err_param[0] != '\0') {
+                    int dn = snprintf(detail, sizeof(detail),
+                                      "Mcp-Param header for '%s' does not match body parameter", err_param);
+                    if (dn < 0 || (size_t)dn >= sizeof(detail)) {
+                        snprintf(detail, sizeof(detail),
+                                 "Mcp-Param-* header does not match body parameter");
+                    }
+                } else {
+                    snprintf(detail, sizeof(detail),
+                             "Mcp-Param-* header does not match body parameter");
+                }
+                mcp_status_t er = send_rpc_error(ctx, io, msg, MCP_RPC_XMCP_PARAM_MISMATCH,
+                                                 detail);
+                mcp_message_destroy(ctx, msg);
+                return er;
+            }
+        }
+    }
+
     mcp_message_t *resp = NULL;
     mcp_status_t st = mcp_server_dispatch(ctx, server, sess, msg, &resp);
     mcp_message_destroy(ctx, msg);

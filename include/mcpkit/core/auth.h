@@ -501,6 +501,24 @@ char *mcp_base64_encode(mcp_context_t *ctx, const uint8_t *in, size_t in_len);
 int mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
                       uint8_t **out, size_t *out_len);
 
+/**
+ * @brief Decodes a base64 sentinel `=?base64?{B64}?=` value.
+ *
+ * Used by the SEP-2243 `Mcp-Param-*` consistency check to expand sentinel-
+ * encoded header values back to their original byte sequence. The sentinel
+ * prefix `=?base64?` (10 bytes) and suffix `?=` (2 bytes) are stripped
+ * before decoding; non-sentinel input is returned as-is (a copy is
+ * allocated when the input is not a sentinel).
+ *
+ * @param ctx   Context; may be NULL (uses default allocator for output).
+ * @param in    The raw header value (may or may not be a sentinel).
+ * @param out   Receives a ctx-allocator-owned NUL-terminated string.
+ *              The caller frees it with mcp_oauth_free_string(ctx, *out).
+ * @return MCP_OK on success; MCP_ERR_PROTOCOL if the sentinel has an invalid
+ *         base64 payload; MCP_ERR_NOMEM on allocation failure.
+ */
+mcp_status_t mcp_base64_sentinel_decode(mcp_context_t *ctx, const char *in, char **out);
+
 /* -------------------------------------------------------------------------
  * P4-a: RFC 9728 AS auto-discovery.
  * Given an RFC 9728 protected-resource metadata's `authorization_server`

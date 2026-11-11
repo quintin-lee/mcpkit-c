@@ -322,6 +322,54 @@ int mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
     return 0;
 }
 
+/* SEP-2243 base64 sentinel: `=?base64?{B64}?=` (RFC 4648 §4 padded).
+   mcp_base64_sentinel_decode (mcp_base64_decode for the stripped payload).
+   Non-sentinel input is returned as a heap copy so the caller always owns *out. */
+mcp_status_t mcp_base64_sentinel_decode(mcp_context_t *ctx, const char *in, char **out) {
+    if (in == NULL || out == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    *out = NULL;
+    const mcp_allocator_t *alloc = alloc_of(ctx);
+
+    const char *PREFIX = "=?base64?";
+    const size_t PREFIX_LEN = 9;
+    const size_t SUFFIX_LEN = 2; /* "?=" */
+
+    if (strncmp(in, PREFIX, PREFIX_LEN) == 0 && strlen(in) > PREFIX_LEN + SUFFIX_LEN) {
+        const char *payload = in + PREFIX_LEN;
+        size_t payload_len = strlen(payload) - SUFFIX_LEN; /* strip trailing "?=" */
+        uint8_t *decoded = NULL;
+        size_t decoded_len = 0;
+        int rc = mcp_base64_decode(ctx, payload, payload_len, &decoded, &decoded_len);
+        if (rc != 0) {
+            return MCP_ERR_PROTOCOL;
+        }
+        /* Allocate NUL-terminated copy via ctx allocator */
+        char *result = (char *)alloc->malloc_fn(decoded_len + 1, alloc->userdata);
+        if (result == NULL) {
+            free(decoded);
+            return MCP_ERR_NOMEM;
+        }
+        if (decoded_len > 0) {
+            memcpy(result, decoded, decoded_len);
+        }
+        result[decoded_len] = '\0';
+        free(decoded);
+        *out = result;
+        return MCP_OK;
+    }
+
+    /* Non-sentinel: return a heap copy of the original value */
+    size_t len = strlen(in);
+    char *result = (char *)alloc->malloc_fn(len + 1, alloc->userdata);
+    if (result == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    memcpy(result, in, len + 1);
+    *out = result;
+    return MCP_OK;
+}
 
 static inline bool is_pkce_unreserved(char c) {
     return (c >= 'A' && c <= 'Z') ||

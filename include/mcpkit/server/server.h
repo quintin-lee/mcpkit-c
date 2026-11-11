@@ -517,4 +517,25 @@ mcp_status_t mcp_server_enable_skills(mcp_context_t *ctx, mcp_server_t *srv);
  */
 mcp_skill_registry_t *mcp_server_get_skill_registry(mcp_server_t *srv);
 
+/* -------------------------------------------------------------------------
+ * P4-a T3: SEP-2243 x-mcp-header annotation query API.
+ * Used by the streamable-HTTP transport to read the registered tool's
+ * inputSchema tree and walk it for x-mcp-header annotations, then compare
+ * the corresponding Mcp-Param-* headers with the request body values.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * @brief Returns a borrowed pointer to the registered tool's inputSchema.
+ *
+ * @param ctx    Context; may be NULL.
+ * @param srv    Target server (non-NULL).
+ * @param name   Tool name (non-NULL).
+ * @return Borrowed `const mcp_json_value_t*` to the tool's inputSchema, or
+ *         NULL if no tool with that name is registered or its schema is NULL.
+ *         The pointer is valid until the tool is removed from the server.
+ */
+const mcp_json_value_t *mcp_server_get_tool_schema(mcp_context_t *ctx,
+                                                    mcp_server_t *srv,
+                                                    const char *name);
+
 #endif

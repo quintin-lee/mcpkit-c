@@ -406,6 +406,18 @@ mcp_status_t mcp_server_add_tool(mcp_context_t *ctx, mcp_server_t *srv, mcp_tool
     return append_ptr(ctx, (void ***)&srv->tools, &srv->n_tools, &srv->cap_tools, tool);
 }
 
+/* P4-a T3: return a borrowed pointer to the tool's inputSchema by name.
+   Used by streamable_http.c to walk the schema for x-mcp-header annotations. */
+const mcp_json_value_t *mcp_server_get_tool_schema(mcp_context_t *ctx, mcp_server_t *srv,
+                                                   const char *name) {
+    (void)ctx;
+    if (srv == NULL || name == NULL) {
+        return NULL;
+    }
+    const mcp_tool_t *tool = find_tool(srv, name);
+    return (tool != NULL) ? tool->schema : NULL;
+}
+
 mcp_status_t mcp_server_add_resource(mcp_context_t *ctx, mcp_server_t *srv, mcp_resource_t *res) {
     if (srv == NULL || res == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
