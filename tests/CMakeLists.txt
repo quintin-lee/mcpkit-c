@@ -363,6 +363,10 @@ add_executable(test_base64_sep2243 unit/test_base64_sep2243.c)
 target_link_libraries(test_base64_sep2243 PRIVATE mcpkit_core)
 add_test(NAME test_base64_sep2243 COMMAND test_base64_sep2243)
 
+add_executable(test_sep2243_xmcp_header unit/test_sep2243_xmcp_header.c)
+target_link_libraries(test_sep2243_xmcp_header PRIVATE mcpkit_core)
+add_test(NAME test_sep2243_xmcp_header COMMAND test_sep2243_xmcp_header)
+
 add_executable(test_auth_client unit/test_auth_client.c)
 target_link_libraries(test_auth_client PRIVATE mcpkit_core)
 add_test(NAME test_auth_client COMMAND test_auth_client)

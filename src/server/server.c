@@ -14,6 +14,7 @@
 #include "mcpkit/server/server.h"
 
 #include <string.h>
+#include <strings.h>
 
 #include "internals.h"
 #include "mcpkit/json/json.h"
@@ -258,12 +259,149 @@ static const mcp_prompt_t *find_prompt(const mcp_server_t *srv, const char *name
     return NULL;
 }
 
+/* -------------------------------------------------------------------------
+ * P4-a S1: x-mcp-header annotation validation in mcp_server_add_tool.
+ *
+ * Walks the tool's inputSchema JSON tree (any nesting depth). Whenever an
+ * object contains an `x-mcp-header` key, that object is a property schema
+ * and is validated per SEP-2243:
+ *  - its `type` constraint MUST allow string/integer/boolean (number/object/
+ *    array-only types forbidden; a union passes if ANY allowed type present,
+ *    and an absent/other `type` is treated as unconstrained -> allowed)
+ *  - the annotation value MUST be a non-empty string of RFC 9110 tchar
+ *    (printable ASCII 0x21-0x7E, i.e. no CR/LF/control/empty)
+ *  - annotation values MUST be unique case-insensitively within the tool
+ * Violation -> MCP_ERR_INVALID_ARGUMENT (the tool is NOT registered).
+ * ---------------------------------------------------------------------- */
+
+static bool is_tchar(char c) {
+    /* RFC 9110 tchar (printable-ASCII subset relevant here) */
+    return (unsigned char)c >= 0x21 && (unsigned char)c <= 0x7E;
+}
+
+static bool xmcp_type_allowed(const char *type_str) {
+    return strcmp(type_str, "string") == 0 ||
+           strcmp(type_str, "integer") == 0 ||
+           strcmp(type_str, "boolean") == 0;
+}
+
+/* Check the `type` constraint of a property object. Returns true when the
+ * annotation is permitted (allowed type present, or unconstrained). */
+static bool xmcp_property_type_ok(mcp_context_t *ctx, const mcp_json_value_t *prop) {
+    const mcp_json_value_t *type_v = mcp_json_object_get(ctx, prop, "type");
+    if (type_v == NULL) {
+        return true; /* no type constraint -> allowed */
+    }
+    if (mcp_json_type(ctx, type_v) == MCP_JSON_STRING) {
+        const char *ts;
+        if (mcp_json_string_value(ctx, type_v, &ts) != MCP_OK) {
+            return true;
+        }
+        return xmcp_type_allowed(ts);
+    }
+    if (mcp_json_type(ctx, type_v) == MCP_JSON_ARRAY) {
+        size_t n = mcp_json_array_size(ctx, type_v);
+        for (size_t i = 0; i < n; i++) {
+            const mcp_json_value_t *elem = mcp_json_array_get(ctx, type_v, i);
+            if (elem != NULL && mcp_json_type(ctx, elem) == MCP_JSON_STRING) {
+                const char *ts;
+                if (mcp_json_string_value(ctx, elem, &ts) == MCP_OK &&
+                    xmcp_type_allowed(ts)) {
+                    return true; /* at least one allowed type -> ok */
+                }
+            }
+        }
+        return false; /* union with no allowed type -> reject */
+    }
+    return true; /* other `type` value -> unconstrained, allow */
+}
+
+/* Single-pass recursive walk. When an object holds an x-mcp-header key,
+ * validate that property's type, the header value, and uniqueness. */
+static mcp_status_t xmcp_walk(mcp_context_t *ctx, const mcp_json_value_t *node,
+                              char **seen, size_t *n_seen, size_t cap) {
+    if (node == NULL) {
+        return MCP_OK;
+    }
+    mcp_json_type_t t = mcp_json_type(ctx, node);
+    if (t != MCP_JSON_OBJECT) {
+        if (t == MCP_JSON_ARRAY) {
+            size_t n = mcp_json_array_size(ctx, node);
+            for (size_t i = 0; i < n; i++) {
+                mcp_status_t st = xmcp_walk(ctx, mcp_json_array_get(ctx, node, i),
+                                            seen, n_seen, cap);
+                if (st != MCP_OK) {
+                    return st;
+                }
+            }
+        }
+        return MCP_OK;
+    }
+    /* Is this an object that itself carries an x-mcp-header annotation? */
+    if (mcp_json_object_has(ctx, node, "x-mcp-header")) {
+        const mcp_json_value_t *hdr_v = mcp_json_object_get(ctx, node, "x-mcp-header");
+        if (mcp_json_type(ctx, hdr_v) != MCP_JSON_STRING) {
+            return MCP_ERR_INVALID_ARGUMENT;
+        }
+        const char *hdr;
+        if (mcp_json_string_value(ctx, hdr_v, &hdr) != MCP_OK || hdr == NULL || hdr[0] == '\0') {
+            return MCP_ERR_INVALID_ARGUMENT;
+        }
+        for (const char *p = hdr; *p; p++) {
+            if (!is_tchar(*p)) {
+                return MCP_ERR_INVALID_ARGUMENT;
+            }
+        }
+        for (size_t j = 0; j < *n_seen; j++) {
+            if (strcasecmp(seen[j], hdr) == 0) {
+                return MCP_ERR_INVALID_ARGUMENT; /* duplicate (case-insensitive) */
+            }
+        }
+        if (*n_seen < cap) {
+            seen[*n_seen] = (char *)hdr;
+            (*n_seen)++;
+        }
+        if (!xmcp_property_type_ok(ctx, node)) {
+            return MCP_ERR_INVALID_ARGUMENT;
+        }
+    }
+    /* Recurse into object members */
+    size_t n = mcp_json_object_size(ctx, node);
+    for (size_t i = 0; i < n; i++) {
+        const char *key = mcp_json_object_key_at(ctx, node, i);
+        if (key == NULL) {
+            continue;
+        }
+        mcp_status_t st = xmcp_walk(ctx, mcp_json_object_get(ctx, node, key),
+                                    seen, n_seen, cap);
+        if (st != MCP_OK) {
+            return st;
+        }
+    }
+    return MCP_OK;
+}
+
+static mcp_status_t xmcp_validate_schema(mcp_context_t *ctx,
+                                         const mcp_json_value_t *schema) {
+    if (schema == NULL) {
+        return MCP_OK; /* no schema -> no annotations to check */
+    }
+    char *seen[64];
+    size_t n_seen = 0;
+    return xmcp_walk(ctx, schema, seen, &n_seen, 64);
+}
+
 mcp_status_t mcp_server_add_tool(mcp_context_t *ctx, mcp_server_t *srv, mcp_tool_t *tool) {
     if (srv == NULL || tool == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
     if (find_tool(srv, tool->name) != NULL) {
         return MCP_ERR_ALREADY_EXISTS;
+    }
+    /* P4-a S1: validate x-mcp-header annotations in the tool's inputSchema */
+    mcp_status_t st = xmcp_validate_schema(ctx, tool->schema);
+    if (st != MCP_OK) {
+        return st;
     }
     return append_ptr(ctx, (void ***)&srv->tools, &srv->n_tools, &srv->cap_tools, tool);
 }
