@@ -182,6 +182,147 @@ static void b64url_encode_32(const uint8_t in[32], char out[44]) {
     out[j] = '\0';
 }
 
+/* -------------------------------------------------------------------------
+ * RFC 4648 §4 std base64 (padded, / character) — P4-a SEP-2243 sentinel
+ * encoding. encode allocates via ctx allocator (free with
+ * mcp_oauth_free_string); decode allocates via libc malloc (free with free).
+ * ---------------------------------------------------------------------- */
+
+static const mcp_allocator_t *alloc_of(mcp_context_t *ctx);
+
+static const char b64_std_chars[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+char *mcp_base64_encode(mcp_context_t *ctx, const uint8_t *in, size_t in_len) {
+    if (in == NULL && in_len > 0) {
+        return NULL;
+    }
+    size_t out_len = ((in_len + 2) / 3) * 4; /* +4 covers padding */
+    const mcp_allocator_t *a = alloc_of(ctx);
+    char *out = (char *)a->malloc_fn(out_len + 1, a->userdata);
+    if (out == NULL) {
+        return NULL;
+    }
+    size_t j = 0;
+    for (size_t i = 0; i < in_len; i += 3) {
+        uint32_t v = (uint32_t)in[i] << 16;
+        if (i + 1 < in_len) v |= (uint32_t)in[i + 1] << 8;
+        if (i + 2 < in_len) v |= (uint32_t)in[i + 2];
+        out[j++] = b64_std_chars[(v >> 18) & 0x3F];
+        out[j++] = b64_std_chars[(v >> 12) & 0x3F];
+        out[j++] = (i + 1 < in_len) ? b64_std_chars[(v >> 6) & 0x3F] : '=';
+        out[j++] = (i + 2 < in_len) ? b64_std_chars[v & 0x3F] : '=';
+    }
+    out[out_len] = '\0';
+    return out;
+}
+
+static int b64_std_val(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+int mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
+                      uint8_t **out, size_t *out_len) {
+    (void)ctx;
+    if (out == NULL || out_len == NULL) {
+        return -1;
+    }
+    *out = NULL;
+    *out_len = 0;
+    if (in == NULL) {
+        return -1;
+    }
+    if (in_len == 0) {
+        uint8_t *zero = (uint8_t *)malloc(1);
+        if (zero == NULL) {
+            return -1;
+        }
+        *out = zero;
+        *out_len = 0;
+        return 0;
+    }
+    /* RFC 4648 §2: strip trailing '=' padding. */
+    size_t pad = 0;
+    while (pad < in_len && in[in_len - 1 - pad] == '=') {
+        pad++;
+    }
+    size_t n = in_len - pad;
+    if (n == 0) {
+        uint8_t *zero = (uint8_t *)malloc(1);
+        if (zero == NULL) {
+            return -1;
+        }
+        *out = zero;
+        *out_len = 0;
+        return 0;
+    }
+    if (n % 4 == 1) {
+        return -1;
+    }
+    size_t byte_len = (n / 4) * 3 + (n % 4 == 2 ? 1 : n % 4 == 3 ? 2 : 0);
+    uint8_t *out_buf = (uint8_t *)malloc(byte_len);
+    if (out_buf == NULL) {
+        return -1;
+    }
+    /* Process complete 4-char groups first. */
+    size_t full_groups = n / 4;
+    size_t o = 0;
+    for (size_t g = 0; g < full_groups; g++) {
+        uint32_t v = (uint32_t)b64_std_val(in[g * 4]) << 18 |
+                     (uint32_t)b64_std_val(in[g * 4 + 1]) << 12 |
+                     (uint32_t)b64_std_val(in[g * 4 + 2]) << 6 |
+                     (uint32_t)b64_std_val(in[g * 4 + 3]);
+        if (b64_std_val(in[g * 4]) < 0 || b64_std_val(in[g * 4 + 1]) < 0 ||
+            b64_std_val(in[g * 4 + 2]) < 0 || b64_std_val(in[g * 4 + 3]) < 0) {
+            free(out_buf);
+            *out = NULL;
+            *out_len = 0;
+            return -1;
+        }
+        out_buf[o++] = (uint8_t)((v >> 16) & 0xFF);
+        out_buf[o++] = (uint8_t)((v >> 8) & 0xFF);
+        out_buf[o++] = (uint8_t)(v & 0xFF);
+    }
+    /* Process the leftover partial group (n%4==2 or n%4==3 chars).
+       2 chars -> 1 byte: byte = (c0<<2) | (c1>>4)
+       3 chars -> 2 bytes: b0 = (c0<<2)|(c1>>4); b1 = ((c1&0xF)<<4)|(c2>>2) */
+    size_t rem = n % 4;
+    if (rem == 2) {
+        size_t base = full_groups * 4;
+        int c0 = b64_std_val(in[base]);
+        int c1 = b64_std_val(in[base + 1]);
+        if (c0 < 0 || c1 < 0) {
+            free(out_buf);
+            *out = NULL;
+            *out_len = 0;
+            return -1;
+        }
+        out_buf[o++] = (uint8_t)(((uint32_t)c0 << 2) | ((uint32_t)c1 >> 4));
+    } else if (rem == 3) {
+        size_t base = full_groups * 4;
+        int c0 = b64_std_val(in[base]);
+        int c1 = b64_std_val(in[base + 1]);
+        int c2 = b64_std_val(in[base + 2]);
+        if (c0 < 0 || c1 < 0 || c2 < 0) {
+            free(out_buf);
+            *out = NULL;
+            *out_len = 0;
+            return -1;
+        }
+        out_buf[o++] = (uint8_t)(((uint32_t)c0 << 2) | ((uint32_t)c1 >> 4));
+        out_buf[o++] = (uint8_t)(((uint32_t)(c1 & 0xF) << 4) | ((uint32_t)c2 >> 2));
+    }
+    *out = out_buf;
+    *out_len = byte_len;
+    return 0;
+}
+
+
 static inline bool is_pkce_unreserved(char c) {
     return (c >= 'A' && c <= 'Z') ||
            (c >= 'a' && c <= 'z') ||

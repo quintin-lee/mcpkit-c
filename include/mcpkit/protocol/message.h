@@ -47,6 +47,9 @@ typedef enum {
     MCP_RPC_HEADER_MISMATCH = -32020,
     MCP_RPC_MISSING_REQUIRED_CLIENT_CAPABILITY = -32021,
     MCP_RPC_UNSUPPORTED_PROTOCOL_VERSION = -32022,
+    /* P4-a SEP-2243: custom Mcp-Param-* header consistency / missing failure.
+       Distinct from MCP_RPC_HEADER_MISMATCH (-32020, P2 standard headers). */
+    MCP_RPC_XMCP_PARAM_MISMATCH = -32001,
 } mcp_rpc_code_t;
 
 /**

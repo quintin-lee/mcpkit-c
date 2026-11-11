@@ -359,6 +359,10 @@ add_executable(test_auth_pkce unit/test_auth_pkce.c)
 target_link_libraries(test_auth_pkce PRIVATE mcpkit_core)
 add_test(NAME test_auth_pkce COMMAND test_auth_pkce)
 
+add_executable(test_base64_sep2243 unit/test_base64_sep2243.c)
+target_link_libraries(test_base64_sep2243 PRIVATE mcpkit_core)
+add_test(NAME test_base64_sep2243 COMMAND test_base64_sep2243)
+
 add_executable(test_auth_client unit/test_auth_client.c)
 target_link_libraries(test_auth_client PRIVATE mcpkit_core)
 add_test(NAME test_auth_client COMMAND test_auth_client)

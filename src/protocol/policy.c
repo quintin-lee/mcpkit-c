@@ -46,3 +46,11 @@ bool mcp_proto_policy_cimd_preferred(mcp_context_t *ctx,
                                       const mcp_session_t *session) {
     return mcp_proto_at_least(mcp_session_negotiated(ctx, session), MCP_PROTO_2025_11_25);
 }
+
+bool mcp_proto_policy_sep2243_active(mcp_context_t *ctx,
+                                      const mcp_session_t *session) {
+    /* SEP-2243 custom Mcp-Param-* header behavior is a 2026-07-28 MUST.
+       Below that version custom headers are not validated (SHOULD-grade),
+       so the gate is false. NULL session -> conservative baseline. */
+    return mcp_proto_at_least(mcp_session_negotiated(ctx, session), MCP_PROTO_2026_07_28);
+}

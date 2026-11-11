@@ -467,6 +467,40 @@ void mcp_oauth_token_exchange_response_cleanup(mcp_context_t *ctx,
  */
 void mcp_oauth_free_string(mcp_context_t *ctx, char *str);
 
+/* -------------------------------------------------------------------------
+ * P4-a SEP-2243: RFC 4648 §4 std base64 (padded, '/' character).
+ * Used for the base64 sentinel encoding of x-mcp-header values whose
+ * representation is not plain-ASCII-safe (whitespace / non-ASCII / control
+ * chars). The encode output is allocated via the ctx allocator and freed
+ * with mcp_oauth_free_string; the decode output is allocated via libc
+ * malloc and freed with free().
+ * ---------------------------------------------------------------------- */
+
+/**
+ * @brief Encodes `in` as RFC 4648 §4 std base64 (padded).
+ *
+ * @param ctx    Context; may be NULL (uses default allocator).
+ * @param in     Input bytes.
+ * @param in_len Input length; 0 yields an empty string "".
+ * @return Heap-allocated NUL-terminated base64 string, or NULL on OOM.
+ *         Free with mcp_oauth_free_string(ctx, out).
+ */
+char *mcp_base64_encode(mcp_context_t *ctx, const uint8_t *in, size_t in_len);
+
+/**
+ * @brief Decodes `in` as RFC 4648 §4 std base64.
+ *
+ * @param ctx    Context (currently unused; reserved for allocator routing).
+ * @param in     Base64 string.
+ * @param in_len Length of in.
+ * @param out    Receives a libc-malloc'd byte buffer (free with free()).
+ * @param out_len Receives the decoded byte count.
+ * @return 0 on success, non-zero on invalid input (bad char / bad length /
+ *         OOM).
+ */
+int mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
+                      uint8_t **out, size_t *out_len);
+
 #ifdef __cplusplus
 }
 #endif

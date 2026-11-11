@@ -96,4 +96,22 @@ bool mcp_proto_policy_auth_hardening_active(mcp_context_t *ctx,
 bool mcp_proto_policy_cimd_preferred(mcp_context_t *ctx,
                                       const mcp_session_t *session);
 
+/**
+ * @brief Returns true when SEP-2243 custom Mcp-Param-* header behavior is
+ *        active for the session's negotiated protocol version.
+ *
+ * SEP-2243 x-mcp-header / Mcp-Param-* consistency checks are mandatory
+ * (MUST-grade, missing header or mismatch -> HTTP 400 + JSON-RPC -32001)
+ * at 2026-07-28. Below that version the x-mcp-header annotation may be
+ * present but custom headers are not validated (SHOULD-grade, zero
+ * regression on 2025-11-25 and earlier).
+ *
+ * @param ctx     Context; may be NULL.
+ * @param session Session whose negotiated version is used; NULL ->
+ *                conservative baseline (not active).
+ * @return true if SEP-2243 custom header behavior applies to this session.
+ */
+bool mcp_proto_policy_sep2243_active(mcp_context_t *ctx,
+                                      const mcp_session_t *session);
+
 #endif
