@@ -501,6 +501,55 @@ char *mcp_base64_encode(mcp_context_t *ctx, const uint8_t *in, size_t in_len);
 int mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
                       uint8_t **out, size_t *out_len);
 
+/* -------------------------------------------------------------------------
+ * P4-a: RFC 9728 AS auto-discovery.
+ * Given an RFC 9728 protected-resource metadata's `authorization_server`
+ * (issuer URL), probes the RFC 8414 §3.1 discovery path
+ * `/.well-known/oauth-authorization-server` and merges the result with
+ * any existing AS metadata using mcp_oauth_discovery_merge.
+ * The HTTP fetch is performed by the host via the supplied callback;
+ * the library does not perform network I/O itself.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * @brief Host-injected HTTP fetch callback for AS discovery.
+ *
+ * @param ud          Opaque user data.
+ * @param url         The URL to fetch (NUL-terminated).
+ * @param body_out    Receives a libc-malloc'd response body (caller frees
+ *                    via mcp_oauth_free_string after use). Must be NUL-terminated.
+ * @param body_len_out Receives the body length (excluding NUL).
+ * @return 0 on success, -1 on failure.
+ */
+typedef int (*mcp_http_fetch_fn)(void *ud, const char *url,
+                                 char **body_out, size_t *body_len_out);
+
+/**
+ * @brief Discovers AS metadata from an RFC 9728 protected-resource document.
+ *
+ * Builds the RFC 8414 §3.1 probe URL from `prm->authorization_server`,
+ * fetches via `fetch`, parses the AS discovery document, and merges with
+ * `existing_as` (if non-NULL) into `out_merged`.
+ *
+ * @param ctx        Context; may be NULL.
+ * @param prm        RFC 9728 protected-resource metadata; NULL -> INVALID_ARGUMENT.
+ * @param fetch      Host fetch callback; NULL -> PROTOCOL.
+ * @param fetch_ud   Opaque user data for fetch.
+ * @param existing_as  Existing AS/OIDC metadata to merge into; NULL ->
+ *                     direct parse without merge.
+ * @param out_merged Receives the merged metadata. On failure all fields are
+ *                   zeroed. `mcp_oauth_metadata_t` is a plain POD struct;
+ *                   no destructor is required.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if prm or its
+ *         authorization_server is NULL; MCP_ERR_PROTOCOL if fetch fails,
+ *         the response is not valid JSON, or parse fails.
+ */
+mcp_status_t mcp_oauth_discover_as(mcp_context_t *ctx,
+                                   const mcp_protected_resource_metadata_t *prm,
+                                   mcp_http_fetch_fn fetch, void *fetch_ud,
+                                   const mcp_oauth_metadata_t *existing_as,
+                                   mcp_oauth_metadata_t *out_merged);
+
 #ifdef __cplusplus
 }
 #endif

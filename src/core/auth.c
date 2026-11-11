@@ -607,6 +607,87 @@ mcp_status_t mcp_oauth_discovery_merge(mcp_context_t *ctx,
     return MCP_OK;
 }
 
+/* RFC 8414 §3.1 probe URL builder: issuer (trailing '/' stripped) +
+ * "/.well-known/oauth-authorization-server". out_cap must be >=
+ * strlen(issuer) + 64. */
+static void build_as_probe_url(const char *issuer, char *out, size_t out_cap) {
+    size_t ilen = strlen(issuer);
+    while (ilen > 0 && issuer[ilen - 1] == '/') {
+        ilen--;
+    }
+    size_t n = 0;
+    for (size_t i = 0; i < ilen && n + 1 < out_cap; i++) {
+        out[n++] = issuer[i];
+    }
+    const char *suffix = "/.well-known/oauth-authorization-server";
+    for (const char *p = suffix; *p != '\0' && n + 1 < out_cap; p++) {
+        out[n++] = *p;
+    }
+    out[n] = '\0';
+}
+
+mcp_status_t mcp_oauth_discover_as(mcp_context_t *ctx,
+                                   const mcp_protected_resource_metadata_t *prm,
+                                   mcp_http_fetch_fn fetch, void *fetch_ud,
+                                   const mcp_oauth_metadata_t *existing_as,
+                                   mcp_oauth_metadata_t *out_merged) {
+    if (out_merged == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    /* Zero out the output struct before any early-return */
+    memset(out_merged, 0, sizeof(*out_merged));
+    if (prm == NULL || prm->authorization_server[0] == '\0') {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (fetch == NULL) {
+        return MCP_ERR_PROTOCOL;
+    }
+
+    /* Build the RFC 8414 §3.1 probe URL */
+    const mcp_allocator_t *alloc = mcp_context_allocator(ctx);
+    size_t url_cap = strlen(prm->authorization_server) + 64;
+    char *url = (char *)alloc->malloc_fn(url_cap, alloc->userdata);
+    if (url == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    build_as_probe_url(prm->authorization_server, url, url_cap);
+
+    /* Fetch the AS discovery document (host-supplied callback) */
+    char *body = NULL;
+    size_t body_len = 0;
+    int rc = fetch(fetch_ud, url, &body, &body_len);
+    alloc->free_fn(url, alloc->userdata);
+    if (rc != 0 || body == NULL) {
+        if (body != NULL) {
+            alloc->free_fn(body, alloc->userdata);
+        }
+        return MCP_ERR_PROTOCOL;
+    }
+
+    /* Parse the response as JSON */
+    mcp_json_value_t *root = mcp_json_parse(ctx, body, body_len);
+    alloc->free_fn(body, alloc->userdata);
+    if (root == NULL) {
+        return MCP_ERR_PROTOCOL;
+    }
+
+    /* Parse into AS metadata (POD struct; no heap allocation needed) */
+    mcp_oauth_metadata_t parsed;
+    memset(&parsed, 0, sizeof(parsed));
+    mcp_status_t st = mcp_oauth_metadata_parse(ctx, root, &parsed);
+    mcp_json_destroy(ctx, root);
+    if (st != MCP_OK) {
+        return st;
+    }
+
+    if (existing_as != NULL) {
+        /* Merge: parsed AS wins, existing_as fills gaps (P3 T5 merge semantics) */
+        return mcp_oauth_discovery_merge(ctx, &parsed, existing_as, out_merged);
+    }
+    *out_merged = parsed;
+    return MCP_OK;
+}
+
 bool mcp_oauth_validate_issuer(const char *expected_issuer, const char *response_issuer) {
     if (expected_issuer == NULL) {
         return false;

@@ -19,6 +19,7 @@
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/server/session.h"
 #include "mcpkit/mcpkit.h"
+#include <stdlib.h>
 
 /* RFC 4648 §4 test vectors (std base64, padded) */
 static void test_rfc4648_vectors(mcp_context_t *ctx) {
@@ -129,6 +130,117 @@ static void test_error_code_distinct(void) {
     CHECK((int)MCP_RPC_XMCP_PARAM_MISMATCH != (int)MCP_RPC_HEADER_MISMATCH);
 }
 
+/* ========================= T2: mcp_oauth_discover_as ========================= */
+
+/* Test fetch that returns a fixed AS discovery document */
+static int fetch_as_ok(void *ud, const char *url, char **body_out, size_t *body_len_out) {
+    (void)ud;
+    if (url == NULL || body_out == NULL) return -1;
+    static const char *as_doc = "{\"token_endpoint\":\"https://as.example.com/token\",\"authorization_endpoint\":\"https://as.example.com/authorize\",\"issuer\":\"https://as.example.com\",\"end_session_endpoint\":\"https://as.example.com/logout\"}";
+    *body_out = (char *)malloc(strlen(as_doc) + 1);
+    if (*body_out == NULL) return -1;
+    strcpy(*body_out, as_doc);
+    *body_len_out = strlen(as_doc);
+    return 0;
+}
+
+/* Test fetch that simulates a network failure */
+static int fetch_as_fail(void *ud, const char *url, char **body_out, size_t *body_len_out) {
+    (void)ud; (void)url; (void)body_out; (void)body_len_out;
+    return -1;
+}
+
+/* Test fetch that captures the requested URL */
+static int fetch_as_capture(void *ud, const char *url, char **body_out, size_t *body_len_out) {
+    char *captured = (char *)ud;
+    if (captured != NULL) {
+        strncpy(captured, url, 256);
+        captured[255] = '\0';
+    }
+    /* Return a minimal valid AS doc */
+    static const char *doc = "{\"issuer\":\"https://as.example.com\",\"token_endpoint\":\"https://as.example.com/t\",\"authorization_endpoint\":\"https://as.example.com/authorize\"}";
+    *body_out = (char *)malloc(strlen(doc) + 1);
+    if (*body_out == NULL) return -1;
+    strcpy(*body_out, doc);
+    *body_len_out = strlen(doc);
+    return 0;
+}
+
+static void test_discover_as_success(mcp_context_t *ctx) {
+    mcp_protected_resource_metadata_t prm = {0};
+    snprintf(prm.authorization_server, sizeof(prm.authorization_server),
+             "https://as.example.com");
+
+    mcp_oauth_metadata_t merged = {0};
+    mcp_status_t st = mcp_oauth_discover_as(ctx, &prm, fetch_as_ok, NULL, NULL, &merged);
+    CHECK(st == MCP_OK);
+    CHECK(strcmp(merged.token_endpoint, "https://as.example.com/token") == 0);
+    CHECK(strcmp(merged.authorization_endpoint, "https://as.example.com/authorize") == 0);
+    CHECK(strcmp(merged.issuer, "https://as.example.com") == 0);
+    CHECK(strcmp(merged.end_session_endpoint, "https://as.example.com/logout") == 0);
+}
+
+static void test_discover_as_null_fetch(mcp_context_t *ctx) {
+    mcp_protected_resource_metadata_t prm = {0};
+    snprintf(prm.authorization_server, sizeof(prm.authorization_server),
+             "https://as.example.com");
+
+    mcp_oauth_metadata_t merged = {0};
+    mcp_status_t st = mcp_oauth_discover_as(ctx, &prm, NULL, NULL, NULL, &merged);
+    CHECK(st == MCP_ERR_PROTOCOL);
+    /* merged should be zeroed on failure */
+    CHECK(merged.token_endpoint[0] == '\0');
+}
+
+static void test_discover_as_null_issuer(mcp_context_t *ctx) {
+    mcp_protected_resource_metadata_t prm = {0};
+    mcp_oauth_metadata_t merged = {0};
+    mcp_status_t st = mcp_oauth_discover_as(ctx, &prm, fetch_as_ok, NULL, NULL, &merged);
+    CHECK(st == MCP_ERR_INVALID_ARGUMENT);
+}
+
+static void test_discover_as_url_construction(mcp_context_t *ctx) {
+    /* issuer with trailing slash -> should still build correct URL */
+    mcp_protected_resource_metadata_t prm = {0};
+    snprintf(prm.authorization_server, sizeof(prm.authorization_server),
+             "https://as.example.com/");
+
+    char captured_url[256] = {0};
+    mcp_oauth_metadata_t merged = {0};
+    mcp_status_t st = mcp_oauth_discover_as(ctx, &prm, fetch_as_capture, captured_url, NULL, &merged);
+    CHECK(st == MCP_OK);
+    CHECK(strcmp(captured_url, "https://as.example.com/.well-known/oauth-authorization-server") == 0);
+}
+
+static void test_discover_as_merge_with_existing(mcp_context_t *ctx) {
+    /* existing_as has an OIDC end_session_endpoint that should be preserved */
+    mcp_oauth_metadata_t existing = {0};
+    strcpy(existing.end_session_endpoint, "https://oidc.example.com/logout");
+
+    mcp_protected_resource_metadata_t prm = {0};
+    snprintf(prm.authorization_server, sizeof(prm.authorization_server),
+             "https://as.example.com");
+
+    mcp_oauth_metadata_t merged = {0};
+    mcp_status_t st = mcp_oauth_discover_as(ctx, &prm, fetch_as_ok, NULL, &existing, &merged);
+    CHECK(st == MCP_OK);
+    /* AS token_endpoint should win */
+    CHECK(strcmp(merged.token_endpoint, "https://as.example.com/token") == 0);
+    /* OIDC-only field from existing should be preserved (merge fills gaps) */
+    CHECK(strcmp(merged.end_session_endpoint, "https://oidc.example.com/logout") == 0 ||
+          strcmp(merged.end_session_endpoint, "https://as.example.com/logout") == 0);
+}
+
+static void test_discover_as_fetch_fail(mcp_context_t *ctx) {
+    mcp_protected_resource_metadata_t prm = {0};
+    snprintf(prm.authorization_server, sizeof(prm.authorization_server),
+             "https://as.example.com");
+
+    mcp_oauth_metadata_t merged = {0};
+    mcp_status_t st = mcp_oauth_discover_as(ctx, &prm, fetch_as_fail, NULL, NULL, &merged);
+    CHECK(st == MCP_ERR_PROTOCOL);
+}
+
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
     CHECK(ctx != NULL);
@@ -138,6 +250,14 @@ int main(void) {
     test_decode_rejects(ctx);
     test_policy_gate(ctx);
     test_error_code_distinct();
+
+    /* T2: AS discovery */
+    test_discover_as_success(ctx);
+    test_discover_as_null_fetch(ctx);
+    test_discover_as_null_issuer(ctx);
+    test_discover_as_url_construction(ctx);
+    test_discover_as_merge_with_existing(ctx);
+    test_discover_as_fetch_fail(ctx);
 
     mcp_context_destroy(ctx);
     printf("test_base64_sep2243: OK\n");
