@@ -9,6 +9,8 @@
  */
 #include "mcpkit/transport/transport.h"
 
+#include <string.h>
+
 #include "internals.h"
 #include "mcpkit/core/context.h"
 #include "mcpkit/core/types.h"
@@ -102,6 +104,69 @@ mcp_status_t mcp_transport_send(mcp_context_t *ctx, mcp_transport_t *t, const ch
         return MCP_ERR_UNSUPPORTED;
     }
     return t->ops.send(ctx, t, data, len);
+}
+
+mcp_status_t mcp_transport_sendv(mcp_context_t *ctx, mcp_transport_t *t,
+                                 const mcp_iovec_t *iov, size_t iovcnt) {
+    if (t == NULL || iov == NULL || iovcnt == 0) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    /* Fast path: if the transport ops implement sendv natively, forward directly. */
+    if (t->ops.sendv != NULL) {
+        return t->ops.sendv(ctx, t, iov, iovcnt);
+    }
+
+    /* Fallback path: concatenate vectors and dispatch via ops.send once. */
+    if (t->ops.send == NULL) {
+        return MCP_ERR_UNSUPPORTED;
+    }
+
+    size_t total_len = 0;
+    for (size_t i = 0; i < iovcnt; i++) {
+        if (iov[i].iov_len > 0) {
+            if (iov[i].iov_base == NULL) {
+                return MCP_ERR_INVALID_ARGUMENT;
+            }
+            if (SIZE_MAX - total_len < iov[i].iov_len) {
+                return MCP_ERR_INVALID_ARGUMENT; /* Overflow */
+            }
+            total_len += iov[i].iov_len;
+        }
+    }
+
+    if (total_len == 0) {
+        return t->ops.send(ctx, t, "", 0);
+    }
+
+    char stack_buf[1024];
+    char *heap_buf = NULL;
+    char *buf = stack_buf;
+
+    const mcp_allocator_t *a = alloc_of(ctx);
+    if (total_len > sizeof(stack_buf)) {
+        heap_buf = a->malloc_fn(total_len, a->userdata);
+        if (heap_buf == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+        buf = heap_buf;
+    }
+
+    size_t offset = 0;
+    for (size_t i = 0; i < iovcnt; i++) {
+        if (iov[i].iov_len > 0) {
+            memcpy(buf + offset, iov[i].iov_base, iov[i].iov_len);
+            offset += iov[i].iov_len;
+        }
+    }
+
+    mcp_status_t st = t->ops.send(ctx, t, buf, total_len);
+
+    if (heap_buf != NULL) {
+        a->free_fn(heap_buf, a->userdata);
+    }
+
+    return st;
 }
 
 mcp_status_t mcp_transport_recv(mcp_context_t *ctx, mcp_transport_t *t, char **line_out) {

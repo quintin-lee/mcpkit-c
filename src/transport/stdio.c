@@ -296,10 +296,11 @@ static mcp_status_t stdio_stop(mcp_context_t *ctx, mcp_transport_t *t) {
 }
 
 static const mcp_transport_ops_t kStdioOps = {
-    stdio_start,
-    stdio_send,
-    stdio_recv,
-    stdio_stop,
+    .start = stdio_start,
+    .send = stdio_send,
+    .recv = stdio_recv,
+    .stop = stdio_stop,
+    .sendv = NULL,
 };
 
 mcp_transport_t *mcp_stdio_transport_create(mcp_context_t *ctx, FILE *in, FILE *out) {

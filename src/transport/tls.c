@@ -472,10 +472,11 @@ static mcp_status_t tls_stop(mcp_context_t *ctx, mcp_transport_t *t) {
 }
 
 static const mcp_transport_ops_t kTlsOps = {
-    tls_start,
-    tls_send,
-    tls_recv,
-    tls_stop,
+    .start = tls_start,
+    .send = tls_send,
+    .recv = tls_recv,
+    .stop = tls_stop,
+    .sendv = NULL,
 };
 
 /* ------------------------------------------------------------------ */

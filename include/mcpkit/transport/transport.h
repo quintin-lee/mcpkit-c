@@ -39,16 +39,27 @@ typedef struct mcp_context mcp_context_t;
 typedef struct mcp_transport mcp_transport_t;
 
 /**
+ * @brief Scatter/gather I/O vector for vector writes.
+ */
+typedef struct mcp_iovec {
+    const void *iov_base;
+    size_t      iov_len;
+} mcp_iovec_t;
+
+/**
  * @brief Backend operation table.
  *
- * All four callbacks are required; a NULL ops pointer is rejected by
- * mcp_transport_create.
+ * Required callbacks: start, send, recv, stop.
+ * Optional callback: sendv (vector write). If sendv is NULL, mcp_transport_sendv
+ * falls back to concatenating vectors and calling send once.
  */
 typedef struct mcp_transport_ops {
     mcp_status_t (*start)(mcp_context_t *ctx, mcp_transport_t *t);
     mcp_status_t (*send)(mcp_context_t *ctx, mcp_transport_t *t, const char *data, size_t len);
     mcp_status_t (*recv)(mcp_context_t *ctx, mcp_transport_t *t, char **line_out);
     mcp_status_t (*stop)(mcp_context_t *ctx, mcp_transport_t *t);
+    mcp_status_t (*sendv)(mcp_context_t *ctx, mcp_transport_t *t, const mcp_iovec_t *iov,
+                          size_t iovcnt);
 } mcp_transport_ops_t;
 
 
@@ -100,6 +111,22 @@ mcp_status_t mcp_transport_start(mcp_context_t *ctx, mcp_transport_t *t);
  */
 mcp_status_t mcp_transport_send(mcp_context_t *ctx, mcp_transport_t *t, const char *data,
                                 size_t len);
+
+/**
+ * @brief Sends multiple vectors as a single framed message.
+ *
+ * Line delimiter is appended atomically by the backend or fallback layer.
+ * If the backend does not implement sendv, the vectors are concatenated
+ * and dispatched via ops->send in a single call.
+ *
+ * @param ctx Context; may be NULL.
+ * @param t Target transport; NULL returns MCP_ERR_INVALID_ARGUMENT.
+ * @param iov Vector array; NULL or iovcnt==0 returns MCP_ERR_INVALID_ARGUMENT.
+ * @param iovcnt Number of vectors in iov.
+ * @return Backend's status or MCP_ERR_INVALID_ARGUMENT / MCP_ERR_NOMEM.
+ */
+mcp_status_t mcp_transport_sendv(mcp_context_t *ctx, mcp_transport_t *t,
+                                 const mcp_iovec_t *iov, size_t iovcnt);
 
 /**
  * @brief Receives one newline-delimited line.

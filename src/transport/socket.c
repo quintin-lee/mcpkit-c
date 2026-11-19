@@ -341,10 +341,11 @@ static mcp_status_t sock_stop(mcp_context_t *ctx, mcp_transport_t *t) {
 }
 
 static const mcp_transport_ops_t kSocketOps = {
-    sock_start,
-    sock_send,
-    sock_recv,
-    sock_stop,
+    .start = sock_start,
+    .send = sock_send,
+    .recv = sock_recv,
+    .stop = sock_stop,
+    .sendv = NULL,
 };
 
 // Wraps an already-connected fd in a client-mode transport. Used by
