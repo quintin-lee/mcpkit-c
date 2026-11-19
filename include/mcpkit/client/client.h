@@ -205,6 +205,30 @@ mcp_status_t mcp_client_call_tool_text(mcp_context_t *ctx,
                                        bool *out_is_error);
 
 /**
+ * @brief High-level helper: invokes a tool with a parsed or constructed JSON argument object.
+ *
+ * Internally clones the borrowed `args_obj` before passing to tools/call, ensuring the
+ * caller retains full ownership of `args_obj`. On success, sets `*out_result` to the
+ * owned result object, which the caller frees with `mcp_json_destroy(ctx, *out_result)`.
+ *
+ * @param ctx             Context; may be NULL.
+ * @param client          Initialized client handle; must not be NULL.
+ * @param tool_name       Name of the tool to execute; must not be NULL.
+ * @param args_obj        Borrowed JSON object containing tool arguments; may be NULL.
+ * @param out_result      Receives owned JSON object corresponding to response "result".
+ *                        Caller destroys with mcp_json_destroy(ctx, *out_result).
+ * @return MCP_OK on success;
+ *         MCP_ERR_INVALID_ARGUMENT on NULL client/tool_name/out_result or non-object args_obj;
+ *         MCP_ERR_NOMEM on allocation failure;
+ *         MCP_ERR_* on transport or protocol error.
+ */
+mcp_status_t mcp_client_call_tool_json(mcp_context_t *ctx,
+                                       mcp_client_t *client,
+                                       const char *tool_name,
+                                       const mcp_json_value_t *args_obj,
+                                       mcp_json_value_t **out_result);
+
+/**
  * @brief Host-injected callback invoked by `mcp_client_call_tool_mrtr` when
  *        the server returns an `InputRequiredResult`.
  *

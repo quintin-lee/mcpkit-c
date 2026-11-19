@@ -486,6 +486,32 @@ mcp_status_t mcp_client_call_tool_text(mcp_context_t *ctx,
     return MCP_OK;
 }
 
+mcp_status_t mcp_client_call_tool_json(mcp_context_t *ctx,
+                                       mcp_client_t *client,
+                                       const char *tool_name,
+                                       const mcp_json_value_t *args_obj,
+                                       mcp_json_value_t **out_result) {
+    if (out_result != NULL) {
+        *out_result = NULL;
+    }
+    if (client == NULL || tool_name == NULL || out_result == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (args_obj != NULL && mcp_json_type(ctx, args_obj) != MCP_JSON_OBJECT) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    mcp_json_value_t *cloned_args = NULL;
+    if (args_obj != NULL) {
+        cloned_args = mcp_json_clone(ctx, args_obj);
+        if (cloned_args == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+    }
+
+    return mcp_client_call_tool(ctx, client, tool_name, cloned_args, out_result);
+}
+
 void mcp_client_set_mrtr_elicit_handler(mcp_context_t *ctx, mcp_client_t *client,
                                         mcp_client_mrtr_elicit_fn fn, void *user_data) {
     (void)ctx;
