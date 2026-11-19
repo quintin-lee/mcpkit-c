@@ -152,6 +152,10 @@ if(MCPKIT_BUILD_TOOLS)
   add_subdirectory(tools)
 endif()
 
+if(MCPKIT_BUILD_BENCHMARKS)
+  add_subdirectory(benchmarks)
+endif()
+
 install(TARGETS mcpkit_core EXPORT mcpkit-targets
         ARCHIVE DESTINATION lib)
 install(DIRECTORY include/mcpkit DESTINATION include)
