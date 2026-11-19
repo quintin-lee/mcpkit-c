@@ -29,6 +29,11 @@ typedef struct {
     uint32_t keepalive_timeout_s; /**< Idle session timeout in seconds (default 60 if 0). */
     bool enable_websocket;        /**< Accept WebSocket upgrade requests (default true). */
     bool enable_sse;              /**< Accept SSE streaming requests (default true). */
+    size_t outbox_high_watermark; /**< Outbox backpressure high watermark in bytes (default 1MB if 0). */
+    size_t outbox_low_watermark;  /**< Outbox backpressure low watermark in bytes (default 256KB if 0). */
+    size_t outbox_max_drop_bytes; /**< Max outbox size before slow-client stall eviction (default 4MB if 0). */
+    uint32_t stall_timeout_ms;    /**< Write stall timeout in ms before eviction (default 5000 if 0). */
+    size_t socket_sndbuf;         /**< Kernel SO_SNDBUF override in bytes (0 for system default). */
 } mcp_async_server_config_t;
 
 /**
@@ -55,6 +60,22 @@ mcp_async_server_t *mcp_async_server_create(mcp_context_t *ctx, mcp_server_t *se
  * @return Bound TCP port, or 0 on error.
  */
 uint16_t mcp_async_server_get_port(const mcp_async_server_t *s);
+
+/**
+ * @brief Returns the number of connections currently in backpressured (read paused) state.
+ *
+ * @param s Server handle.
+ * @return Count of connections exceeding outbox high watermark.
+ */
+size_t mcp_async_server_get_backpressured_count(const mcp_async_server_t *s);
+
+/**
+ * @brief Returns total queued outbox bytes across all active connections.
+ *
+ * @param s Server handle.
+ * @return Total queued bytes.
+ */
+size_t mcp_async_server_get_queued_write_bytes(const mcp_async_server_t *s);
 
 /**
  * @brief Destroys an async server and releases all network and session resources.

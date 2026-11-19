@@ -142,6 +142,10 @@ add_executable(test_transport_sendv unit/test_transport_sendv.c)
 target_link_libraries(test_transport_sendv PRIVATE mcpkit_core)
 add_test(NAME test_transport_sendv COMMAND test_transport_sendv)
 
+add_executable(test_async_backpressure unit/test_async_backpressure.c)
+target_link_libraries(test_async_backpressure PRIVATE mcpkit_core)
+add_test(NAME test_async_backpressure COMMAND test_async_backpressure)
+
 add_executable(test_ws_frame unit/test_ws_frame.c)
 target_link_libraries(test_ws_frame PRIVATE mcpkit_core)
 add_test(NAME test_ws_frame COMMAND test_ws_frame)

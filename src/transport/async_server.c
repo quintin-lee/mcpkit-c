@@ -38,6 +38,12 @@
 #include "mcpkit/transport/ws.h"
 #include "../core/sha1.h"
 
+static uint64_t now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+}
+
 #define MCP_ASYNC_MAX_BODY    (4u << 20)
 #define MCP_ASYNC_MAX_READ_CAP (MCP_ASYNC_MAX_BODY + 65536u)
 
@@ -72,9 +78,12 @@ struct async_conn {
     char session_id[64];
     mcp_session_t *session;
     mcp_async_server_t *server;
+    mtx_t ws_session_lock;
     atomic_bool closing;
     atomic_bool detached;
     bool http_in_flight;
+    bool read_paused;
+    uint64_t last_write_time_ms;
 
     async_conn_t *prev;
     async_conn_t *next;
@@ -216,6 +225,7 @@ static void conn_unref(async_conn_t *conn) {
             srv_free(ctx, conn->ws_frag_buf);
             conn->ws_frag_buf = NULL;
         }
+        mtx_destroy(&conn->ws_session_lock);
         srv_free(ctx, conn);
     }
 }
@@ -400,6 +410,8 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
 
     if (task->entry != NULL) {
         mtx_lock(&task->entry->session_lock);
+    } else if (task->is_ws && task->conn != NULL) {
+        mtx_lock(&task->conn->ws_session_lock);
     }
 
     size_t body_len_in = task->json_body != NULL ? strlen(task->json_body) : 0;
@@ -419,6 +431,8 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
     if (task->entry != NULL) {
         atomic_store_explicit(&task->entry->last_active, (int64_t)time(NULL), memory_order_release);
         mtx_unlock(&task->entry->session_lock);
+    } else if (task->is_ws && task->conn != NULL) {
+        mtx_unlock(&task->conn->ws_session_lock);
     }
 
     if (task->is_ws) {
@@ -810,34 +824,43 @@ static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t even
                                  conn->write_len - conn->write_off, MSG_NOSIGNAL);
                 if (n > 0) {
                     conn->write_off += (size_t)n;
+                    conn->last_write_time_ms = now_ms();
+                    size_t queued = conn->write_len - conn->write_off;
+                    if (conn->read_paused && queued <= s->cfg.outbox_low_watermark) {
+                        conn->read_paused = false;
+                        mcp_reactor_modify(s->ctx, s->reactor, fd, MCP_EVENT_READ | MCP_EVENT_WRITE);
+                    }
                 } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
                     close_conn(s, conn);
                     return;
                 }
-            } else if (conn->write_buf != NULL) {
-                if (conn->write_off >= conn->write_len) {
-                    srv_free(ctx, conn->write_buf);
-                    conn->write_buf = NULL;
-                    conn->write_len = 0;
-                    conn->write_cap = 0;
-                    conn->write_off = 0;
-                    conn->http_in_flight = false;
-                    if (atomic_load(&conn->closing)) {
-                        close_conn(s, conn);
-                        return;
-                    }
-                    mcp_event_mask_t ev = MCP_EVENT_READ;
-                    if (!conn->closing && conn->read_len > 0 && !conn->http_in_flight) {
-                        ev |= MCP_EVENT_WRITE;
-                    }
-                    mcp_reactor_modify(s->ctx, s->reactor, fd, ev);
-                    /* 重新触发粘包请求的分发，避免连接挂死 */
-                    handle_pipelined_http(s, conn);
+            }
+            if (conn->write_buf != NULL && conn->write_off >= conn->write_len) {
+                srv_free(ctx, conn->write_buf);
+                conn->write_buf = NULL;
+                conn->write_len = 0;
+                conn->write_cap = 0;
+                conn->write_off = 0;
+                conn->http_in_flight = false;
+                conn->read_paused = false;
+                if (atomic_load(&conn->closing)) {
+                    close_conn(s, conn);
+                    return;
                 }
+                mcp_event_mask_t ev = MCP_EVENT_READ;
+                if (!conn->closing && conn->read_len > 0 && !conn->http_in_flight) {
+                    ev |= MCP_EVENT_WRITE;
+                }
+                mcp_reactor_modify(s->ctx, s->reactor, fd, ev);
+                /* 重新触发粘包请求的分发，避免连接挂死 */
+                handle_pipelined_http(s, conn);
             }
         }
 
     if (events & MCP_EVENT_READ) {
+        if (conn->read_paused) {
+            return;
+        }
         if (conn->read_len + 4096 > conn->read_cap) {
             size_t ncap = conn->read_cap == 0 ? 8192 : conn->read_cap * 2;
             if (ncap > MCP_ASYNC_MAX_READ_CAP) { ncap = MCP_ASYNC_MAX_READ_CAP; }
@@ -1047,6 +1070,10 @@ static void on_accept(mcp_context_t *ctx, int listen_fd, mcp_event_mask_t events
         }
         int one = 1;
         setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        if (s->cfg.socket_sndbuf > 0) {
+            int sndbuf = (int)s->cfg.socket_sndbuf;
+            setsockopt(cfd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+        }
 
         async_conn_t *conn = srv_malloc(s->ctx, sizeof(*conn));
         if (conn == NULL) {
@@ -1058,6 +1085,7 @@ static void on_accept(mcp_context_t *ctx, int listen_fd, mcp_event_mask_t events
         atomic_init(&conn->ref_count, 1);
         conn->type = CONN_HTTP_INIT;
         conn->server = s;
+        mtx_init(&conn->ws_session_lock, mtx_plain);
 
         mtx_lock(&s->conns_mtx);
         conn->prev = NULL;
@@ -1098,6 +1126,19 @@ mcp_async_server_t *mcp_async_server_create(mcp_context_t *ctx, mcp_server_t *se
     }
     if (s->cfg.bind_addr == NULL) {
         s->cfg.bind_addr = "0.0.0.0";
+    }
+    if (s->cfg.outbox_high_watermark == 0) {
+        s->cfg.outbox_high_watermark = 1024 * 1024;
+    }
+    if (s->cfg.outbox_low_watermark == 0) {
+        s->cfg.outbox_low_watermark = s->cfg.outbox_high_watermark / 4;
+        if (s->cfg.outbox_low_watermark == 0) s->cfg.outbox_low_watermark = 1;
+    }
+    if (s->cfg.outbox_max_drop_bytes == 0) {
+        s->cfg.outbox_max_drop_bytes = 4 * 1024 * 1024;
+    }
+    if (s->cfg.stall_timeout_ms == 0) {
+        s->cfg.stall_timeout_ms = 5000;
     }
 
     mtx_init(&s->resp_mtx, mtx_plain);
@@ -1168,23 +1209,29 @@ static void drain_responses(mcp_async_server_t *s) {
 
         async_conn_t *conn = item->conn;
         if (conn->fd >= 0) {
-            if (conn->write_buf == NULL) {
+            size_t unsent = (conn->write_buf != NULL && conn->write_len > conn->write_off)
+                          ? (conn->write_len - conn->write_off) : 0;
+            if (unsent == 0) {
+                if (conn->write_buf != NULL) {
+                    srv_free(s->ctx, conn->write_buf);
+                }
                 conn->write_buf = item->data;
                 conn->write_len = item->len;
                 conn->write_cap = item->len;
                 conn->write_off = 0;
             } else {
-                size_t need = conn->write_len + item->len;
+                size_t need = unsent + item->len;
                 char *nw = srv_malloc(s->ctx, need + 1);
                 if (nw != NULL) {
-                    memcpy(nw, conn->write_buf, conn->write_len);
-                    memcpy(nw + conn->write_len, item->data, item->len);
+                    memcpy(nw, conn->write_buf + conn->write_off, unsent);
+                    memcpy(nw + unsent, item->data, item->len);
                     nw[need] = '\0';
                     srv_free(s->ctx, conn->write_buf);
                     srv_free(s->ctx, item->data);
                     conn->write_buf = nw;
                     conn->write_len = need;
                     conn->write_cap = need;
+                    conn->write_off = 0;
                 } else {
                     srv_free(s->ctx, item->data);
                 }
@@ -1192,7 +1239,37 @@ static void drain_responses(mcp_async_server_t *s) {
             if (item->close_after) {
                 atomic_store(&conn->closing, true);
             }
-            mcp_reactor_modify(s->ctx, s->reactor, conn->fd, MCP_EVENT_READ | MCP_EVENT_WRITE);
+
+            size_t queued = (conn->write_buf != NULL && conn->write_len > conn->write_off)
+                          ? (conn->write_len - conn->write_off) : 0;
+            uint64_t now = now_ms();
+            if (conn->last_write_time_ms == 0) {
+                conn->last_write_time_ms = now;
+            }
+
+            /* Watermark backpressure control */
+            if (s->cfg.outbox_high_watermark > 0 && queued >= s->cfg.outbox_high_watermark) {
+                conn->read_paused = true;
+            }
+
+            /* Stall-based eviction control */
+            uint32_t stall_to = s->cfg.stall_timeout_ms > 0 ? s->cfg.stall_timeout_ms : 5000;
+            if (s->cfg.outbox_max_drop_bytes > 0 && queued >= s->cfg.outbox_max_drop_bytes) {
+                if (queued >= 8 * 1024 * 1024 || (now - conn->last_write_time_ms >= stall_to)) {
+                    mcp_logger_logf(mcp_context_logger(s->ctx), MCP_LOG_WARN,
+                                    "Slow client stall eviction fd=%d queued=%zu bytes", conn->fd, queued);
+                    close_conn(s, conn);
+                    conn_unref(conn);
+                    srv_free(s->ctx, item);
+                    continue;
+                }
+            }
+
+            mcp_event_mask_t mask = MCP_EVENT_WRITE;
+            if (!conn->read_paused && !atomic_load(&conn->closing)) {
+                mask |= MCP_EVENT_READ;
+            }
+            mcp_reactor_modify(s->ctx, s->reactor, conn->fd, mask);
         } else {
             srv_free(s->ctx, item->data);
         }
@@ -1208,12 +1285,68 @@ size_t mcp_async_server_active_connections(const mcp_async_server_t *s) {
     return atomic_load_explicit(&s->conns_count, memory_order_relaxed);
 }
 
+size_t mcp_async_server_get_backpressured_count(const mcp_async_server_t *s) {
+    if (s == NULL) {
+        return 0;
+    }
+    size_t count = 0;
+    mtx_lock((mtx_t *)&s->conns_mtx);
+    for (async_conn_t *c = s->conns; c != NULL; c = c->next) {
+        if (c->read_paused) {
+            count++;
+        }
+    }
+    mtx_unlock((mtx_t *)&s->conns_mtx);
+    return count;
+}
+
+size_t mcp_async_server_get_queued_write_bytes(const mcp_async_server_t *s) {
+    if (s == NULL) {
+        return 0;
+    }
+    size_t total = 0;
+    mtx_lock((mtx_t *)&s->conns_mtx);
+    for (async_conn_t *c = s->conns; c != NULL; c = c->next) {
+        if (c->write_buf != NULL && c->write_len > c->write_off) {
+            total += (c->write_len - c->write_off);
+        }
+    }
+    mtx_unlock((mtx_t *)&s->conns_mtx);
+    return total;
+}
+
 mcp_status_t mcp_async_server_step(mcp_context_t *ctx, mcp_async_server_t *s, int timeout_ms) {
     if (s == NULL) return MCP_ERR_INVALID_ARGUMENT;
     if ((time_t)(time(NULL) - s->last_reap_time) >= 5) {
         s->last_reap_time = time(NULL);
         reap_expired_sessions(s);
     }
+
+    /* Check stall eviction across active connections during step */
+    uint32_t stall_to = s->cfg.stall_timeout_ms > 0 ? s->cfg.stall_timeout_ms : 5000;
+    uint64_t now = now_ms();
+    async_conn_t *to_evict[64];
+    size_t evict_count = 0;
+    mtx_lock(&s->conns_mtx);
+    for (async_conn_t *c = s->conns; c != NULL && evict_count < 64; c = c->next) {
+        if (c->fd >= 0 && c->write_buf != NULL && c->write_len > c->write_off) {
+            size_t queued = c->write_len - c->write_off;
+            if (s->cfg.outbox_max_drop_bytes > 0 && queued >= s->cfg.outbox_max_drop_bytes) {
+                if (queued >= 8 * 1024 * 1024 || (c->last_write_time_ms > 0 && now - c->last_write_time_ms >= stall_to)) {
+                    conn_ref(c);
+                    to_evict[evict_count++] = c;
+                }
+            }
+        }
+    }
+    mtx_unlock(&s->conns_mtx);
+    for (size_t i = 0; i < evict_count; i++) {
+        mcp_logger_logf(mcp_context_logger(s->ctx), MCP_LOG_WARN,
+                        "Slow client stall eviction fd=%d", to_evict[i]->fd);
+        close_conn(s, to_evict[i]);
+        conn_unref(to_evict[i]);
+    }
+
     drain_responses(s);
     mcp_status_t st = mcp_reactor_step(ctx, s->reactor, timeout_ms);
     drain_responses(s);
