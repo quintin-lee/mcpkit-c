@@ -64,11 +64,13 @@ client you can compile against the library.
 | `MCPKIT_BUILD_TOOLS` | `ON` | Build `mcpkit-cli` |
 | `MCPKIT_BUILD_HTTP` | `OFF` | Build the HTTP transport and `http-server` example |
 | `MCPKIT_BUILD_SOCKET` | `ON` | Build the socket TCP transport and `socket-server` example |
+| `MCPKIT_BUILD_TLS` | `OFF` | Build OpenSSL TLS transport adapter |
 | `MCPKIT_BUILD_FUZZ` | `OFF` | Build the `fuzz_json_stdin` driver |
 | `MCPKIT_BUILD_SHARED` | `OFF` | Build the `libmcpkit_core.so` shared-library variant |
 | `MCPKIT_ENABLE_ASAN` | `OFF` | Add `-fsanitize=address` to all targets |
 | `MCPKIT_ENABLE_UBSAN` | `OFF` | Add `-fsanitize=undefined` to all targets |
 | `MCPKIT_ENABLE_TSAN` | `OFF` | Add `-fsanitize=thread` to all targets |
+| `MCPKIT_REACTOR_FORCE_POLL` | `OFF` | Force POSIX poll backend in reactor for testing |
 
 `MCPKIT_ENABLE_ASAN` and `MCPKIT_ENABLE_TSAN` are mutually exclusive
 (configuring both is a CMake fatal error).

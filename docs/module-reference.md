@@ -4,6 +4,14 @@ Every public header in `include/mcpkit/`, grouped by layer. Each entry lists
 the key types and functions you will use most often; read the header for the
 full contract.
 
+## Umbrella Header (`mcpkit/mcpkit.h`)
+
+Applications can include the single umbrella header:
+```c
+#include "mcpkit/mcpkit.h"
+```
+It pulls in all public layers: `core`, `logging`, `json`, `protocol`, `server`, `client`, `transport`, `runtime`, `apps`, and `plugin`.
+
 ## Core (`mcpkit/core/`)
 
 ### `types.h`
