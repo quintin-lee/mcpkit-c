@@ -415,6 +415,10 @@ add_executable(test_sampling_tools unit/test_sampling_tools.c)
 target_link_libraries(test_sampling_tools PRIVATE mcpkit_core)
 add_test(NAME test_sampling_tools COMMAND test_sampling_tools)
 
+add_executable(test_arena unit/test_arena.c)
+target_link_libraries(test_arena PRIVATE mcpkit_core)
+add_test(NAME test_arena COMMAND test_arena)
+
 
 if(MCPKIT_BUILD_TLS)
   # Generate a self-signed cert in the build directory for the TLS test.

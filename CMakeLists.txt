@@ -39,6 +39,7 @@ set(MCPKIT_CORE_SOURCES
   src/core/version.c
   src/core/error.c
   src/core/allocator.c
+  src/core/arena.c
   src/core/context.c
   src/core/shutdown.c
   src/core/trace.c
