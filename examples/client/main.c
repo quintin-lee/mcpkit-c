@@ -68,21 +68,21 @@ int main(int argc, char **argv) {
     } else {
         const char *name = argc > 2 ? argv[2] : "echo";
         const char *text = argc > 3 ? argv[3] : "hello";
-        mcp_json_value_t *args = mcp_json_object_new(ctx);
-        if (args == NULL) {
-            return fail(ctx, c, t, MCP_ERR_NOMEM);
-        }
-        if (mcp_json_object_set(ctx, args, "text", mcp_json_string_new(ctx, text)) != MCP_OK) {
-            mcp_json_destroy(ctx, args);
-            return fail(ctx, c, t, MCP_ERR_NOMEM);
-        }
-        mcp_json_value_t *res = NULL;
-        st = mcp_client_call_tool(ctx, c, name, args, &res);
+        char args_buf[512];
+        snprintf(args_buf, sizeof(args_buf), "{\"text\":\"%s\"}", text);
+
+        char *reply = NULL;
+        bool is_err = false;
+        st = mcp_client_call_tool_text(ctx, c, name, args_buf, &reply, &is_err);
         if (st != MCP_OK) {
             return fail(ctx, c, t, st);
         }
-        print_result(ctx, res);
-        mcp_json_destroy(ctx, res);
+        if (is_err) {
+            fprintf(stderr, "tool reported error: %s\n", reply);
+        } else {
+            printf("%s\n", reply);
+        }
+        mcp_free(ctx, reply);
     }
     mcp_status_t dc = mcp_client_disconnect(ctx, c);
     mcp_client_destroy(ctx, c);
