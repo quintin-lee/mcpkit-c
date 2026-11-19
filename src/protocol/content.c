@@ -280,3 +280,51 @@ mcp_status_t mcp_content_extract_annotations(mcp_context_t *ctx,
     }
     return mcp_annotations_from_json(ctx, ann_v, out_annotations);
 }
+
+static mcp_json_value_t *tool_result_single_text(mcp_context_t *ctx, const char *text, bool is_error) {
+    if (text == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *item = mcp_content_text_new_annotated(ctx, text, NULL);
+    if (item == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *arr = mcp_json_array_new(ctx);
+    if (arr == NULL) {
+        mcp_json_destroy(ctx, item);
+        return NULL;
+    }
+    if (mcp_json_array_append(ctx, arr, item) != MCP_OK) {
+        mcp_json_destroy(ctx, item);
+        mcp_json_destroy(ctx, arr);
+        return NULL;
+    }
+    mcp_json_value_t *result = mcp_json_object_new(ctx);
+    if (result == NULL) {
+        mcp_json_destroy(ctx, arr);
+        return NULL;
+    }
+    if (mcp_json_object_set_take(ctx, result, "content", arr) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    mcp_json_value_t *err_v = mcp_json_bool_new(ctx, is_error);
+    if (err_v == NULL) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    if (mcp_json_object_set_take(ctx, result, "isError", err_v) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    return result;
+}
+
+mcp_json_value_t *mcp_tool_result_text_new(mcp_context_t *ctx, const char *text) {
+    return tool_result_single_text(ctx, text, false);
+}
+
+mcp_json_value_t *mcp_tool_result_error_new(mcp_context_t *ctx, const char *error_msg) {
+    return tool_result_single_text(ctx, error_msg, true);
+}
+

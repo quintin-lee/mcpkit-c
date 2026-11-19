@@ -60,6 +60,7 @@
 #include "mcpkit/protocol/initialize.h"
 #include "mcpkit/protocol/policy.h"
 #include "mcpkit/protocol/validate.h"
+#include "mcpkit/protocol/content.h"
 #include "mcpkit/server/server.h"
 #include "mcpkit/server/tool.h"
 #include "mcpkit/server/resource.h"

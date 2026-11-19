@@ -86,6 +86,40 @@ int main(void) {
     CHECK(extracted.priority >= 0.299 && extracted.priority <= 0.301);
     mcp_json_destroy(ctx, bin_res);
 
+    /* Test 6: mcp_tool_result_text_new and mcp_tool_result_error_new */
+    CHECK(mcp_tool_result_text_new(ctx, NULL) == NULL);
+    CHECK(mcp_tool_result_error_new(ctx, NULL) == NULL);
+
+    mcp_json_value_t *ok_res = mcp_tool_result_text_new(ctx, "hello tool");
+    CHECK(ok_res != NULL);
+    const mcp_json_value_t *content_arr = mcp_json_object_get(ctx, ok_res, "content");
+    CHECK(content_arr != NULL);
+    CHECK(mcp_json_array_size(ctx, content_arr) == 1);
+    const mcp_json_value_t *first_c = mcp_json_array_get(ctx, content_arr, 0);
+    CHECK(first_c != NULL);
+    const char *text_val = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, first_c, "text"), &text_val) == MCP_OK);
+    CHECK(strcmp(text_val, "hello tool") == 0);
+    bool is_err = true;
+    CHECK(mcp_json_bool_value(ctx, mcp_json_object_get(ctx, ok_res, "isError"), &is_err) == MCP_OK);
+    CHECK(is_err == false);
+    mcp_json_destroy(ctx, ok_res);
+
+    mcp_json_value_t *err_res = mcp_tool_result_error_new(ctx, "tool exploded");
+    CHECK(err_res != NULL);
+    content_arr = mcp_json_object_get(ctx, err_res, "content");
+    CHECK(content_arr != NULL);
+    CHECK(mcp_json_array_size(ctx, content_arr) == 1);
+    first_c = mcp_json_array_get(ctx, content_arr, 0);
+    CHECK(first_c != NULL);
+    text_val = NULL;
+    CHECK(mcp_json_string_value(ctx, mcp_json_object_get(ctx, first_c, "text"), &text_val) == MCP_OK);
+    CHECK(strcmp(text_val, "tool exploded") == 0);
+    is_err = false;
+    CHECK(mcp_json_bool_value(ctx, mcp_json_object_get(ctx, err_res, "isError"), &is_err) == MCP_OK);
+    CHECK(is_err == true);
+    mcp_json_destroy(ctx, err_res);
+
     printf("test_content_annotations OK\n");
     return 0;
 }

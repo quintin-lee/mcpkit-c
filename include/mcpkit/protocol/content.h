@@ -123,6 +123,28 @@ mcp_status_t mcp_content_extract_annotations(mcp_context_t *ctx,
                                              const mcp_json_value_t *content_obj,
                                              mcp_content_annotations_t *out_annotations);
 
+/**
+ * @brief Creates a standard tool result JSON object containing a single text item.
+ *
+ * Result shape: {"content":[{"type":"text","text":"..."}],"isError":false}
+ *
+ * @param ctx   Context; may be NULL.
+ * @param text  Result text; must not be NULL.
+ * @return Owned JSON object, or NULL on OOM or invalid argument.
+ */
+mcp_json_value_t *mcp_tool_result_text_new(mcp_context_t *ctx, const char *text);
+
+/**
+ * @brief Creates a standard error tool result JSON object containing a single text item.
+ *
+ * Result shape: {"content":[{"type":"text","text":"..."}],"isError":true}
+ *
+ * @param ctx       Context; may be NULL.
+ * @param error_msg Error message text; must not be NULL.
+ * @return Owned JSON object, or NULL on OOM or invalid argument.
+ */
+mcp_json_value_t *mcp_tool_result_error_new(mcp_context_t *ctx, const char *error_msg);
+
 #ifdef __cplusplus
 }
 #endif
