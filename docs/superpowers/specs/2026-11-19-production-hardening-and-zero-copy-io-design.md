@@ -86,14 +86,18 @@ typedef struct mcp_transport_ops {
 
     /**
      * @brief Optional vector send callback.
-     * If NULL, mcp_transport_sendv will fall back to sequential send() calls.
+     * Line-framed: transmits all vectors in iov followed by a single trailing newline '\n'.
+     * If NULL, mcp_transport_sendv will fall back to concatenating vectors and calling send().
      */
     mcp_status_t (*sendv)(mcp_context_t *ctx, mcp_transport_t *t,
                           const mcp_iovec_t *iov, size_t iovcnt);
 } mcp_transport_ops_t;
 
 /**
- * @brief Sends multiple contiguous buffers as a single logical message.
+ * @brief Sends multiple contiguous buffers as a single line-delimited message.
+ *
+ * Transmits the combined payload of iov[0..iovcnt-1] and appends a single trailing
+ * newline ('\n') on the wire, matching mcp_transport_send framing.
  *
  * @param ctx    Context; may be NULL.
  * @param t      Target transport.
@@ -108,14 +112,14 @@ mcp_status_t mcp_transport_sendv(mcp_context_t *ctx, mcp_transport_t *t,
 #### 4.1.3 Socket and Stdio Implementation (`src/transport/socket.c`, `src/transport/stdio.c`)
 In `socket.c`:
 - Implement `sock_sendv`:
-  - Uses `writev(b->fd, (const struct iovec *)iov, (int)iovcnt)`.
-  - Handles `EINTR`, non-blocking `EAGAIN` with `wait_until(..., POLLOUT, deadline)`, and partial writes across multiple vectors.
+  - Sets up `struct iovec k_iov[iovcnt + 1]`. Copies `iov[0..iovcnt-1]` and sets `k_iov[iovcnt] = { "\n", 1 }`.
+  - Uses `writev(b->fd, k_iov, (int)(iovcnt + 1))` in a loop handling `EINTR`, non-blocking `EAGAIN` with `wait_until(..., POLLOUT, deadline)`, and partial writes across multiple vectors.
 - Optimize `sock_send`:
-  - `mcp_iovec_t v[2] = { { data, len }, { "\n", 1 } };`
-  - Delegates directly to `sock_sendv(ctx, t, v, 2)`.
-
-In `stdio.c`:
-- Implement `stdio_sendv` using `writev(b->wfd, ...)` and refactor `stdio_send` to send data and newline atomically.
+  - Constructs `mcp_iovec_t v[1] = { { data, len } };`
+  - Delegates directly to `sock_sendv(ctx, t, v, 1)`.
+  - Result: single atomic system call for payload + newline, zero packet fragmentation.
+- Fallback in `mcp_transport_sendv`:
+  - If `ops->sendv == NULL`, concatenates vectors into a stack buffer (or heap buffer if total length exceeds 1024 bytes) and invokes `ops->send(ctx, t, buf, total_len)` exactly once.
 
 ---
 
@@ -143,6 +147,11 @@ In `struct async_conn`:
 ```c
     bool read_paused;           /**< True if MCP_EVENT_READ is currently disabled due to backpressure. */
     size_t queued_write_bytes;  /**< Total bytes currently pending write in outbox queue. */
+    uint64_t last_write_time_ms;/**< Timestamp of last successful socket write for stall detection. */
+```
+In `session_entry_t`:
+```c
+    atomic_bool backpressured;  /**< True if session SSE stream is currently congested. */
 ```
 
 **Backpressure Rules:**
@@ -150,14 +159,17 @@ In `struct async_conn`:
    - If `!conn->read_paused`:
      - Update reactor interest mask via `mcp_reactor_modify(s->reactor, conn->fd, MCP_EVENT_WRITE)`.
      - Set `conn->read_paused = true`.
-     - The server ceases reading incoming requests from this socket, preventing incoming RPCs from compounding the queue.
+     - Cease reading incoming requests on this socket.
+   - For Streamable HTTP sessions, if the `GET /sse` connection hits high watermark, set `session->backpressured = true`. Incoming `POST` requests for this session immediately return HTTP `503 Service Unavailable` with `Retry-After: 1`, preventing memory buildup across multi-connection sessions.
 2. **Low Watermark Cleared (`queued_write_bytes <= outbox_low_watermark`)**:
    - If `conn->read_paused`:
      - Update reactor interest mask via `mcp_reactor_modify(s->reactor, conn->fd, MCP_EVENT_READ | (has_writes ? MCP_EVENT_WRITE : 0))`.
      - Set `conn->read_paused = false`.
+   - If this is an SSE connection, set `session->backpressured = false`, allowing POST requests to resume.
 3. **Hard Ceiling Exceeded (`queued_write_bytes >= outbox_max_drop_bytes`)**:
-   - Slow-client eviction: close socket immediately, clear write buffer, and mark `conn->closing = true`.
-   - Protects global process memory against malicious or dead connections.
+   - To distinguish legitimate large responses (up to 4MB) from slow-loris stalled clients:
+     Eviction occurs if `queued_write_bytes >= outbox_max_drop_bytes` AND the socket has been unable to advance writes for > 5000ms, OR if total queued bytes exceed 8MB (`2 * MCP_ASYNC_MAX_BODY`).
+   - On eviction: closes socket immediately, frees unwritten buffers, and marks `conn->closing = true`.
 
 ---
 
@@ -168,12 +180,15 @@ In `struct async_conn`:
 /**
  * @brief Gracefully drains active server connections before shutting down.
  *
- * 1. Detaches and closes listen_fd so no new incoming connections can be accepted.
- * 2. Steps the reactor event loop to flush in-flight worker tasks, pending HTTP responses,
- *    and unwritten outbox buffers.
- * 3. Returns MCP_OK as soon as active_connections drops to zero.
- * 4. If timeout_ms expires with active connections remaining, forcibly closes remaining
- *    connections and returns MCP_ERR_TIMEOUT.
+ * Thread-Safe Control:
+ * - May be invoked either from an external control thread while mcp_async_server_run()
+ *   is active, or synchronously in single-threaded step mode.
+ * - Stops accepting new connections on listen_fd.
+ * - Actively signals existing connections to finish: closes idle HTTP keep-alive sockets,
+ *   sets Connection: close on in-flight HTTP responses, initiates RFC 6455 1001 Close
+ *   frames on WebSockets, and terminates SSE streams.
+ * - Waits up to timeout_ms milliseconds for all in-flight worker tasks and outbox buffers
+ *   to drain cleanly.
  *
  * @param ctx        Context; may be NULL.
  * @param s          Async server handle; must not be NULL.
@@ -185,15 +200,21 @@ mcp_status_t mcp_async_server_drain(mcp_context_t *ctx, mcp_async_server_t *s, i
 
 #### 4.3.2 Implementation Flow in `src/transport/async_server.c`
 1. Close `s->listen_fd` and unregister from `s->reactor`. Set `s->listen_fd = -1`.
-2. Compute monotonic deadline: `deadline = timeout_ms > 0 ? (now_ms() + timeout_ms) : 0`.
-3. Loop while `mcp_async_server_active_connections(s) > 0`:
-   - Check if deadline passed; if so, break with `MCP_ERR_TIMEOUT`.
-   - Call `mcp_async_server_step(ctx, s, 50)`.
-4. If loop exited due to timeout:
-   - For every connection in `s->conns`, set `closing = true` and call `close(conn->fd)`.
-   - Single step reactor to clean detached structures.
-   - Return `MCP_ERR_TIMEOUT`.
-5. If connections reached 0: return `MCP_OK`.
+2. Set `atomic_store(&s->draining, true);`
+3. Proactively signal existing connections:
+   - For idle HTTP connections (`!conn->http_in_flight` and empty outbox): close immediately.
+   - For active HTTP connections: ensure response headers include `Connection: close` and set `close_after = true`.
+   - For WebSocket connections: enqueue RFC 6455 1001 Close frame with `close_after = true`.
+   - For SSE streams: send stream end comment and close.
+4. If `s->running` is true (multi-threaded mode):
+   - Wake reactor with `mcp_reactor_wakeup(s->reactor)`.
+   - Wait on `s->drain_cv` (using `pthread_cond_timedwait` for `timeout_ms`).
+   - Worker thread signals `s->drain_cv` as soon as `conns_count == 0`.
+5. If `s->running` is false (single-threaded step mode):
+   - Drive loop stepping `mcp_async_server_step(ctx, s, 50)` until `conns_count == 0` or deadline passes.
+6. If timeout expires with connections remaining:
+   - Forcibly close all remaining fds and return `MCP_ERR_TIMEOUT`.
+7. If all connections reach 0: return `MCP_OK`.
 
 ---
 
