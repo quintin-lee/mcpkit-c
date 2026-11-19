@@ -172,6 +172,39 @@ mcp_status_t mcp_client_call_tool(mcp_context_t *ctx, mcp_client_t *client,
                                   mcp_json_value_t **result_out);
 
 /**
+ * @brief High-level helper: invokes a tool and extracts the first text content block.
+ *
+ * Internally builds the tools/call request, transmits it over the bound transport,
+ * parses the response, and extracts content[0].text into a newly allocated heap string.
+ *
+ * Contract & Ownership Rules:
+ * - On successful JSON-RPC round-trip (regardless of tool success or tool domain error),
+ *   the function returns MCP_OK, populates *out_text with the result/error message,
+ *   and sets *out_is_error (if non-NULL) to indicate whether the tool reported an error.
+ *   The caller MUST free *out_text via mcp_free(ctx, *out_text) on MCP_OK.
+ * - On transport error, timeout, protocol parse failure, or OOM, the function returns
+ *   a non-zero mcp_status_t error code, and *out_text is guaranteed to remain NULL.
+ *
+ * @param ctx             Context; may be NULL (default allocator).
+ * @param client          Initialized client handle; must not be NULL.
+ * @param tool_name       Name of the tool to execute; must not be NULL.
+ * @param json_args_str   Arguments JSON string (e.g. "{\"text\":\"hello\"}"), or NULL for no args.
+ * @param out_text        Receives newly allocated text string on MCP_OK.
+ *                        Caller frees with mcp_free(ctx, *out_text).
+ * @param out_is_error    Optional output flag: set to true if server returned isError:true.
+ * @return MCP_OK on successful RPC round-trip;
+ *         MCP_ERR_PROTOCOL on malformed JSON or response mismatch;
+ *         MCP_ERR_NOMEM on allocation failure;
+ *         MCP_ERR_INVALID_ARGUMENT on invalid client/tool_name.
+ */
+mcp_status_t mcp_client_call_tool_text(mcp_context_t *ctx,
+                                       mcp_client_t *client,
+                                       const char *tool_name,
+                                       const char *json_args_str,
+                                       char **out_text,
+                                       bool *out_is_error);
+
+/**
  * @brief Host-injected callback invoked by `mcp_client_call_tool_mrtr` when
  *        the server returns an `InputRequiredResult`.
  *

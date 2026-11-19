@@ -113,6 +113,10 @@ add_executable(test_client_providers unit/test_client_providers.c)
 target_link_libraries(test_client_providers PRIVATE mcpkit_core)
 add_test(NAME test_client_providers COMMAND test_client_providers)
 
+add_executable(test_client_convenience unit/test_client_convenience.c)
+target_link_libraries(test_client_convenience PRIVATE mcpkit_core)
+add_test(NAME test_client_convenience COMMAND test_client_convenience)
+
 add_executable(test_executor unit/test_executor.c)
 target_link_libraries(test_executor PRIVATE mcpkit_core)
 add_test(NAME test_executor COMMAND test_executor)

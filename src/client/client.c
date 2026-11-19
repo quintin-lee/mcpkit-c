@@ -356,6 +356,9 @@ mcp_status_t mcp_client_call_tool(mcp_context_t *ctx, mcp_client_t *client,
                                   const char *name, mcp_json_value_t *args,
                                   mcp_json_value_t **result_out) {
     if (client == NULL || name == NULL) {
+        if (args != NULL) {
+            mcp_json_destroy(ctx, args);
+        }
         return MCP_ERR_INVALID_ARGUMENT;
     }
     mcp_json_value_t *params = mcp_json_object_new(ctx);
@@ -364,14 +367,21 @@ mcp_status_t mcp_client_call_tool(mcp_context_t *ctx, mcp_client_t *client,
         if (params != NULL) {
             mcp_json_destroy(ctx, params);
         }
+        if (args != NULL) {
+            mcp_json_destroy(ctx, args);
+        }
         return MCP_ERR_NOMEM;
     }
     if (mcp_json_object_set_take(ctx, params, "name", nv) != MCP_OK) {
         mcp_json_destroy(ctx, params);
+        if (args != NULL) {
+            mcp_json_destroy(ctx, args);
+        }
         return MCP_ERR_NOMEM;
     }
     if (args != NULL && mcp_json_object_set_take(ctx, params, "arguments", args) != MCP_OK) {
         mcp_json_destroy(ctx, params);
+        mcp_json_destroy(ctx, args);
         return MCP_ERR_NOMEM;
     }
     /* P4-a T4: compute Mcp-Param-* headers from cached schema before sending */
@@ -381,6 +391,99 @@ mcp_status_t mcp_client_call_tool(mcp_context_t *ctx, mcp_client_t *client,
         return mirror_st;
     }
     return mcp_client_request(ctx, client, "tools/call", params, result_out);
+}
+
+mcp_status_t mcp_client_call_tool_text(mcp_context_t *ctx,
+                                       mcp_client_t *client,
+                                       const char *tool_name,
+                                       const char *json_args_str,
+                                       char **out_text,
+                                       bool *out_is_error) {
+    if (out_text != NULL) {
+        *out_text = NULL;
+    }
+    if (out_is_error != NULL) {
+        *out_is_error = false;
+    }
+    if (client == NULL || tool_name == NULL || out_text == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    mcp_json_value_t *args = NULL;
+    if (json_args_str != NULL && json_args_str[0] != '\0') {
+        args = mcp_json_parse(ctx, json_args_str, strlen(json_args_str));
+        if (args == NULL) {
+            return MCP_ERR_PROTOCOL;
+        }
+        if (mcp_json_type(ctx, args) != MCP_JSON_OBJECT) {
+            mcp_json_destroy(ctx, args);
+            return MCP_ERR_PROTOCOL;
+        }
+    }
+
+    mcp_json_value_t *result = NULL;
+    mcp_status_t st = mcp_client_call_tool(ctx, client, tool_name, args, &result);
+    if (st != MCP_OK) {
+        return st;
+    }
+
+    if (result == NULL || mcp_json_type(ctx, result) != MCP_JSON_OBJECT) {
+        if (result != NULL) {
+            mcp_json_destroy(ctx, result);
+        }
+        return MCP_ERR_PROTOCOL;
+    }
+
+    bool is_error = false;
+    const mcp_json_value_t *is_err_val = mcp_json_object_get(ctx, result, "isError");
+    if (is_err_val != NULL) {
+        (void)mcp_json_bool_value(ctx, is_err_val, &is_error);
+    }
+    if (out_is_error != NULL) {
+        *out_is_error = is_error;
+    }
+
+    const mcp_json_value_t *content = mcp_json_object_get(ctx, result, "content");
+    if (content == NULL || mcp_json_type(ctx, content) != MCP_JSON_ARRAY) {
+        mcp_json_destroy(ctx, result);
+        return MCP_ERR_PROTOCOL;
+    }
+
+    size_t count = mcp_json_array_size(ctx, content);
+    const char *extracted_str = NULL;
+    for (size_t i = 0; i < count; i++) {
+        const mcp_json_value_t *item = mcp_json_array_get(ctx, content, i);
+        if (item == NULL || mcp_json_type(ctx, item) != MCP_JSON_OBJECT) {
+            continue;
+        }
+        const mcp_json_value_t *type_val = mcp_json_object_get(ctx, item, "type");
+        const char *type_str = NULL;
+        if (type_val != NULL && mcp_json_string_value(ctx, type_val, &type_str) == MCP_OK &&
+            type_str != NULL && strcmp(type_str, "text") == 0) {
+            const mcp_json_value_t *text_val = mcp_json_object_get(ctx, item, "text");
+            if (text_val != NULL && mcp_json_string_value(ctx, text_val, &extracted_str) == MCP_OK) {
+                break;
+            }
+        }
+    }
+
+    if (extracted_str == NULL) {
+        mcp_json_destroy(ctx, result);
+        return MCP_ERR_PROTOCOL;
+    }
+
+    size_t len = strlen(extracted_str);
+    const mcp_allocator_t *a = mcp_context_allocator(ctx);
+    char *copy = (char *)a->malloc_fn(len + 1, a->userdata);
+    if (copy == NULL) {
+        mcp_json_destroy(ctx, result);
+        return MCP_ERR_NOMEM;
+    }
+    memcpy(copy, extracted_str, len + 1);
+    *out_text = copy;
+
+    mcp_json_destroy(ctx, result);
+    return MCP_OK;
 }
 
 void mcp_client_set_mrtr_elicit_handler(mcp_context_t *ctx, mcp_client_t *client,
