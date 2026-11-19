@@ -4,7 +4,17 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-19
+
 ### Added
+
+- Ergonomic Tool Result Constructors (SEP-1249 / Round 3 Health Check A3-005):
+  - Added `mcp_tool_result_text_new()` and `mcp_tool_result_error_new()` in `include/mcpkit/protocol/content.h` to simplify tool handler authoring from 40+ lines of nested JSON DOM allocations down to a single call.
+  - Simplified `examples/minimal-server/main.c` echo handler using `mcp_tool_result_text_new()`.
+  - Added `mcpkit/protocol/content.h` to umbrella header `mcpkit.h`.
+
+- Root Core Allocator Extension (Round 3 Health Check A3-002):
+  - Added `void mcp_free(mcp_context_t *ctx, void *ptr)` in `include/mcpkit/core/context.h` providing a canonical, context-aware memory release primitive across all library layers.
 
 - Cross-Platform POSIX `poll()` Fallback for Event Reactor:
   - Implemented full POSIX `poll()` fallback in `src/runtime/reactor.c` for non-Linux platforms (macOS / BSD) or when `<sys/epoll.h>` is unavailable, fulfilling the zero-dependency cross-platform reactor contract.
@@ -19,13 +29,28 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ### Changed
 
+- Architectural Layering & Decoupling (Round 3 Health Check A3-001):
+  - Decoupled `include/mcpkit/protocol/policy.h` and `src/protocol/policy.c` from `mcpkit/server/session.h`, resolving lower-layer protocol inversion. Policy predicates now take `mcp_proto_version_t` directly.
+
+- Modularization of Core Auth (Round 3 Health Check A3-003):
+  - Decomposed 1539-line monolithic `src/core/auth.c` into specialized sub-modules in `src/core/auth/` (`auth_base64.c`, `auth_pkce.c`, `auth_discovery.c`, `auth_client.c`, `auth_token.c`, `internal.h`).
+
+- Base64 Allocator Contract & Error Handling (Round 3 Health Check A3-002):
+  - Refactored `mcp_base64_decode()` to allocate via `alloc_of(ctx)` and return `mcp_status_t` instead of bare `int`.
+  - Caller memory release standardized on `mcp_free(ctx, ptr)`.
+
+- Documentation Synchronization (Round 3 Health Check A3-006 & A3-007):
+  - Synchronized `MCPKIT_BUILD_TLS` and `MCPKIT_REACTOR_FORCE_POLL` options in `README.md`.
+  - Added umbrella header (`mcpkit.h`) architecture guide and quickstart in `docs/module-reference.md`.
+
 - Build System & Hygiene:
   - Enforced `-Wall -Wextra` compiler flags in root `CMakeLists.txt` for GNU and Clang compilers.
   - Pruned unused no-op build options (`MCPKIT_BUILD_APPS`, `MCPKIT_BUILD_CLIENT`, `MCPKIT_BUILD_SERVER`) from `cmake/MCPKitOptions.cmake` and updated `README.md`.
 
 ### Fixed
 
-- Compiler Warnings:
+- Compiler Warnings & Bounded Formatting (Round 3 Health Check A3-004):
+  - Eliminated GCC `-O3` `-Wformat-truncation` warnings in `src/transport/streamable_http.c` via bounded string copy helper `set_err_param()`.
   - Eliminated all compiler warnings under `-Wall -Wextra` across the codebase, including unused `ctx` in `mcp_server_outbox_pop()`, unused `dlogf()` in `src/server/dispatcher.c`, and unused test helper `compl_fail()` in `tests/unit/test_dispatcher.c`.
 
 - High-Concurrency Asynchronous I/O Reactor & Streamable HTTP / WebSocket Transports:
