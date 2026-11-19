@@ -7,3 +7,6 @@ include_directories(
 
 add_executable(bench_json_rpc bench_json_rpc.c)
 target_link_libraries(bench_json_rpc PRIVATE mcpkit_core)
+
+add_executable(bench_http_throughput bench_http_throughput.c)
+target_link_libraries(bench_http_throughput PRIVATE mcpkit_core pthread)
