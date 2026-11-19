@@ -431,6 +431,10 @@ add_executable(test_subscription_engine unit/test_subscription_engine.c)
 target_link_libraries(test_subscription_engine PRIVATE mcpkit_core)
 add_test(NAME test_subscription_engine COMMAND test_subscription_engine)
 
+add_executable(test_http_etag unit/test_http_etag.c)
+target_link_libraries(test_http_etag PRIVATE mcpkit_core)
+add_test(NAME test_http_etag COMMAND test_http_etag)
+
 
 if(MCPKIT_BUILD_TLS)
   # Generate a self-signed cert in the build directory for the TLS test.

@@ -40,6 +40,7 @@
 #include <stdint.h>
 
 #include "mcpkit/core/error.h"
+#include "mcpkit/server/tool.h"
 
 
 typedef struct mcp_context mcp_context_t;
@@ -575,5 +576,30 @@ mcp_status_t mcp_server_notify_tools_changed(mcp_context_t *ctx, mcp_server_t *s
  * @return MCP_OK on success.
  */
 mcp_status_t mcp_server_notify_prompts_changed(mcp_context_t *ctx, mcp_server_t *server);
+
+/**
+ * @brief Returns the 64-bit revision hash of registered tools matching visibility.
+ *
+ * @param server Server handle.
+ * @param vis Tool visibility mask.
+ * @return 64-bit revision hash.
+ */
+uint64_t mcp_server_get_tools_revision(const mcp_server_t *server, mcp_tool_visibility_t vis);
+
+/**
+ * @brief Returns the 64-bit revision hash of registered resources.
+ *
+ * @param server Server handle.
+ * @return 64-bit revision hash.
+ */
+uint64_t mcp_server_get_resources_revision(const mcp_server_t *server);
+
+/**
+ * @brief Returns the 64-bit revision hash of registered prompts.
+ *
+ * @param server Server handle.
+ * @return 64-bit revision hash.
+ */
+uint64_t mcp_server_get_prompts_revision(const mcp_server_t *server);
 
 #endif

@@ -435,6 +435,7 @@ typedef struct {
     bool is_ws;
     bool is_init;
     char session_id[64];
+    char if_none_match[128];
 } worker_task_t;
 
 static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
@@ -453,11 +454,94 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
     mcp_message_t *msg = mcp_message_parse(ctx, task->json_body, body_len_in);
     mcp_message_t *resp = NULL;
     bool is_notification = false;
+    char computed_etag[64] = {0};
+
     if (msg != NULL) {
         if (mcp_message_kind(ctx, msg) == MCP_MSG_NOTIFICATION) {
             is_notification = true;
             mcp_server_notify(ctx, s->server, task->session, msg);
         } else {
+            /* Check conditional caching for tools/list, resources/list, prompts/list without pagination cursor */
+            if (!task->is_ws) {
+                const char *method = mcp_message_method(ctx, msg);
+                uint64_t rev = 0;
+                bool has_rev = false;
+                if (method != NULL) {
+                    if (strcmp(method, "tools/list") == 0) {
+                        mcp_tool_visibility_t vis = MCP_TOOL_VIS_MODEL;
+                        if (task->session != NULL && mcp_session_is_apps_host(ctx, task->session)) {
+                            vis = MCP_TOOL_VIS_APP;
+                        }
+                        rev = mcp_server_get_tools_revision(s->server, vis);
+                        has_rev = true;
+                    } else if (strcmp(method, "resources/list") == 0) {
+                        rev = mcp_server_get_resources_revision(s->server);
+                        has_rev = true;
+                    } else if (strcmp(method, "prompts/list") == 0) {
+                        rev = mcp_server_get_prompts_revision(s->server);
+                        has_rev = true;
+                    }
+                }
+
+                if (has_rev) {
+                    const mcp_json_value_t *params = mcp_message_params(ctx, msg);
+                    const mcp_json_value_t *cur = (params != NULL) ? mcp_json_object_get(ctx, params, "cursor") : NULL;
+                    if (cur == NULL) {
+                        snprintf(computed_etag, sizeof(computed_etag), "\"%016lx\"", (unsigned long)rev);
+                        if (task->if_none_match[0] != '\0' &&
+                            (strcmp(task->if_none_match, "*") == 0 ||
+                             strcmp(task->if_none_match, computed_etag) == 0)) {
+                            /* Match -> emit 304 Not Modified */
+                            mcp_message_destroy(ctx, msg);
+                            if (task->entry != NULL) {
+                                atomic_store_explicit(&task->entry->last_active, (int64_t)time(NULL), memory_order_release);
+                                mtx_unlock(&task->entry->session_lock);
+                            } else if (task->is_ws && task->conn != NULL) {
+                                mtx_unlock(&task->conn->ws_session_lock);
+                            }
+                            char resp_304[512];
+                            const char *conn_hdr = (atomic_load(&s->draining) || atomic_load(&task->conn->closing)) ? "close" : "keep-alive";
+                            bool close_after = (atomic_load(&s->draining) || atomic_load(&task->conn->closing));
+                            int len_304 = 0;
+                            if (task->session_id[0] != '\0') {
+                                len_304 = snprintf(resp_304, sizeof(resp_304),
+                                                   "HTTP/1.1 304 Not Modified\r\n"
+                                                   "ETag: %s\r\n"
+                                                   "Mcp-Session-Id: %s\r\n"
+                                                   "Content-Length: 0\r\n"
+                                                   "Connection: %s\r\n"
+                                                   "\r\n",
+                                                   computed_etag, task->session_id, conn_hdr);
+                            } else {
+                                len_304 = snprintf(resp_304, sizeof(resp_304),
+                                                   "HTTP/1.1 304 Not Modified\r\n"
+                                                   "ETag: %s\r\n"
+                                                   "Content-Length: 0\r\n"
+                                                   "Connection: %s\r\n"
+                                                   "\r\n",
+                                                   computed_etag, conn_hdr);
+                            }
+                            char *dup_304 = srv_malloc(ctx, (size_t)len_304 + 1);
+                            if (dup_304 != NULL) {
+                                memcpy(dup_304, resp_304, (size_t)len_304);
+                                dup_304[len_304] = '\0';
+                                enqueue_response(s, task->conn, dup_304, (size_t)len_304, close_after);
+                            }
+                            conn_unref(task->conn);
+                            session_entry_unref(s, task->entry);
+                            srv_free(ctx, task->json_body);
+                            pthread_mutex_lock(&s->pending_mtx);
+                            s->pending--;
+                            if (s->pending == 0) {
+                                pthread_cond_broadcast(&s->pending_cv);
+                            }
+                            pthread_mutex_unlock(&s->pending_mtx);
+                            return;
+                        }
+                    }
+                }
+            }
+
             mcp_server_dispatch(ctx, s->server, task->session, msg, &resp);
         }
         mcp_message_destroy(ctx, msg);
@@ -525,7 +609,28 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
                 int hlen = 0;
                 const char *conn_hdr = (atomic_load(&s->draining) || atomic_load(&task->conn->closing)) ? "close" : "keep-alive";
                 bool close_after = (atomic_load(&s->draining) || atomic_load(&task->conn->closing));
-                if (task->session_id[0] != '\0') {
+                if (computed_etag[0] != '\0') {
+                    if (task->session_id[0] != '\0') {
+                        hlen = snprintf(hdr_buf, sizeof(hdr_buf),
+                                        "HTTP/1.1 200 OK\r\n"
+                                        "Content-Type: application/json\r\n"
+                                        "ETag: %s\r\n"
+                                        "Content-Length: %zu\r\n"
+                                        "Mcp-Session-Id: %s\r\n"
+                                        "Connection: %s\r\n"
+                                        "\r\n",
+                                        computed_etag, body_len, task->session_id, conn_hdr);
+                    } else {
+                        hlen = snprintf(hdr_buf, sizeof(hdr_buf),
+                                        "HTTP/1.1 200 OK\r\n"
+                                        "Content-Type: application/json\r\n"
+                                        "ETag: %s\r\n"
+                                        "Content-Length: %zu\r\n"
+                                        "Connection: %s\r\n"
+                                        "\r\n",
+                                        computed_etag, body_len, conn_hdr);
+                    }
+                } else if (task->session_id[0] != '\0') {
                     hlen = snprintf(hdr_buf, sizeof(hdr_buf),
                                     "HTTP/1.1 200 OK\r\n"
                                     "Content-Type: application/json\r\n"
@@ -856,6 +961,12 @@ static size_t process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
         task->is_ws = false;
         task->is_init = is_init;
         snprintf(task->session_id, sizeof(task->session_id), "%s", entry->id);
+        const char *inm = mcp_http_header(ctx, req, "If-None-Match");
+        if (inm != NULL) {
+            snprintf(task->if_none_match, sizeof(task->if_none_match), "%s", inm);
+        } else {
+            task->if_none_match[0] = '\0';
+        }
         task->json_body = srv_malloc(ctx, body_len + 1);
         if (task->json_body != NULL && body != NULL) {
             memcpy(task->json_body, body, body_len);

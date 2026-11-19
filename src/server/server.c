@@ -823,3 +823,91 @@ mcp_status_t mcp_server_notify_prompts_changed(mcp_context_t *ctx, mcp_server_t 
     pthread_mutex_unlock(&server->sessions_lock);
     return MCP_OK;
 }
+
+static inline uint64_t fnv1a64_update(uint64_t hash, const void *data, size_t len) {
+    const uint8_t *p = (const uint8_t *)data;
+    for (size_t i = 0; i < len; i++) {
+        hash ^= (uint64_t)p[i];
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+uint64_t mcp_server_get_tools_revision(const mcp_server_t *server, mcp_tool_visibility_t vis) {
+    if (server == NULL) {
+        return 0;
+    }
+    uint64_t hash = 14695981039346656037ULL;
+    for (size_t i = 0; i < server->n_tools; i++) {
+        const mcp_tool_t *t = server->tools[i];
+        if (t == NULL) continue;
+        bool visible = false;
+        if (vis == MCP_TOOL_VIS_BOTH) {
+            visible = true;
+        } else if (vis == MCP_TOOL_VIS_APP) {
+            visible = (t->vis == MCP_TOOL_VIS_APP || t->vis == MCP_TOOL_VIS_BOTH);
+        } else {
+            visible = (t->vis == MCP_TOOL_VIS_MODEL || t->vis == MCP_TOOL_VIS_BOTH);
+        }
+        if (!visible) continue;
+
+        if (t->name != NULL) {
+            hash = fnv1a64_update(hash, t->name, strlen(t->name));
+        }
+        uint8_t sep = 0x1f;
+        hash = fnv1a64_update(hash, &sep, 1);
+        if (t->description != NULL) {
+            hash = fnv1a64_update(hash, t->description, strlen(t->description));
+        }
+        hash = fnv1a64_update(hash, &sep, 1);
+        hash = fnv1a64_update(hash, &t->vis, sizeof(t->vis));
+        hash = fnv1a64_update(hash, &t->required, sizeof(t->required));
+    }
+    return hash;
+}
+
+uint64_t mcp_server_get_resources_revision(const mcp_server_t *server) {
+    if (server == NULL) {
+        return 0;
+    }
+    uint64_t hash = 14695981039346656037ULL;
+    for (size_t i = 0; i < server->n_resources; i++) {
+        const mcp_resource_t *r = server->resources[i];
+        if (r == NULL) continue;
+        if (r->uri != NULL) {
+            hash = fnv1a64_update(hash, r->uri, strlen(r->uri));
+        }
+        uint8_t sep = 0x1f;
+        hash = fnv1a64_update(hash, &sep, 1);
+        if (r->name != NULL) {
+            hash = fnv1a64_update(hash, r->name, strlen(r->name));
+        }
+        hash = fnv1a64_update(hash, &sep, 1);
+        if (r->mime_type != NULL) {
+            hash = fnv1a64_update(hash, r->mime_type, strlen(r->mime_type));
+        }
+        hash = fnv1a64_update(hash, &sep, 1);
+    }
+    return hash;
+}
+
+uint64_t mcp_server_get_prompts_revision(const mcp_server_t *server) {
+    if (server == NULL) {
+        return 0;
+    }
+    uint64_t hash = 14695981039346656037ULL;
+    for (size_t i = 0; i < server->n_prompts; i++) {
+        const mcp_prompt_t *p = server->prompts[i];
+        if (p == NULL) continue;
+        if (p->name != NULL) {
+            hash = fnv1a64_update(hash, p->name, strlen(p->name));
+        }
+        uint8_t sep = 0x1f;
+        hash = fnv1a64_update(hash, &sep, 1);
+        if (p->description != NULL) {
+            hash = fnv1a64_update(hash, p->description, strlen(p->description));
+        }
+        hash = fnv1a64_update(hash, &sep, 1);
+    }
+    return hash;
+}
