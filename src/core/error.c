@@ -19,6 +19,7 @@ const char *mcp_status_string(mcp_status_t status) {
         case MCP_ERR_ALREADY_EXISTS: return "MCP_ERR_ALREADY_EXISTS";
         case MCP_ERR_UNSUPPORTED: return "MCP_ERR_UNSUPPORTED";
         case MCP_ERR_PERMISSION: return "MCP_ERR_PERMISSION";
+        case MCP_ERR_EXPIRED: return "MCP_ERR_EXPIRED";
         default: return "MCP_ERR_UNKNOWN";
     }
 }

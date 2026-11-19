@@ -29,7 +29,8 @@ typedef enum {
     MCP_ERR_NOT_FOUND,        /**< The named entity does not exist. */
     MCP_ERR_ALREADY_EXISTS,   /**< The named entity is already registered. */
     MCP_ERR_UNSUPPORTED,      /**< The requested capability is not built in this SDK. */
-    MCP_ERR_PERMISSION,      /**< The caller lacks a required permission bit. */
+    MCP_ERR_PERMISSION,       /**< The caller lacks a required permission bit. */
+    MCP_ERR_EXPIRED,          /**< The requested entity, token, or event has expired. */
 } mcp_status_t;
 
 /**

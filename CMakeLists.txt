@@ -75,6 +75,7 @@ set(MCPKIT_CORE_SOURCES
   src/apps/csp.c
   src/apps/ui.c
   src/transport/transport.c
+  src/transport/ring_buffer.c
   src/transport/stdio.c
   src/transport/sse.c
   src/transport/ws.c

@@ -34,7 +34,7 @@ static void check_unmapped_statuses_collapse(void)
     static const mcp_status_t kUnmapped[] = {
         MCP_ERR_NOMEM,      MCP_ERR_IO,         MCP_ERR_TIMEOUT,
         MCP_ERR_CANCELLED,  MCP_ERR_ALREADY_EXISTS,
-        MCP_ERR_UNSUPPORTED, MCP_ERR_PERMISSION,
+        MCP_ERR_UNSUPPORTED, MCP_ERR_PERMISSION, MCP_ERR_EXPIRED,
     };
     for (size_t i = 0; i < sizeof(kUnmapped) / sizeof(kUnmapped[0]); i++)
         CHECK(mcp_status_to_rpc_code(kUnmapped[i]) == MCP_RPC_INTERNAL_ERROR);
@@ -65,7 +65,7 @@ static void check_status_string_is_total(void)
         MCP_OK,             MCP_ERR_INVALID_ARGUMENT, MCP_ERR_NOMEM,
         MCP_ERR_IO,         MCP_ERR_PROTOCOL,         MCP_ERR_TIMEOUT,
         MCP_ERR_CANCELLED,  MCP_ERR_NOT_FOUND,        MCP_ERR_ALREADY_EXISTS,
-        MCP_ERR_UNSUPPORTED, MCP_ERR_PERMISSION,
+        MCP_ERR_UNSUPPORTED, MCP_ERR_PERMISSION, MCP_ERR_EXPIRED,
     };
     for (size_t i = 0; i < sizeof(kAll) / sizeof(kAll[0]); i++) {
         const char *msg = mcp_status_string(kAll[i]);

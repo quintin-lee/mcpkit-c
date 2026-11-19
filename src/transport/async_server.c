@@ -35,6 +35,7 @@
 #include "mcpkit/runtime/reactor.h"
 #include "mcpkit/server/server.h"
 #include "mcpkit/transport/http.h"
+#include "mcpkit/transport/ring_buffer.h"
 #include "mcpkit/transport/ws.h"
 #include "../core/sha1.h"
 
@@ -93,6 +94,7 @@ typedef struct session_entry {
     char id[64];
     mcp_session_t *session;
     async_conn_t *sse_conn;
+    mcp_event_ring_buffer_t *ring_buffer;
     atomic_intmax_t last_active;
     atomic_uint ref_count;
     atomic_bool dead;
@@ -329,6 +331,10 @@ static void session_entry_ref(session_entry_t *e) {
 static void session_entry_unref(mcp_async_server_t *s, session_entry_t *e) {
     if (e == NULL) return;
     if (atomic_fetch_sub(&e->ref_count, 1) == 1) {
+        if (e->ring_buffer != NULL) {
+            mcp_event_ring_buffer_destroy(e->ring_buffer);
+            e->ring_buffer = NULL;
+        }
         if (e->session != NULL && s->server != NULL) {
             mcp_server_destroy_session(s->ctx, s->server, e->session);
         }
@@ -347,6 +353,10 @@ static session_entry_t *create_session_entry(mcp_async_server_t *s) {
         srv_free(s->ctx, entry);
         return NULL;
     }
+
+    entry->ring_buffer = mcp_event_ring_buffer_create(
+        s->ctx ? mcp_context_allocator(s->ctx) : NULL,
+        s->cfg.sse_event_ring_capacity ? s->cfg.sse_event_ring_capacity : 128);
 
     /* Generate a unique session id (monotonic atomic counter, no clock) */
     static atomic_uint_fast64_t id_counter = 1000;
@@ -569,6 +579,18 @@ static void send_http_error(mcp_async_server_t *s, async_conn_t *conn, int code,
     }
 }
 
+static void sse_replay_cb(uint64_t id, const char *data, size_t len, void *userdata) {
+    (void)id;
+    async_conn_t *conn = (async_conn_t *)userdata;
+    mcp_async_server_t *s = conn->server;
+    char *dup = srv_malloc(s->ctx, len + 1);
+    if (dup != NULL) {
+        memcpy(dup, data, len);
+        dup[len] = '\0';
+        enqueue_response(s, conn, dup, len, false);
+    }
+}
+
 static size_t process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
     mcp_context_t *ctx = s->ctx;
     /* 先定位 header 边界（CR/LF 序列），可能跨包未到，此时等待下次 recv */
@@ -684,11 +706,34 @@ static size_t process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
                 send_http_error(s, conn, 404, "Session Not Found");
                 return total_needed;
             }
+
+            /* Check Last-Event-ID */
+            const char *last_id_hdr = mcp_http_header(ctx, req, "Last-Event-ID");
+            if (last_id_hdr == NULL) {
+                last_id_hdr = mcp_http_header(ctx, req, "Last-Event-Id");
+            }
+
+            uint64_t last_event_id = 0;
+            bool has_last_id = false;
+            if (last_id_hdr != NULL && last_id_hdr[0] != '\0') {
+                last_event_id = (uint64_t)strtoull(last_id_hdr, NULL, 10);
+                has_last_id = true;
+            }
+
+            if (has_last_id && entry->ring_buffer != NULL) {
+                uint64_t oldest = mcp_event_ring_buffer_oldest_id(entry->ring_buffer);
+                if (last_event_id + 1 < oldest && mcp_event_ring_buffer_count(entry->ring_buffer) > 0) {
+                    session_entry_unref(s, entry);
+                    mcp_http_request_destroy(ctx, req);
+                    send_http_error(s, conn, 410, "Gone");
+                    return total_needed;
+                }
+            }
+
             conn->type = CONN_SSE;
             snprintf(conn->session_id, sizeof(conn->session_id), "%s", sid);
             conn->session = entry->session;
             entry->sse_conn = conn;
-            session_entry_unref(s, entry); /* caller's find_session ref released */
 
             const char *sse_ok =
                 "HTTP/1.1 200 OK\r\n"
@@ -701,6 +746,12 @@ static size_t process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
                 memcpy(dup, sse_ok, strlen(sse_ok) + 1);
                 enqueue_response(s, conn, dup, strlen(sse_ok), false);
             }
+
+            if (has_last_id && entry->ring_buffer != NULL) {
+                mcp_event_ring_buffer_replay(entry->ring_buffer, last_event_id, sse_replay_cb, conn);
+            }
+
+            session_entry_unref(s, entry); /* caller's find_session ref released */
             /* GET-SSE 无 body：消费 header（total_needed == header_len），
              * 残留字节（粘包）前移后交下次读事件消化 */
             size_t sse_remaining = conn->read_len - total_needed;
@@ -1380,6 +1431,11 @@ mcp_status_t mcp_async_server_push_sse(mcp_context_t *ctx, mcp_async_server_t *s
     if (e == NULL) {
         return MCP_ERR_NOT_FOUND;
     }
+
+    if (e->ring_buffer != NULL) {
+        mcp_event_ring_buffer_push(e->ring_buffer, data, len, NULL);
+    }
+
     mtx_lock(&s->sessions_mtx);
     async_conn_t *sse = e->sse_conn;
     if (sse != NULL) {
@@ -1389,7 +1445,7 @@ mcp_status_t mcp_async_server_push_sse(mcp_context_t *ctx, mcp_async_server_t *s
     session_entry_unref(s, e);
 
     if (sse == NULL) {
-        return MCP_ERR_IO;
+        return MCP_OK;
     }
 
     char *dup = srv_malloc(s->ctx, len + 1);

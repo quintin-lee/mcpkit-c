@@ -34,6 +34,7 @@ typedef struct {
     size_t outbox_max_drop_bytes; /**< Max outbox size before slow-client stall eviction (default 4MB if 0). */
     uint32_t stall_timeout_ms;    /**< Write stall timeout in ms before eviction (default 5000 if 0). */
     size_t socket_sndbuf;         /**< Kernel SO_SNDBUF override in bytes (0 for system default). */
+    size_t sse_event_ring_capacity; /**< SSE event ring buffer capacity per session (default 128 if 0). */
 } mcp_async_server_config_t;
 
 /**
