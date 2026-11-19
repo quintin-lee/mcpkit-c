@@ -54,7 +54,13 @@ int main(void) {
 
     CHECK(mcp_transport_create(ctx, NULL, NULL) == NULL);
 
-    static const mcp_transport_ops_t kPartial = { NULL, NULL, NULL, NULL };
+    static const mcp_transport_ops_t kPartial = {
+        .start = NULL,
+        .send = NULL,
+        .recv = NULL,
+        .stop = NULL,
+        .sendv = NULL,
+    };
     mcp_transport_t *p = mcp_transport_create(ctx, &kPartial, NULL);
     CHECK(p != NULL);
     CHECK(mcp_transport_start(ctx, p) == MCP_ERR_UNSUPPORTED);
@@ -66,7 +72,13 @@ int main(void) {
     CHECK(mcp_transport_recv(ctx, p, NULL) == MCP_ERR_INVALID_ARGUMENT);
     mcp_transport_destroy(ctx, p);
 
-    static const mcp_transport_ops_t kFull = { fake_start, fake_send, fake_recv, fake_stop };
+    static const mcp_transport_ops_t kFull = {
+        .start = fake_start,
+        .send  = fake_send,
+        .recv  = fake_recv,
+        .stop  = fake_stop,
+        .sendv = NULL,
+    };
     fake_t fake;
     memset(&fake, 0, sizeof(fake));
     mcp_transport_t *t = mcp_transport_create(ctx, &kFull, &fake);

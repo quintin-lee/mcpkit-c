@@ -913,7 +913,7 @@ static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t even
                 conn_detach_and_close(s, conn);
                 return;
             }
-            char *nread = srv_malloc(ctx, ncap);
+            char *nread = srv_malloc(ctx, ncap + 1);
             if (nread == NULL) {
                 conn_detach_and_close(s, conn);
                 return;

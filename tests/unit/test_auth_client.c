@@ -10,7 +10,13 @@ static mcp_status_t noop_start(mcp_context_t *ctx, mcp_transport_t *t) { (void)c
 static mcp_status_t noop_send(mcp_context_t *ctx, mcp_transport_t *t, const char *d, size_t n) { (void)ctx; (void)t; (void)d; (void)n; return MCP_OK; }
 static mcp_status_t noop_recv(mcp_context_t *ctx, mcp_transport_t *t, char **line_out) { (void)ctx; (void)t; *line_out = NULL; return MCP_ERR_IO; }
 static mcp_status_t noop_stop(mcp_context_t *ctx, mcp_transport_t *t) { (void)ctx; (void)t; return MCP_OK; }
-static const mcp_transport_ops_t kNoop = { noop_start, noop_send, noop_recv, noop_stop };
+static const mcp_transport_ops_t kNoop = {
+    .start = noop_start,
+    .send  = noop_send,
+    .recv  = noop_recv,
+    .stop  = noop_stop,
+    .sendv = NULL,
+};
 
 
 int main(void) {

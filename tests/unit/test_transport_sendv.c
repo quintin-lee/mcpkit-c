@@ -201,6 +201,8 @@ static void test_socket_sendv_roundtrip(void) {
     assert(strcmp(line, "{\"result\":\"pong\"}") == 0);
     free(line);
 
+    mcp_transport_stop(NULL, t1);
+    mcp_transport_stop(NULL, t2);
     mcp_transport_destroy(NULL, t1);
     mcp_transport_destroy(NULL, t2);
 }
@@ -249,6 +251,8 @@ static void test_stdio_sendv_loopback(void) {
     assert(strcmp(line, "single line") == 0);
     free(line);
 
+    mcp_transport_stop(NULL, sender);
+    mcp_transport_stop(NULL, receiver);
     mcp_transport_destroy(NULL, sender);
     mcp_transport_destroy(NULL, receiver);
     fclose(in);

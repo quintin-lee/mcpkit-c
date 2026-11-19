@@ -51,7 +51,13 @@ static mcp_status_t fake_stop(mcp_context_t *ctx, mcp_transport_t *t) {
     return MCP_OK;
 }
 
-static const mcp_transport_ops_t kFake = { fake_start, fake_send, fake_recv, fake_stop };
+static const mcp_transport_ops_t kFake = {
+    .start = fake_start,
+    .send  = fake_send,
+    .recv  = fake_recv,
+    .stop  = fake_stop,
+    .sendv = NULL,
+};
 
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
