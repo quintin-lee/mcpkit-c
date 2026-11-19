@@ -15,6 +15,7 @@
 #define MCPKIT_SERVER_SESSION_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "mcpkit/core/error.h"
@@ -208,5 +209,52 @@ mcp_status_t mcp_session_build_notification(mcp_context_t *ctx, const mcp_sessio
  */
 mcp_status_t mcp_session_build_subscription_closure(mcp_context_t *ctx, mcp_session_t *session,
                                                     mcp_message_t **resp_out);
+
+/**
+ * @brief Asynchronous notification sink callback invoked when server pushes an event to a session.
+ */
+typedef mcp_status_t (*mcp_session_sink_fn)(mcp_context_t *ctx,
+                                            mcp_session_t *session,
+                                            const char *payload,
+                                            size_t len,
+                                            void *userdata);
+
+/**
+ * @brief Sets an asynchronous notification sink for the session.
+ *
+ * @param session   Target session.
+ * @param sink      Callback invoked on notification push, or NULL to clear.
+ * @param userdata  Pass-through pointer passed to sink.
+ */
+void mcp_session_set_sink(mcp_session_t *session, mcp_session_sink_fn sink, void *userdata);
+
+/**
+ * @brief Subscribes a session to updates for a specific resource URI.
+ *
+ * @param ctx      Context; may be NULL.
+ * @param session  Target session.
+ * @param uri      Resource URI.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_session_subscribe_resource(mcp_context_t *ctx, mcp_session_t *session, const char *uri);
+
+/**
+ * @brief Unsubscribes a session from updates for a resource URI.
+ *
+ * @param ctx      Context; may be NULL.
+ * @param session  Target session.
+ * @param uri      Resource URI.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_session_unsubscribe_resource(mcp_context_t *ctx, mcp_session_t *session, const char *uri);
+
+/**
+ * @brief Checks if a session has an active direct subscription to a resource URI.
+ *
+ * @param session  Target session.
+ * @param uri      Resource URI.
+ * @return true if subscribed.
+ */
+bool mcp_session_is_subscribed_to_resource(const mcp_session_t *session, const char *uri);
 
 #endif

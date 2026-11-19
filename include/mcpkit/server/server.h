@@ -538,4 +538,42 @@ const mcp_json_value_t *mcp_server_get_tool_schema(mcp_context_t *ctx,
                                                     mcp_server_t *srv,
                                                     const char *name);
 
+/**
+ * @brief Notifies subscribed sessions that a specific resource URI was updated.
+ *
+ * Emits "notifications/resources/updated" to sessions subscribed via `resources/subscribe`
+ * or `subscriptions/listen` matching `uri`. Dispatches asynchronously to each session's sink
+ * or enqueues to the server outbox.
+ *
+ * @param ctx     Context; may be NULL.
+ * @param server  Target server.
+ * @param uri     Resource URI that updated; must not be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_server_notify_resource_updated(mcp_context_t *ctx,
+                                                mcp_server_t *server,
+                                                const char *uri);
+
+/**
+ * @brief Notifies sessions that the registered tools list has changed.
+ *
+ * Emits "notifications/tools/list_changed" to all sessions (or filtered sessions).
+ *
+ * @param ctx     Context; may be NULL.
+ * @param server  Target server.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_server_notify_tools_changed(mcp_context_t *ctx, mcp_server_t *server);
+
+/**
+ * @brief Notifies sessions that the registered prompts list has changed.
+ *
+ * Emits "notifications/prompts/list_changed" to all sessions.
+ *
+ * @param ctx     Context; may be NULL.
+ * @param server  Target server.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_server_notify_prompts_changed(mcp_context_t *ctx, mcp_server_t *server);
+
 #endif

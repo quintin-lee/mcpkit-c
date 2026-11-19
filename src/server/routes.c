@@ -986,6 +986,13 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
             return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "missing uri");
         }
         bool is_sub = strcmp(method, "resources/subscribe") == 0;
+        if (s != NULL) {
+            if (is_sub) {
+                mcp_session_subscribe_resource(ctx, s, uri);
+            } else {
+                mcp_session_unsubscribe_resource(ctx, s, uri);
+            }
+        }
         pthread_mutex_lock(&srv->subscribed_lock);
         {
             if (is_sub) {

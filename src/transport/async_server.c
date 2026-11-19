@@ -34,6 +34,7 @@
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/runtime/reactor.h"
 #include "mcpkit/server/server.h"
+#include "mcpkit/server/session.h"
 #include "mcpkit/transport/http.h"
 #include "mcpkit/transport/ring_buffer.h"
 #include "mcpkit/transport/ws.h"
@@ -95,6 +96,7 @@ typedef struct session_entry {
     mcp_session_t *session;
     async_conn_t *sse_conn;
     mcp_event_ring_buffer_t *ring_buffer;
+    mcp_async_server_t *server;
     atomic_intmax_t last_active;
     atomic_uint ref_count;
     atomic_bool dead;
@@ -328,6 +330,14 @@ static void session_entry_ref(session_entry_t *e) {
     if (e != NULL) atomic_fetch_add(&e->ref_count, 1);
 }
 
+static mcp_status_t async_session_sink(mcp_context_t *ctx, mcp_session_t *session,
+                                      const char *payload, size_t len, void *userdata) {
+    (void)session;
+    session_entry_t *entry = (session_entry_t *)userdata;
+    mcp_async_server_t *s = entry->server;
+    return mcp_async_server_push_sse(ctx, s, entry->id, payload, len);
+}
+
 static void session_entry_unref(mcp_async_server_t *s, session_entry_t *e) {
     if (e == NULL) return;
     if (atomic_fetch_sub(&e->ref_count, 1) == 1) {
@@ -335,8 +345,11 @@ static void session_entry_unref(mcp_async_server_t *s, session_entry_t *e) {
             mcp_event_ring_buffer_destroy(e->ring_buffer);
             e->ring_buffer = NULL;
         }
-        if (e->session != NULL && s->server != NULL) {
-            mcp_server_destroy_session(s->ctx, s->server, e->session);
+        if (e->session != NULL) {
+            mcp_session_set_sink(e->session, NULL, NULL);
+            if (s->server != NULL) {
+                mcp_server_destroy_session(s->ctx, s->server, e->session);
+            }
         }
         mtx_destroy(&e->session_lock);
         srv_free(s->ctx, e);
@@ -353,6 +366,8 @@ static session_entry_t *create_session_entry(mcp_async_server_t *s) {
         srv_free(s->ctx, entry);
         return NULL;
     }
+    entry->server = s;
+    mcp_session_set_sink(entry->session, async_session_sink, entry);
 
     entry->ring_buffer = mcp_event_ring_buffer_create(
         s->ctx ? mcp_context_allocator(s->ctx) : NULL,

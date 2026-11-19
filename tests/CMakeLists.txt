@@ -427,6 +427,10 @@ add_executable(test_streamable_resumption unit/test_streamable_resumption.c)
 target_link_libraries(test_streamable_resumption PRIVATE mcpkit_core)
 add_test(NAME test_streamable_resumption COMMAND test_streamable_resumption)
 
+add_executable(test_subscription_engine unit/test_subscription_engine.c)
+target_link_libraries(test_subscription_engine PRIVATE mcpkit_core)
+add_test(NAME test_subscription_engine COMMAND test_subscription_engine)
+
 
 if(MCPKIT_BUILD_TLS)
   # Generate a self-signed cert in the build directory for the TLS test.

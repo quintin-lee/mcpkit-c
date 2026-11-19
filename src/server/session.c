@@ -28,6 +28,7 @@ static mcp_session_t *session_new(mcp_context_t *ctx) {
         srv_free(ctx, s);
         return NULL;
     }
+    pthread_mutex_init(&s->direct_sub_lock, NULL);
     return s;
 }
 
@@ -46,6 +47,15 @@ void session_free(mcp_context_t *ctx, mcp_session_t *s) {
         }
         srv_free(ctx, s->sub_resource_uris);
     }
+    pthread_mutex_lock(&s->direct_sub_lock);
+    if (s->direct_subscribed_uris != NULL) {
+        for (size_t i = 0; i < s->n_direct_subscribed; i++) {
+            srv_free(ctx, s->direct_subscribed_uris[i]);
+        }
+        srv_free(ctx, s->direct_subscribed_uris);
+    }
+    pthread_mutex_unlock(&s->direct_sub_lock);
+    pthread_mutex_destroy(&s->direct_sub_lock);
     srv_free(ctx, s);
 }
 
@@ -335,4 +345,78 @@ mcp_status_t mcp_session_build_subscription_closure(mcp_context_t *ctx, mcp_sess
 
     *resp_out = resp;
     return MCP_OK;
+}
+
+void mcp_session_set_sink(mcp_session_t *session, mcp_session_sink_fn sink, void *userdata) {
+    if (session == NULL) {
+        return;
+    }
+    pthread_mutex_lock(&session->direct_sub_lock);
+    session->notify_sink = sink;
+    session->notify_userdata = userdata;
+    pthread_mutex_unlock(&session->direct_sub_lock);
+}
+
+mcp_status_t mcp_session_subscribe_resource(mcp_context_t *ctx, mcp_session_t *session, const char *uri) {
+    if (session == NULL || uri == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    pthread_mutex_lock(&session->direct_sub_lock);
+    for (size_t i = 0; i < session->n_direct_subscribed; i++) {
+        if (strcmp(session->direct_subscribed_uris[i], uri) == 0) {
+            pthread_mutex_unlock(&session->direct_sub_lock);
+            return MCP_OK;
+        }
+    }
+    if (session->n_direct_subscribed == session->cap_direct_subscribed) {
+        size_t ncap = session->cap_direct_subscribed == 0 ? 4 : session->cap_direct_subscribed * 2;
+        char **nu = srv_realloc(ctx, session->direct_subscribed_uris, ncap * sizeof(*nu));
+        if (nu == NULL) {
+            pthread_mutex_unlock(&session->direct_sub_lock);
+            return MCP_ERR_NOMEM;
+        }
+        session->direct_subscribed_uris = nu;
+        session->cap_direct_subscribed = ncap;
+    }
+    char *copy = srv_strdup(ctx, uri);
+    if (copy == NULL) {
+        pthread_mutex_unlock(&session->direct_sub_lock);
+        return MCP_ERR_NOMEM;
+    }
+    session->direct_subscribed_uris[session->n_direct_subscribed++] = copy;
+    pthread_mutex_unlock(&session->direct_sub_lock);
+    return MCP_OK;
+}
+
+mcp_status_t mcp_session_unsubscribe_resource(mcp_context_t *ctx, mcp_session_t *session, const char *uri) {
+    if (session == NULL || uri == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    pthread_mutex_lock(&session->direct_sub_lock);
+    for (size_t i = 0; i < session->n_direct_subscribed; i++) {
+        if (strcmp(session->direct_subscribed_uris[i], uri) == 0) {
+            srv_free(ctx, session->direct_subscribed_uris[i]);
+            session->direct_subscribed_uris[i] =
+                session->direct_subscribed_uris[--session->n_direct_subscribed];
+            break;
+        }
+    }
+    pthread_mutex_unlock(&session->direct_sub_lock);
+    return MCP_OK;
+}
+
+bool mcp_session_is_subscribed_to_resource(const mcp_session_t *session, const char *uri) {
+    if (session == NULL || uri == NULL) {
+        return false;
+    }
+    mcp_session_t *s = (mcp_session_t *)session;
+    pthread_mutex_lock(&s->direct_sub_lock);
+    for (size_t i = 0; i < s->n_direct_subscribed; i++) {
+        if (strcmp(s->direct_subscribed_uris[i], uri) == 0) {
+            pthread_mutex_unlock(&s->direct_sub_lock);
+            return true;
+        }
+    }
+    pthread_mutex_unlock(&s->direct_sub_lock);
+    return false;
 }

@@ -26,6 +26,7 @@
 #include "mcpkit/server/resource.h"
 #include "mcpkit/server/prompt.h"
 #include "mcpkit/server/tool.h"
+#include "mcpkit/server/session.h"
 #include "mcpkit/server/server.h"
 #include "mcpkit/protocol/tasks.h"
 #include "mcpkit/protocol/skills.h"
@@ -87,6 +88,14 @@ struct mcp_session {
     bool sub_resources_list_changed;
     char **sub_resource_uris;
     size_t n_sub_resource_uris;
+    // Direct subscriptions (Phase 2, resources/subscribe)
+    char **direct_subscribed_uris;
+    size_t n_direct_subscribed;
+    size_t cap_direct_subscribed;
+    pthread_mutex_t direct_sub_lock;
+    // Notification sink
+    mcp_session_sink_fn notify_sink;
+    void *notify_userdata;
 };
 
 struct mcp_server {

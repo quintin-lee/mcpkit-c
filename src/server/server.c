@@ -701,3 +701,125 @@ mcp_status_t mcp_server_enable_skills(mcp_context_t *ctx, mcp_server_t *srv) {
 mcp_skill_registry_t *mcp_server_get_skill_registry(mcp_server_t *srv) {
     return srv != NULL ? srv->skill_reg : NULL;
 }
+
+static mcp_status_t deliver_notification(mcp_context_t *ctx, mcp_server_t *srv,
+                                         mcp_session_t *sess, mcp_message_t *notif) {
+    if (sess != NULL) {
+        pthread_mutex_lock(&sess->direct_sub_lock);
+        mcp_session_sink_fn sink = sess->notify_sink;
+        void *ud = sess->notify_userdata;
+        pthread_mutex_unlock(&sess->direct_sub_lock);
+        if (sink != NULL) {
+            char *text = mcp_message_serialize(ctx, notif);
+            if (text != NULL) {
+                sink(ctx, sess, text, strlen(text), ud);
+                mcp_json_free_string(ctx, text);
+            }
+            mcp_message_destroy(ctx, notif);
+            return MCP_OK;
+        }
+    }
+    return outbox_push(ctx, srv, notif);
+}
+
+mcp_status_t mcp_server_notify_resource_updated(mcp_context_t *ctx, mcp_server_t *server,
+                                                const char *uri) {
+    if (server == NULL || uri == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    pthread_mutex_lock(&server->sessions_lock);
+    for (size_t i = 0; i < server->n_sessions; i++) {
+        mcp_session_t *sess = server->sessions[i];
+        if (sess == NULL) continue;
+
+        bool matches = false;
+        if (sess->subscription_active) {
+            mcp_json_value_t *tmp = mcp_json_object_new(ctx);
+            if (tmp != NULL) {
+                mcp_json_object_set(ctx, tmp, "uri", mcp_json_string_new(ctx, uri));
+                matches = mcp_session_is_subscribed_to_notification(ctx, sess,
+                                                                    "notifications/resources/updated", tmp);
+                mcp_json_destroy(ctx, tmp);
+            }
+        } else {
+            matches = mcp_session_is_subscribed_to_resource(sess, uri);
+        }
+
+        if (matches) {
+            mcp_json_value_t *params = mcp_json_object_new(ctx);
+            if (params != NULL) {
+                mcp_json_object_set(ctx, params, "uri", mcp_json_string_new(ctx, uri));
+            }
+            mcp_message_t *notif = NULL;
+            mcp_status_t st = mcp_session_build_notification(ctx, sess,
+                                                            "notifications/resources/updated",
+                                                            params, &notif);
+            if (st == MCP_OK && notif != NULL) {
+                deliver_notification(ctx, server, sess, notif);
+            }
+        }
+    }
+    pthread_mutex_unlock(&server->sessions_lock);
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_notify_tools_changed(mcp_context_t *ctx, mcp_server_t *server) {
+    if (server == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    pthread_mutex_lock(&server->sessions_lock);
+    for (size_t i = 0; i < server->n_sessions; i++) {
+        mcp_session_t *sess = server->sessions[i];
+        if (sess == NULL) continue;
+
+        bool matches = true;
+        if (sess->subscription_active) {
+            matches = mcp_session_is_subscribed_to_notification(ctx, sess,
+                                                                "notifications/tools/list_changed", NULL);
+        }
+
+        if (matches) {
+            mcp_message_t *notif = NULL;
+            mcp_status_t st = mcp_session_build_notification(ctx, sess,
+                                                            "notifications/tools/list_changed",
+                                                            NULL, &notif);
+            if (st == MCP_OK && notif != NULL) {
+                deliver_notification(ctx, server, sess, notif);
+            }
+        }
+    }
+    pthread_mutex_unlock(&server->sessions_lock);
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_notify_prompts_changed(mcp_context_t *ctx, mcp_server_t *server) {
+    if (server == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    pthread_mutex_lock(&server->sessions_lock);
+    for (size_t i = 0; i < server->n_sessions; i++) {
+        mcp_session_t *sess = server->sessions[i];
+        if (sess == NULL) continue;
+
+        bool matches = true;
+        if (sess->subscription_active) {
+            matches = mcp_session_is_subscribed_to_notification(ctx, sess,
+                                                                "notifications/prompts/list_changed", NULL);
+        }
+
+        if (matches) {
+            mcp_message_t *notif = NULL;
+            mcp_status_t st = mcp_session_build_notification(ctx, sess,
+                                                            "notifications/prompts/list_changed",
+                                                            NULL, &notif);
+            if (st == MCP_OK && notif != NULL) {
+                deliver_notification(ctx, server, sess, notif);
+            }
+        }
+    }
+    pthread_mutex_unlock(&server->sessions_lock);
+    return MCP_OK;
+}
