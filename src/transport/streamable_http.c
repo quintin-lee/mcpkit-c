@@ -546,16 +546,16 @@ static bool xmcp_check_headers(mcp_context_t *ctx, mcp_server_t *server,
             char *decoded = NULL;
             mcp_status_t st = mcp_base64_sentinel_decode(ctx, hdr_val, &decoded);
             if (st != MCP_OK) {
-                mcp_oauth_free_string(ctx, decoded); /* may be NULL on error */
+                mcp_free(ctx, decoded); /* may be NULL on error */
                 set_err_param(err_param, err_cap, anno->param_name);
                 return false;
             }
             if (!xmcp_values_match(anno, decoded, ctx, body_val)) {
-                mcp_oauth_free_string(ctx, decoded);
+                mcp_free(ctx, decoded);
                 set_err_param(err_param, err_cap, anno->param_name);
                 return false;
             }
-            mcp_oauth_free_string(ctx, decoded);
+            mcp_free(ctx, decoded);
         }
     }
     return true;

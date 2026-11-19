@@ -68,38 +68,38 @@ static void test_roundtrip(mcp_context_t *ctx) {
     CHECK(enc != NULL);
     uint8_t *dec = NULL;
     size_t dec_len = 0;
-    int rc = mcp_base64_decode(ctx, enc, strlen(enc), &dec, &dec_len);
-    CHECK(rc == 0);
+    mcp_status_t rc = mcp_base64_decode(ctx, enc, strlen(enc), &dec, &dec_len);
+    CHECK(rc == MCP_OK);
     CHECK(dec != NULL);
     CHECK(dec_len == 64);
     CHECK(memcmp(dec, in, 64) == 0);
-    free(dec);
-    mcp_oauth_free_string(ctx, enc);
+    mcp_free(ctx, dec);
+    mcp_free(ctx, enc);
 }
 
 static void test_decode_rejects(mcp_context_t *ctx) {
     uint8_t *out = NULL;
     size_t out_len = 0;
     /* invalid char (whitespace) in the middle */
-    CHECK(mcp_base64_decode(ctx, "a b", 3, &out, &out_len) != 0);
+    CHECK(mcp_base64_decode(ctx, "a b", 3, &out, &out_len) == MCP_ERR_PROTOCOL);
     /* invalid char '#' */
-    CHECK(mcp_base64_decode(ctx, "a#b", 3, &out, &out_len) != 0);
+    CHECK(mcp_base64_decode(ctx, "a#b", 3, &out, &out_len) == MCP_ERR_PROTOCOL);
     /* "Zg==" (2 data chars + 2 pad) is valid base64 -> 1 byte 'f'=0x66 */
     out = NULL; out_len = 0;
-    CHECK(mcp_base64_decode(ctx, "Zg==", 4, &out, &out_len) == 0);
+    CHECK(mcp_base64_decode(ctx, "Zg==", 4, &out, &out_len) == MCP_OK);
     CHECK(out_len == 1);
-    if (out) { CHECK(out[0] == 0x66); free(out); out = NULL; }
+    if (out) { CHECK(out[0] == 0x66); mcp_free(ctx, out); out = NULL; }
     /* "Z" (1 data char, n%4==1) is invalid base64 */
-    CHECK(mcp_base64_decode(ctx, "Z", 1, &out, &out_len) != 0);
+    CHECK(mcp_base64_decode(ctx, "Z", 1, &out, &out_len) == MCP_ERR_PROTOCOL);
     /* empty string encodes to empty; decodes to 0 bytes */
     char *enc = mcp_base64_encode(ctx, (const uint8_t *)"", 0);
     CHECK(enc != NULL);
     CHECK(strcmp(enc, "") == 0);
-    mcp_oauth_free_string(ctx, enc);
+    mcp_free(ctx, enc);
     out = NULL; out_len = 0;
-    CHECK(mcp_base64_decode(ctx, "", 0, &out, &out_len) == 0);
+    CHECK(mcp_base64_decode(ctx, "", 0, &out, &out_len) == MCP_OK);
     CHECK(out_len == 0);
-    if (out) { free(out); out = NULL; }
+    if (out) { mcp_free(ctx, out); out = NULL; }
 }
 
 static void test_policy_gate(mcp_context_t *ctx) {

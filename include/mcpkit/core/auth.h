@@ -483,23 +483,24 @@ void mcp_oauth_free_string(mcp_context_t *ctx, char *str);
  * @param in     Input bytes.
  * @param in_len Input length; 0 yields an empty string "".
  * @return Heap-allocated NUL-terminated base64 string, or NULL on OOM.
- *         Free with mcp_oauth_free_string(ctx, out).
+ *         Free with mcp_free(ctx, out) or mcp_oauth_free_string(ctx, out).
  */
 char *mcp_base64_encode(mcp_context_t *ctx, const uint8_t *in, size_t in_len);
 
 /**
  * @brief Decodes `in` as RFC 4648 §4 std base64.
  *
- * @param ctx    Context (currently unused; reserved for allocator routing).
- * @param in     Base64 string.
- * @param in_len Length of in.
- * @param out    Receives a libc-malloc'd byte buffer (free with free()).
+ * @param ctx     Context; may be NULL (uses default allocator).
+ * @param in      Base64 string.
+ * @param in_len  Length of in.
+ * @param out     Receives a ctx-allocator-owned byte buffer. Caller frees with mcp_free(ctx, *out).
  * @param out_len Receives the decoded byte count.
- * @return 0 on success, non-zero on invalid input (bad char / bad length /
- *         OOM).
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT on NULL input;
+ *         MCP_ERR_PROTOCOL on invalid characters or invalid padding length;
+ *         MCP_ERR_NOMEM on memory allocation failure.
  */
-int mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
-                      uint8_t **out, size_t *out_len);
+mcp_status_t mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
+                               uint8_t **out, size_t *out_len);
 
 /**
  * @brief Decodes a base64 sentinel `=?base64?{B64}?=` value.
@@ -513,7 +514,7 @@ int mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
  * @param ctx   Context; may be NULL (uses default allocator for output).
  * @param in    The raw header value (may or may not be a sentinel).
  * @param out   Receives a ctx-allocator-owned NUL-terminated string.
- *              The caller frees it with mcp_oauth_free_string(ctx, *out).
+ *              The caller frees it with mcp_free(ctx, *out) or mcp_oauth_free_string(ctx, *out).
  * @return MCP_OK on success; MCP_ERR_PROTOCOL if the sentinel has an invalid
  *         base64 payload; MCP_ERR_NOMEM on allocation failure.
  */

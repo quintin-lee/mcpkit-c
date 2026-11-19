@@ -39,6 +39,11 @@ int main(void) {
     CHECK(mcp_context_logger(c2) == borrowed);
     CHECK(mcp_context_allocator(c2)->malloc_fn == counting_malloc);
     CHECK(g_allocs > before);
+    mcp_free(NULL, NULL);
+    mcp_free(c, NULL);
+    void *ptr = mcp_context_allocator(c2)->malloc_fn(64, NULL);
+    CHECK(ptr != NULL);
+    mcp_free(c2, ptr);
     mcp_context_destroy(c2);
     mcp_logger_destroy(borrowed);
     mcp_context_destroy(c);

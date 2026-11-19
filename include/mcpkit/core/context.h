@@ -45,6 +45,17 @@ mcp_context_t *mcp_context_create(const mcp_context_config_t *config);
 void mcp_context_destroy(mcp_context_t *ctx);
 
 /**
+ * @brief Frees memory allocated via the context's allocator.
+ *
+ * If @p ctx is NULL or has no custom allocator, falls back to standard
+ * libc free(@p ptr). Safe to call with @p ptr == NULL (no-op).
+ *
+ * @param ctx Context whose allocator was used to allocate @p ptr; may be NULL.
+ * @param ptr Pointer to free; may be NULL.
+ */
+void mcp_free(mcp_context_t *ctx, void *ptr);
+
+/**
  * @brief Returns the allocator bound to `ctx`.
  *
  * @param ctx  Context; NULL routes to the default libc allocator.

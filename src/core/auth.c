@@ -226,25 +226,25 @@ static int b64_std_val(char c) {
     return -1;
 }
 
-int mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
-                      uint8_t **out, size_t *out_len) {
-    (void)ctx;
+mcp_status_t mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
+                               uint8_t **out, size_t *out_len) {
     if (out == NULL || out_len == NULL) {
-        return -1;
+        return MCP_ERR_INVALID_ARGUMENT;
     }
     *out = NULL;
     *out_len = 0;
     if (in == NULL) {
-        return -1;
+        return MCP_ERR_INVALID_ARGUMENT;
     }
+    const mcp_allocator_t *a = alloc_of(ctx);
     if (in_len == 0) {
-        uint8_t *zero = (uint8_t *)malloc(1);
+        uint8_t *zero = (uint8_t *)a->malloc_fn(1, a->userdata);
         if (zero == NULL) {
-            return -1;
+            return MCP_ERR_NOMEM;
         }
         *out = zero;
         *out_len = 0;
-        return 0;
+        return MCP_OK;
     }
     /* RFC 4648 §2: strip trailing '=' padding. */
     size_t pad = 0;
@@ -253,21 +253,21 @@ int mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
     }
     size_t n = in_len - pad;
     if (n == 0) {
-        uint8_t *zero = (uint8_t *)malloc(1);
+        uint8_t *zero = (uint8_t *)a->malloc_fn(1, a->userdata);
         if (zero == NULL) {
-            return -1;
+            return MCP_ERR_NOMEM;
         }
         *out = zero;
         *out_len = 0;
-        return 0;
+        return MCP_OK;
     }
     if (n % 4 == 1) {
-        return -1;
+        return MCP_ERR_PROTOCOL;
     }
     size_t byte_len = (n / 4) * 3 + (n % 4 == 2 ? 1 : n % 4 == 3 ? 2 : 0);
-    uint8_t *out_buf = (uint8_t *)malloc(byte_len);
+    uint8_t *out_buf = (uint8_t *)a->malloc_fn(byte_len, a->userdata);
     if (out_buf == NULL) {
-        return -1;
+        return MCP_ERR_NOMEM;
     }
     /* Process complete 4-char groups first. */
     size_t full_groups = n / 4;
@@ -279,10 +279,10 @@ int mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
                      (uint32_t)b64_std_val(in[g * 4 + 3]);
         if (b64_std_val(in[g * 4]) < 0 || b64_std_val(in[g * 4 + 1]) < 0 ||
             b64_std_val(in[g * 4 + 2]) < 0 || b64_std_val(in[g * 4 + 3]) < 0) {
-            free(out_buf);
+            a->free_fn(out_buf, a->userdata);
             *out = NULL;
             *out_len = 0;
-            return -1;
+            return MCP_ERR_PROTOCOL;
         }
         out_buf[o++] = (uint8_t)((v >> 16) & 0xFF);
         out_buf[o++] = (uint8_t)((v >> 8) & 0xFF);
@@ -297,10 +297,10 @@ int mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
         int c0 = b64_std_val(in[base]);
         int c1 = b64_std_val(in[base + 1]);
         if (c0 < 0 || c1 < 0) {
-            free(out_buf);
+            a->free_fn(out_buf, a->userdata);
             *out = NULL;
             *out_len = 0;
-            return -1;
+            return MCP_ERR_PROTOCOL;
         }
         out_buf[o++] = (uint8_t)(((uint32_t)c0 << 2) | ((uint32_t)c1 >> 4));
     } else if (rem == 3) {
@@ -309,17 +309,17 @@ int mcp_base64_decode(mcp_context_t *ctx, const char *in, size_t in_len,
         int c1 = b64_std_val(in[base + 1]);
         int c2 = b64_std_val(in[base + 2]);
         if (c0 < 0 || c1 < 0 || c2 < 0) {
-            free(out_buf);
+            a->free_fn(out_buf, a->userdata);
             *out = NULL;
             *out_len = 0;
-            return -1;
+            return MCP_ERR_PROTOCOL;
         }
         out_buf[o++] = (uint8_t)(((uint32_t)c0 << 2) | ((uint32_t)c1 >> 4));
         out_buf[o++] = (uint8_t)(((uint32_t)(c1 & 0xF) << 4) | ((uint32_t)c2 >> 2));
     }
     *out = out_buf;
     *out_len = byte_len;
-    return 0;
+    return MCP_OK;
 }
 
 /* SEP-2243 base64 sentinel: `=?base64?{B64}?=` (RFC 4648 §4 padded).
@@ -341,21 +341,21 @@ mcp_status_t mcp_base64_sentinel_decode(mcp_context_t *ctx, const char *in, char
         size_t payload_len = strlen(payload) - SUFFIX_LEN; /* strip trailing "?=" */
         uint8_t *decoded = NULL;
         size_t decoded_len = 0;
-        int rc = mcp_base64_decode(ctx, payload, payload_len, &decoded, &decoded_len);
-        if (rc != 0) {
-            return MCP_ERR_PROTOCOL;
+        mcp_status_t st = mcp_base64_decode(ctx, payload, payload_len, &decoded, &decoded_len);
+        if (st != MCP_OK) {
+            return st;
         }
         /* Allocate NUL-terminated copy via ctx allocator */
         char *result = (char *)alloc->malloc_fn(decoded_len + 1, alloc->userdata);
         if (result == NULL) {
-            free(decoded);
+            mcp_free(ctx, decoded);
             return MCP_ERR_NOMEM;
         }
         if (decoded_len > 0) {
             memcpy(result, decoded, decoded_len);
         }
         result[decoded_len] = '\0';
-        free(decoded);
+        mcp_free(ctx, decoded);
         *out = result;
         return MCP_OK;
     }
@@ -762,10 +762,7 @@ static char *auth_strdup(mcp_context_t *ctx, const char *s) {
 }
 
 void mcp_oauth_free_string(mcp_context_t *ctx, char *str) {
-    if (str != NULL) {
-        const mcp_allocator_t *a = alloc_of(ctx);
-        a->free_fn(str, a->userdata);
-    }
+    mcp_free(ctx, str);
 }
 
 mcp_status_t mcp_oauth_token_response_parse(mcp_context_t *ctx,

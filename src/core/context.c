@@ -89,6 +89,14 @@ void mcp_context_destroy(mcp_context_t *ctx) {
     ctx->alloc.free_fn(ctx, ctx->alloc.userdata);
 }
 
+void mcp_free(mcp_context_t *ctx, void *ptr) {
+    if (ptr == NULL) {
+        return;
+    }
+    const mcp_allocator_t *a = mcp_context_allocator(ctx);
+    a->free_fn(ptr, a->userdata);
+}
+
 const mcp_allocator_t *mcp_context_allocator(mcp_context_t *ctx) {
     if (ctx == NULL) {
         return mcp_default_allocator();
