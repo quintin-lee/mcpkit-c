@@ -9,15 +9,14 @@
 
 #include "mcpkit/protocol/policy.h"
 #include "mcpkit/protocol/version.h"
-#include "mcpkit/server/session.h"
 
 #include <string.h>
 
 bool mcp_proto_policy_method_deprecated(mcp_context_t *ctx,
-                                       const mcp_session_t *session,
-                                       const char *method) {
-    if (method == NULL ||
-        mcp_proto_at_least(mcp_session_negotiated(ctx, session), MCP_PROTO_2026_07_28) == false) {
+                                        mcp_proto_version_t version,
+                                        const char *method) {
+    (void)ctx;
+    if (method == NULL || mcp_proto_at_least(version, MCP_PROTO_2026_07_28) == false) {
         return false;
     }
     if (strcmp(method, "ping") == 0 || strcmp(method, "logging/setLevel") == 0) {
@@ -28,29 +27,31 @@ bool mcp_proto_policy_method_deprecated(mcp_context_t *ctx,
 }
 
 bool mcp_proto_policy_cache_defaults_applied(mcp_context_t *ctx,
-                                              const mcp_session_t *session) {
-    return mcp_proto_at_least(mcp_session_negotiated(ctx, session), MCP_PROTO_2026_07_28);
+                                             mcp_proto_version_t version) {
+    (void)ctx;
+    return mcp_proto_at_least(version, MCP_PROTO_2026_07_28);
 }
 
 bool mcp_proto_policy_sort_lists_by_name(mcp_context_t *ctx,
-                                          const mcp_session_t *session) {
-    return mcp_proto_at_least(mcp_session_negotiated(ctx, session), MCP_PROTO_2026_07_28);
+                                         mcp_proto_version_t version) {
+    (void)ctx;
+    return mcp_proto_at_least(version, MCP_PROTO_2026_07_28);
 }
 
 bool mcp_proto_policy_auth_hardening_active(mcp_context_t *ctx,
-                                             const mcp_session_t *session) {
-    return mcp_proto_at_least(mcp_session_negotiated(ctx, session), MCP_PROTO_2025_11_25);
+                                            mcp_proto_version_t version) {
+    (void)ctx;
+    return mcp_proto_at_least(version, MCP_PROTO_2025_11_25);
 }
 
 bool mcp_proto_policy_cimd_preferred(mcp_context_t *ctx,
-                                      const mcp_session_t *session) {
-    return mcp_proto_at_least(mcp_session_negotiated(ctx, session), MCP_PROTO_2025_11_25);
+                                     mcp_proto_version_t version) {
+    (void)ctx;
+    return mcp_proto_at_least(version, MCP_PROTO_2025_11_25);
 }
 
 bool mcp_proto_policy_sep2243_active(mcp_context_t *ctx,
-                                      const mcp_session_t *session) {
-    /* SEP-2243 custom Mcp-Param-* header behavior is a 2026-07-28 MUST.
-       Below that version custom headers are not validated (SHOULD-grade),
-       so the gate is false. NULL session -> conservative baseline. */
-    return mcp_proto_at_least(mcp_session_negotiated(ctx, session), MCP_PROTO_2026_07_28);
+                                     mcp_proto_version_t version) {
+    (void)ctx;
+    return mcp_proto_at_least(version, MCP_PROTO_2026_07_28);
 }

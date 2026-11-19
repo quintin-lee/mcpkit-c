@@ -105,26 +105,28 @@ int main(void) {
     CHECK(s != NULL);
 
     CHECK(mcp_session_set_negotiated(ctx, s, MCP_PROTO_2025_11_25) == MCP_OK);
-    CHECK(mcp_proto_policy_auth_hardening_active(ctx, s) == true);
-    CHECK(mcp_proto_policy_cimd_preferred(ctx, s) == true);
+    CHECK(mcp_proto_policy_auth_hardening_active(ctx, mcp_session_negotiated(ctx, s)) == true);
+    CHECK(mcp_proto_policy_cimd_preferred(ctx, mcp_session_negotiated(ctx, s)) == true);
+    CHECK(mcp_proto_policy_auth_hardening_active(ctx, MCP_PROTO_2025_11_25) == true);
+    CHECK(mcp_proto_policy_cimd_preferred(ctx, MCP_PROTO_2025_11_25) == true);
 
     CHECK(mcp_session_set_negotiated(ctx, s, MCP_PROTO_2026_07_28) == MCP_OK);
-    CHECK(mcp_proto_policy_auth_hardening_active(ctx, s) == true);
-    CHECK(mcp_proto_policy_cimd_preferred(ctx, s) == true);
+    CHECK(mcp_proto_policy_auth_hardening_active(ctx, mcp_session_negotiated(ctx, s)) == true);
+    CHECK(mcp_proto_policy_cimd_preferred(ctx, mcp_session_negotiated(ctx, s)) == true);
 
     CHECK(mcp_session_set_negotiated(ctx, s, MCP_PROTO_2025_06_18) == MCP_OK);
-    CHECK(mcp_proto_policy_auth_hardening_active(ctx, s) == false);
-    CHECK(mcp_proto_policy_cimd_preferred(ctx, s) == false);
+    CHECK(mcp_proto_policy_auth_hardening_active(ctx, mcp_session_negotiated(ctx, s)) == false);
+    CHECK(mcp_proto_policy_cimd_preferred(ctx, mcp_session_negotiated(ctx, s)) == false);
 
     CHECK(mcp_session_set_negotiated(ctx, s, MCP_PROTO_2024_11_05) == MCP_OK);
-    CHECK(mcp_proto_policy_auth_hardening_active(ctx, s) == false);
-    CHECK(mcp_proto_policy_cimd_preferred(ctx, s) == false);
+    CHECK(mcp_proto_policy_auth_hardening_active(ctx, mcp_session_negotiated(ctx, s)) == false);
+    CHECK(mcp_proto_policy_cimd_preferred(ctx, mcp_session_negotiated(ctx, s)) == false);
 
     mcp_server_destroy_session(ctx, srv, s);
 
-    /* NULL session -> 2024 baseline -> both hooks false */
-    CHECK(mcp_proto_policy_auth_hardening_active(ctx, NULL) == false);
-    CHECK(mcp_proto_policy_cimd_preferred(ctx, NULL) == false);
+    /* Unknown version -> baseline -> both hooks false */
+    CHECK(mcp_proto_policy_auth_hardening_active(ctx, MCP_PROTO_NONE) == false);
+    CHECK(mcp_proto_policy_cimd_preferred(ctx, MCP_PROTO_NONE) == false);
 
     /* 10. CIMD DCR deprecation headers (SEP-991: DCR sunset) */
     char *deprecation = NULL;

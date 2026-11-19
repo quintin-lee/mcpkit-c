@@ -149,7 +149,7 @@ static mcp_status_t decorate_result(mcp_context_t *ctx, mcp_server_t *srv,
     if (!is_list) {
         return MCP_OK;
     }
-    bool is_2026 = mcp_proto_policy_cache_defaults_applied(ctx, s);
+    bool is_2026 = mcp_proto_policy_cache_defaults_applied(ctx, mcp_session_negotiated(ctx, s));
     if (srv->list_ttl_ms != 0) {
         mcp_json_value_t *ttl = mcp_json_number_new(ctx, (double)srv->list_ttl_ms);
         if (ttl == NULL) {
@@ -403,7 +403,7 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
         }
         visible++;
     }
-    if (mcp_proto_policy_sort_lists_by_name(ctx, s) && visible > 1 && tlist != NULL) {
+    if (mcp_proto_policy_sort_lists_by_name(ctx, mcp_session_negotiated(ctx, s)) && visible > 1 && tlist != NULL) {
         qsort((void *)tlist, visible, sizeof(const mcp_tool_t *), tool_cmp_name);
     }
     size_t end = offset + MCP_LIST_PAGE_SIZE < visible ? offset + MCP_LIST_PAGE_SIZE : visible;
@@ -625,7 +625,7 @@ static mcp_message_t *route_resources_list(mcp_context_t *ctx, mcp_server_t *srv
             rlist[i] = srv->resources[i];
         }
     }
-    if (mcp_proto_policy_sort_lists_by_name(ctx, s) && srv->n_resources > 1 && rlist != NULL) {
+    if (mcp_proto_policy_sort_lists_by_name(ctx, mcp_session_negotiated(ctx, s)) && srv->n_resources > 1 && rlist != NULL) {
         qsort((void *)rlist, srv->n_resources, sizeof(const mcp_resource_t *), resource_cmp_name);
     }
     size_t end = offset + MCP_LIST_PAGE_SIZE < srv->n_resources ? offset + MCP_LIST_PAGE_SIZE
@@ -733,7 +733,7 @@ static mcp_message_t *route_prompts_list(mcp_context_t *ctx, mcp_server_t *srv,
             plist[i] = srv->prompts[i];
         }
     }
-    if (mcp_proto_policy_sort_lists_by_name(ctx, s) && srv->n_prompts > 1 && plist != NULL) {
+    if (mcp_proto_policy_sort_lists_by_name(ctx, mcp_session_negotiated(ctx, s)) && srv->n_prompts > 1 && plist != NULL) {
         qsort((void *)plist, srv->n_prompts, sizeof(const mcp_prompt_t *), prompt_cmp_name);
     }
     size_t end = offset + MCP_LIST_PAGE_SIZE < srv->n_prompts ? offset + MCP_LIST_PAGE_SIZE
@@ -1395,7 +1395,7 @@ static mcp_message_t *route_skills_get(mcp_context_t *ctx, mcp_server_t *srv,
 mcp_message_t *mcp_server_route_request(mcp_context_t *ctx, mcp_server_t *srv,
                                         mcp_session_t *s, const mcp_message_t *req,
                                         const char *method) {
-    if (mcp_proto_policy_method_deprecated(ctx, s, method)) {
+    if (mcp_proto_policy_method_deprecated(ctx, mcp_session_negotiated(ctx, s), method)) {
         dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=deprecated_method method=%s version=2026", method);
         return err_resp(ctx, req, MCP_RPC_METHOD_NOT_FOUND, "method deprecated in 2026-07-28");
     }

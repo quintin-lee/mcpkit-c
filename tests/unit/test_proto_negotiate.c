@@ -86,16 +86,16 @@ int main(void) {
     CHECK(mcp_session_negotiated(ctx, sess) == MCP_PROTO_2024_11_05);
 
     /* 7. Protocol policy gates: legacy session vs 2026 session */
-    CHECK(mcp_proto_policy_method_deprecated(ctx, sess, "ping") == false);
-    CHECK(mcp_proto_policy_sort_lists_by_name(ctx, sess) == false);
+    CHECK(mcp_proto_policy_method_deprecated(ctx, mcp_session_negotiated(ctx, sess), "ping") == false);
+    CHECK(mcp_proto_policy_sort_lists_by_name(ctx, mcp_session_negotiated(ctx, sess)) == false);
 
     CHECK(mcp_session_set_negotiated(ctx, sess, MCP_PROTO_2026_07_28) == MCP_OK);
-    CHECK(mcp_proto_policy_method_deprecated(ctx, sess, "ping") == true);
-    CHECK(mcp_proto_policy_method_deprecated(ctx, sess, "logging/setLevel") == true);
-    CHECK(mcp_proto_policy_method_deprecated(ctx, sess, "resources/subscribe") == true);
-    CHECK(mcp_proto_policy_method_deprecated(ctx, sess, "resources/unsubscribe") == true);
-    CHECK(mcp_proto_policy_method_deprecated(ctx, sess, "tools/list") == false);
-    CHECK(mcp_proto_policy_sort_lists_by_name(ctx, sess) == true);
+    CHECK(mcp_proto_policy_method_deprecated(ctx, mcp_session_negotiated(ctx, sess), "ping") == true);
+    CHECK(mcp_proto_policy_method_deprecated(ctx, mcp_session_negotiated(ctx, sess), "logging/setLevel") == true);
+    CHECK(mcp_proto_policy_method_deprecated(ctx, mcp_session_negotiated(ctx, sess), "resources/subscribe") == true);
+    CHECK(mcp_proto_policy_method_deprecated(ctx, mcp_session_negotiated(ctx, sess), "resources/unsubscribe") == true);
+    CHECK(mcp_proto_policy_method_deprecated(ctx, mcp_session_negotiated(ctx, sess), "tools/list") == false);
+    CHECK(mcp_proto_policy_sort_lists_by_name(ctx, mcp_session_negotiated(ctx, sess)) == true);
 
     mcp_server_destroy_session(ctx, srv, sess);
     mcp_server_destroy(ctx, srv);

@@ -734,7 +734,7 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
        Runs AFTER session resolution (negotiated version is written) and BEFORE
        dispatch. Only fires when sep2243_active is true; all other versions skip
        entirely (zero regression). */
-    if (is_2026 && mcp_proto_policy_sep2243_active(ctx, sess)) {
+    if (is_2026 && mcp_proto_policy_sep2243_active(ctx, mcp_session_negotiated(ctx, sess))) {
         const char *tool_name = mcp_http_header(ctx, req, "Mcp-Name");
         const char *msg_method = mcp_message_method(ctx, msg);
         if (tool_name != NULL && msg_method != NULL

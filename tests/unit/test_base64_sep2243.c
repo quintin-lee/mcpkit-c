@@ -107,18 +107,20 @@ static void test_policy_gate(mcp_context_t *ctx) {
     mcp_server_t *srv = mcp_server_create(ctx, "p4t0b", "0.1.0");
     mcp_session_t *s = mcp_server_create_session(ctx, srv);
     mcp_session_set_negotiated(ctx, s, MCP_PROTO_2026_07_28);
-    CHECK(mcp_proto_policy_sep2243_active(ctx, s) == true);
+    CHECK(mcp_proto_policy_sep2243_active(ctx, mcp_session_negotiated(ctx, s)) == true);
+    CHECK(mcp_proto_policy_sep2243_active(ctx, MCP_PROTO_2026_07_28) == true);
 
     /* 2025-11-25 -> NOT active (SEP-2243 custom headers only at 2026) */
     mcp_session_set_negotiated(ctx, s, MCP_PROTO_2025_11_25);
-    CHECK(mcp_proto_policy_sep2243_active(ctx, s) == false);
+    CHECK(mcp_proto_policy_sep2243_active(ctx, mcp_session_negotiated(ctx, s)) == false);
+    CHECK(mcp_proto_policy_sep2243_active(ctx, MCP_PROTO_2025_11_25) == false);
 
     /* 2025-06-18 -> NOT active */
     mcp_session_set_negotiated(ctx, s, MCP_PROTO_2025_06_18);
-    CHECK(mcp_proto_policy_sep2243_active(ctx, s) == false);
+    CHECK(mcp_proto_policy_sep2243_active(ctx, mcp_session_negotiated(ctx, s)) == false);
 
-    /* NULL session -> conservative: negotiated baseline (2024-11-05), not active */
-    CHECK(mcp_proto_policy_sep2243_active(ctx, NULL) == false);
+    /* Unknown / baseline -> not active */
+    CHECK(mcp_proto_policy_sep2243_active(ctx, MCP_PROTO_NONE) == false);
 
     mcp_server_destroy(ctx, srv);
 }
