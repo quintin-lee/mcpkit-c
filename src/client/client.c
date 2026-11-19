@@ -1040,6 +1040,134 @@ mcp_status_t mcp_client_recv_message(mcp_context_t *ctx, mcp_client_t *client,
     return MCP_OK;
 }
 
+mcp_status_t mcp_client_listen_stream(mcp_context_t *ctx,
+                                      mcp_client_t *client,
+                                      const char *filter_mask,
+                                      int inactivity_timeout_ms,
+                                      size_t max_events,
+                                      mcp_client_notification_fn callback,
+                                      void *user_data) {
+    if (client == NULL || callback == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    mcp_json_value_t *filter = NULL;
+    if (filter_mask != NULL && filter_mask[0] != '\0') {
+        if (filter_mask[0] == '{') {
+            filter = mcp_json_parse(ctx, filter_mask, strlen(filter_mask));
+            if (filter == NULL || mcp_json_type(ctx, filter) != MCP_JSON_OBJECT) {
+                if (filter != NULL) {
+                    mcp_json_destroy(ctx, filter);
+                }
+                return MCP_ERR_INVALID_ARGUMENT;
+            }
+        } else if (strcmp(filter_mask, "all") != 0) {
+            filter = mcp_json_object_new(ctx);
+            if (filter == NULL) {
+                return MCP_ERR_NOMEM;
+            }
+            if (strstr(filter_mask, "tools") != NULL) {
+                mcp_json_value_t *bv = mcp_json_bool_new(ctx, true);
+                if (bv == NULL || mcp_json_object_set_take(ctx, filter, "toolsListChanged", bv) != MCP_OK) {
+                    mcp_json_destroy(ctx, bv);
+                    mcp_json_destroy(ctx, filter);
+                    return MCP_ERR_NOMEM;
+                }
+            }
+            if (strstr(filter_mask, "prompts") != NULL) {
+                mcp_json_value_t *bv = mcp_json_bool_new(ctx, true);
+                if (bv == NULL || mcp_json_object_set_take(ctx, filter, "promptsListChanged", bv) != MCP_OK) {
+                    mcp_json_destroy(ctx, bv);
+                    mcp_json_destroy(ctx, filter);
+                    return MCP_ERR_NOMEM;
+                }
+            }
+            if (strstr(filter_mask, "resources") != NULL) {
+                mcp_json_value_t *bv = mcp_json_bool_new(ctx, true);
+                if (bv == NULL || mcp_json_object_set_take(ctx, filter, "resourcesListChanged", bv) != MCP_OK) {
+                    mcp_json_destroy(ctx, bv);
+                    mcp_json_destroy(ctx, filter);
+                    return MCP_ERR_NOMEM;
+                }
+            }
+        }
+    }
+
+    /* Start subscription */
+    mcp_message_t *ack = NULL;
+    mcp_status_t st = mcp_client_subscriptions_listen(ctx, client, filter, &ack);
+    if (st != MCP_OK) {
+        return st;
+    }
+
+    char *sub_id_str = NULL;
+    if (ack != NULL) {
+        const mcp_json_value_t *ack_p = mcp_message_params(ctx, ack);
+        if (ack_p != NULL) {
+            const mcp_json_value_t *meta = mcp_json_object_get(ctx, ack_p, "_meta");
+            if (meta != NULL) {
+                const mcp_json_value_t *sub_v = mcp_json_object_get(ctx, meta, "io.modelcontextprotocol/subscriptionId");
+                const char *raw_id = NULL;
+                if (sub_v != NULL && mcp_json_string_value(ctx, sub_v, &raw_id) == MCP_OK && raw_id != NULL) {
+                    size_t id_len = strlen(raw_id);
+                    const mcp_allocator_t *a = mcp_context_allocator(ctx);
+                    sub_id_str = (char *)a->malloc_fn(id_len + 1, a->userdata);
+                    if (sub_id_str != NULL) {
+                        memcpy(sub_id_str, raw_id, id_len + 1);
+                    }
+                }
+            }
+        }
+        mcp_message_destroy(ctx, ack);
+    }
+
+    /* Save and configure transport timeout */
+    uint64_t saved_read_ms = 0;
+    uint64_t saved_write_ms = 0;
+    bool timeout_saved = (mcp_transport_get_timeout(ctx, client->t, &saved_read_ms, &saved_write_ms) == MCP_OK);
+    if (inactivity_timeout_ms >= 0) {
+        (void)mcp_transport_set_timeout(ctx, client->t, (uint64_t)inactivity_timeout_ms, saved_write_ms);
+    }
+
+    size_t events_processed = 0;
+    mcp_status_t loop_st = MCP_OK;
+
+    while (max_events == 0 || events_processed < max_events) {
+        mcp_message_t *msg = NULL;
+        mcp_status_t recv_st = mcp_client_recv_message(ctx, client, &msg);
+        if (recv_st != MCP_OK) {
+            loop_st = recv_st;
+            break;
+        }
+        if (mcp_message_kind(ctx, msg) == MCP_MSG_NOTIFICATION) {
+            const char *method = mcp_message_method(ctx, msg);
+            const mcp_json_value_t *params = mcp_message_params(ctx, msg);
+            bool cont = callback(client, method, params, user_data);
+            events_processed++;
+            mcp_message_destroy(ctx, msg);
+            if (!cont) {
+                loop_st = MCP_OK;
+                break;
+            }
+        } else {
+            mcp_message_destroy(ctx, msg);
+        }
+    }
+
+    /* Cancel subscription upon loop exit */
+    (void)mcp_client_cancel_subscription(ctx, client, sub_id_str);
+
+    if (sub_id_str != NULL) {
+        mcp_free(ctx, sub_id_str);
+    }
+
+    if (timeout_saved) {
+        (void)mcp_transport_set_timeout(ctx, client->t, saved_read_ms, saved_write_ms);
+    }
+
+    return loop_st;
+}
+
 void mcp_client_set_roots_provider(mcp_context_t *ctx, mcp_client_t *c,
                                    mcp_client_roots_fn fn, void *user_data) {
     (void)ctx;

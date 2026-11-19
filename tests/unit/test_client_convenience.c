@@ -35,7 +35,13 @@ static mcp_status_t fake_send(mcp_context_t *ctx, mcp_transport_t *t, const char
 
 static mcp_status_t fake_recv(mcp_context_t *ctx, mcp_transport_t *t, char **line_out) {
     fake_t *f = (fake_t *)mcp_transport_backend(ctx, t);
-    CHECK(f->cursor < f->nscript);
+    if (f->cursor >= f->nscript) {
+        uint64_t r_ms = 0, w_ms = 0;
+        if (mcp_transport_get_timeout(ctx, t, &r_ms, &w_ms) == MCP_OK && r_ms > 0) {
+            return MCP_ERR_TIMEOUT;
+        }
+        return MCP_ERR_IO;
+    }
     const char *line = f->script[f->cursor++];
     size_t n = strlen(line) + 1;
     char *buf = mcp_context_allocator(ctx)->malloc_fn(n, mcp_context_allocator(ctx)->userdata);
@@ -274,6 +280,126 @@ static void test_call_tool_json_null_args(mcp_context_t *ctx) {
     mcp_transport_destroy(ctx, t);
 }
 
+static bool stream_count_cb(mcp_client_t *client, const char *method, const mcp_json_value_t *params, void *user_data) {
+    (void)client;
+    (void)method;
+    (void)params;
+    int *count = (int *)user_data;
+    (*count)++;
+    return true;
+}
+
+static bool stream_stop_early_cb(mcp_client_t *client, const char *method, const mcp_json_value_t *params, void *user_data) {
+    (void)client;
+    (void)method;
+    (void)params;
+    int *count = (int *)user_data;
+    (*count)++;
+    return false;
+}
+
+static void test_listen_stream_validation(mcp_context_t *ctx) {
+    CHECK(mcp_client_listen_stream(ctx, NULL, "tools", 0, 0, stream_count_cb, NULL) == MCP_ERR_INVALID_ARGUMENT);
+
+    fake_t fake;
+    memset(&fake, 0, sizeof(fake));
+    mcp_transport_t *t = mcp_transport_create(ctx, &kFake, &fake);
+    CHECK(t != NULL);
+    mcp_client_t *c = mcp_client_create(ctx, t);
+    CHECK(c != NULL);
+
+    CHECK(mcp_client_listen_stream(ctx, c, "tools", 0, 0, NULL, NULL) == MCP_ERR_INVALID_ARGUMENT);
+
+    mcp_client_destroy(ctx, c);
+    mcp_transport_destroy(ctx, t);
+}
+
+static void test_listen_stream_event_limit(mcp_context_t *ctx) {
+    fake_t fake;
+    memset(&fake, 0, sizeof(fake));
+    static const char *kScript[] = {
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/subscriptions/acknowledged\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/subscriptionId\":\"sub-limit\"}}}",
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\",\"params\":{}}",
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\",\"params\":{}}",
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\",\"params\":{}}"
+    };
+    fake.script = kScript;
+    fake.nscript = 4;
+
+    mcp_transport_t *t = mcp_transport_create(ctx, &kFake, &fake);
+    CHECK(t != NULL);
+    mcp_client_t *c = mcp_client_create(ctx, t);
+    CHECK(c != NULL);
+    CHECK(mcp_client_connect(ctx, c) == MCP_OK);
+
+    int count = 0;
+    mcp_status_t st = mcp_client_listen_stream(ctx, c, "tools", 0, 2, stream_count_cb, &count);
+    CHECK(st == MCP_OK);
+    CHECK(count == 2);
+    CHECK(strstr(fake.sent, "\"method\":\"notifications/cancelled\"") != NULL);
+    CHECK(strstr(fake.sent, "\"io.modelcontextprotocol/subscriptionId\":\"sub-limit\"") != NULL);
+
+    CHECK(mcp_client_disconnect(ctx, c) == MCP_OK);
+    mcp_client_destroy(ctx, c);
+    mcp_transport_destroy(ctx, t);
+}
+
+static void test_listen_stream_early_exit(mcp_context_t *ctx) {
+    fake_t fake;
+    memset(&fake, 0, sizeof(fake));
+    static const char *kScript[] = {
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/subscriptions/acknowledged\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/subscriptionId\":\"sub-early\"}}}",
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\",\"params\":{}}",
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\",\"params\":{}}"
+    };
+    fake.script = kScript;
+    fake.nscript = 3;
+
+    mcp_transport_t *t = mcp_transport_create(ctx, &kFake, &fake);
+    CHECK(t != NULL);
+    mcp_client_t *c = mcp_client_create(ctx, t);
+    CHECK(c != NULL);
+    CHECK(mcp_client_connect(ctx, c) == MCP_OK);
+
+    int count = 0;
+    mcp_status_t st = mcp_client_listen_stream(ctx, c, "tools", 0, 10, stream_stop_early_cb, &count);
+    CHECK(st == MCP_OK);
+    CHECK(count == 1);
+    CHECK(strstr(fake.sent, "\"method\":\"notifications/cancelled\"") != NULL);
+    CHECK(strstr(fake.sent, "\"io.modelcontextprotocol/subscriptionId\":\"sub-early\"") != NULL);
+
+    CHECK(mcp_client_disconnect(ctx, c) == MCP_OK);
+    mcp_client_destroy(ctx, c);
+    mcp_transport_destroy(ctx, t);
+}
+
+static void test_listen_stream_timeout(mcp_context_t *ctx) {
+    fake_t fake;
+    memset(&fake, 0, sizeof(fake));
+    static const char *kScript[] = {
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/subscriptions/acknowledged\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/subscriptionId\":\"sub-timeout\"}}}"
+    };
+    fake.script = kScript;
+    fake.nscript = 1;
+
+    mcp_transport_t *t = mcp_transport_create(ctx, &kFake, &fake);
+    CHECK(t != NULL);
+    mcp_client_t *c = mcp_client_create(ctx, t);
+    CHECK(c != NULL);
+    CHECK(mcp_client_connect(ctx, c) == MCP_OK);
+
+    int count = 0;
+    mcp_status_t st = mcp_client_listen_stream(ctx, c, "tools", 50, 5, stream_count_cb, &count);
+    CHECK(st == MCP_ERR_TIMEOUT);
+    CHECK(count == 0);
+    CHECK(strstr(fake.sent, "\"method\":\"notifications/cancelled\"") != NULL);
+    CHECK(strstr(fake.sent, "\"io.modelcontextprotocol/subscriptionId\":\"sub-timeout\"") != NULL);
+
+    CHECK(mcp_client_disconnect(ctx, c) == MCP_OK);
+    mcp_client_destroy(ctx, c);
+    mcp_transport_destroy(ctx, t);
+}
+
 int main(void) {
     mcp_context_t *ctx = mcp_context_create(NULL);
     CHECK(ctx != NULL);
@@ -286,6 +412,11 @@ int main(void) {
     test_call_tool_json_validation(ctx);
     test_call_tool_json_success(ctx);
     test_call_tool_json_null_args(ctx);
+
+    test_listen_stream_validation(ctx);
+    test_listen_stream_event_limit(ctx);
+    test_listen_stream_early_exit(ctx);
+    test_listen_stream_timeout(ctx);
 
     mcp_context_destroy(ctx);
     printf("test_client_convenience: ALL TESTS PASSED\n");

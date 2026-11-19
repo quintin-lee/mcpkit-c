@@ -451,6 +451,48 @@ mcp_status_t mcp_client_recv_message(mcp_context_t *ctx, mcp_client_t *client,
                                      mcp_message_t **msg_out);
 
 /**
+ * @brief Callback invoked whenever a notification matching the active subscription arrives.
+ *
+ * @param client    Client handle.
+ * @param method    Notification method name (e.g. "notifications/tools/list_changed").
+ * @param params    Borrowed JSON parameters object (may be NULL).
+ * @param user_data User context pointer.
+ * @return true to continue listening; false to stop the listening loop gracefully.
+ */
+typedef bool (*mcp_client_notification_fn)(mcp_client_t *client,
+                                           const char *method,
+                                           const mcp_json_value_t *params,
+                                           void *user_data);
+
+/**
+ * @brief High-level helper: subscribes to server notifications and pumps incoming events.
+ *
+ * Lifecycle & Timeout Rules:
+ * - Executes subscriptions/listen, extracts subscriptionId, and enters the event pump.
+ * - When max_events is reached, callback returns false, or inactivity_timeout_ms expires,
+ *   the function automatically transmits `notifications/cancelled` for the subscriptionId,
+ *   and returns cleanly to preserve connection frame alignment.
+ * - inactivity_timeout_ms specifies the maximum wait time for the next event; if no event
+ *   arrives within this interval, the loop exits with MCP_ERR_TIMEOUT.
+ *
+ * @param ctx                   Context; may be NULL.
+ * @param client                Initialized client handle; must not be NULL.
+ * @param filter_mask           Filter string (e.g. "tools", "resources", "all") or JSON filter object.
+ * @param inactivity_timeout_ms Inactivity timeout per read in milliseconds (0 = block forever).
+ * @param max_events            Maximum number of events to process before returning (0 = unlimited).
+ * @param callback              Notification handler callback; must not be NULL.
+ * @param user_data             Opaque pointer passed to callback.
+ * @return MCP_OK on clean completion; MCP_ERR_TIMEOUT if inactivity timeout expires; MCP_ERR_* on failure.
+ */
+mcp_status_t mcp_client_listen_stream(mcp_context_t *ctx,
+                                      mcp_client_t *client,
+                                      const char *filter_mask,
+                                      int inactivity_timeout_ms,
+                                      size_t max_events,
+                                      mcp_client_notification_fn callback,
+                                      void *user_data);
+
+/**
  * @brief Host-injected callback that responds to a roots/list request
  *        sent by the server to the client.
  *
