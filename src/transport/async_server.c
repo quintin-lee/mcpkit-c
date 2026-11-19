@@ -96,6 +96,7 @@ typedef struct session_entry {
     atomic_intmax_t last_active;
     atomic_uint ref_count;
     atomic_bool dead;
+    atomic_bool backpressured;
     mtx_t session_lock;
     struct session_entry *next;
 } session_entry_t;
@@ -248,6 +249,7 @@ static void conn_detach_and_close(mcp_async_server_t *s, async_conn_t *conn) {
         for (session_entry_t *cur = s->sessions; cur != NULL; cur = cur->next) {
             if (cur->sse_conn == conn) {
                 cur->sse_conn = NULL;
+                atomic_store(&cur->backpressured, false);
                 break;
             }
         }
@@ -347,6 +349,7 @@ static session_entry_t *create_session_entry(mcp_async_server_t *s) {
     mtx_init(&entry->session_lock, mtx_plain);
     atomic_init(&entry->ref_count, 1); /* list-ownership base ref */
     atomic_init(&entry->dead, false);
+    atomic_init(&entry->backpressured, false);
 
     mtx_lock(&s->sessions_mtx);
     entry->next = s->sessions;
@@ -744,6 +747,25 @@ static size_t process_http_request(mcp_async_server_t *s, async_conn_t *conn) {
             }
         }
 
+        if (entry != NULL && atomic_load(&entry->backpressured)) {
+            static const char *k_retry =
+                "HTTP/1.1 503 Service Unavailable\r\n"
+                "Content-Type: text/plain\r\n"
+                "Content-Length: 20\r\n"
+                "Retry-After: 1\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                "SSE Outbox Congested";
+            char *dup = srv_strdup(s->ctx, k_retry);
+            if (dup != NULL) {
+                enqueue_response(s, conn, dup, strlen(k_retry), true);
+            }
+            session_entry_unref(s, entry);
+            mcp_http_request_destroy(ctx, req);
+            conn->http_in_flight = true;
+            return total_needed;
+        }
+
         worker_task_t *task = srv_malloc(ctx, sizeof(*task));
         if (task == NULL) {
             mcp_http_request_destroy(ctx, req);
@@ -828,6 +850,13 @@ static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t even
                     size_t queued = conn->write_len - conn->write_off;
                     if (conn->read_paused && queued <= s->cfg.outbox_low_watermark) {
                         conn->read_paused = false;
+                        if (conn->type == CONN_SSE && conn->session_id[0] != '\0') {
+                            session_entry_t *e = find_session(s, conn->session_id);
+                            if (e != NULL) {
+                                atomic_store(&e->backpressured, false);
+                                session_entry_unref(s, e);
+                            }
+                        }
                         mcp_reactor_modify(s->ctx, s->reactor, fd, MCP_EVENT_READ | MCP_EVENT_WRITE);
                     }
                 } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
@@ -843,6 +872,13 @@ static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t even
                 conn->write_off = 0;
                 conn->http_in_flight = false;
                 conn->read_paused = false;
+                if (conn->type == CONN_SSE && conn->session_id[0] != '\0') {
+                    session_entry_t *e = find_session(s, conn->session_id);
+                    if (e != NULL) {
+                        atomic_store(&e->backpressured, false);
+                        session_entry_unref(s, e);
+                    }
+                }
                 if (atomic_load(&conn->closing)) {
                     close_conn(s, conn);
                     return;
@@ -1250,6 +1286,13 @@ static void drain_responses(mcp_async_server_t *s) {
             /* Watermark backpressure control */
             if (s->cfg.outbox_high_watermark > 0 && queued >= s->cfg.outbox_high_watermark) {
                 conn->read_paused = true;
+                if (conn->type == CONN_SSE && conn->session_id[0] != '\0') {
+                    session_entry_t *e = find_session(s, conn->session_id);
+                    if (e != NULL) {
+                        atomic_store(&e->backpressured, true);
+                        session_entry_unref(s, e);
+                    }
+                }
             }
 
             /* Stall-based eviction control */
@@ -1313,6 +1356,40 @@ size_t mcp_async_server_get_queued_write_bytes(const mcp_async_server_t *s) {
     }
     mtx_unlock((mtx_t *)&s->conns_mtx);
     return total;
+}
+
+mcp_status_t mcp_async_server_push_sse(mcp_context_t *ctx, mcp_async_server_t *s,
+                                       const char *session_id, const char *data, size_t len) {
+    (void)ctx;
+    if (s == NULL || session_id == NULL || data == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    session_entry_t *e = find_session(s, session_id);
+    if (e == NULL) {
+        return MCP_ERR_NOT_FOUND;
+    }
+    mtx_lock(&s->sessions_mtx);
+    async_conn_t *sse = e->sse_conn;
+    if (sse != NULL) {
+        conn_ref(sse);
+    }
+    mtx_unlock(&s->sessions_mtx);
+    session_entry_unref(s, e);
+
+    if (sse == NULL) {
+        return MCP_ERR_IO;
+    }
+
+    char *dup = srv_malloc(s->ctx, len + 1);
+    if (dup == NULL) {
+        conn_unref(sse);
+        return MCP_ERR_NOMEM;
+    }
+    memcpy(dup, data, len);
+    dup[len] = '\0';
+    enqueue_response(s, sse, dup, len, false);
+    conn_unref(sse);
+    return MCP_OK;
 }
 
 mcp_status_t mcp_async_server_step(mcp_context_t *ctx, mcp_async_server_t *s, int timeout_ms) {

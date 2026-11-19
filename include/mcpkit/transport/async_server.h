@@ -78,6 +78,20 @@ size_t mcp_async_server_get_backpressured_count(const mcp_async_server_t *s);
 size_t mcp_async_server_get_queued_write_bytes(const mcp_async_server_t *s);
 
 /**
+ * @brief Sends an event/payload to the active SSE connection of a session.
+ *
+ * @param ctx Context; may be NULL.
+ * @param s Server handle.
+ * @param session_id Target session ID.
+ * @param data Data buffer to send.
+ * @param len Length of data in bytes.
+ * @return MCP_OK on success, MCP_ERR_NOT_FOUND if session doesn't exist,
+ *         MCP_ERR_DISCONNECTED if no active SSE stream, or error status.
+ */
+mcp_status_t mcp_async_server_push_sse(mcp_context_t *ctx, mcp_async_server_t *s,
+                                       const char *session_id, const char *data, size_t len);
+
+/**
  * @brief Destroys an async server and releases all network and session resources.
  *
  * @param ctx Context; may be NULL.
