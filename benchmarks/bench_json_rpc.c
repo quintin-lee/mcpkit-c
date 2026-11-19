@@ -1,5 +1,7 @@
 #include "bench_common.h"
 #include "mcpkit/mcpkit.h"
+#include "mcpkit/core/arena.h"
+#include "mcpkit/protocol/json_stream.h"
 
 int main(int argc, char **argv) {
     size_t iterations = 100000;
@@ -94,6 +96,74 @@ int main(int argc, char **argv) {
     bench_stats_t stats_parse;
     bench_calc_stats("json_rpc_message_parse", latencies, iterations, duration_sec, rss_kb, &stats_parse);
     bench_print_stats(&stats_parse);
+
+    /* -------------------------------------------------------------
+     * 3. Benchmark: Direct Streaming Serializer
+     * ------------------------------------------------------------- */
+    mcp_arena_t *stream_arena = mcp_arena_create(NULL, 16384);
+    mcp_json_stream_t stream;
+    mcp_json_rpc_id_t rpc_id = mcp_json_rpc_id_from_int(1);
+    const char *result_raw = "{\"sum\":141.0,\"status\":\"ok\"}";
+
+    /* Warm-up */
+    for (size_t i = 0; i < 100; i++) {
+        mcp_json_stream_init_arena(&stream, stream_arena);
+        mcp_serialize_response_stream(&stream, &rpc_id, result_raw);
+        mcp_arena_reset(stream_arena);
+    }
+
+    t_start = bench_now_ns();
+    for (size_t i = 0; i < iterations; i++) {
+        uint64_t i_start = bench_now_ns();
+        mcp_json_stream_init_arena(&stream, stream_arena);
+        mcp_serialize_response_stream(&stream, &rpc_id, result_raw);
+        uint64_t i_end = bench_now_ns();
+        latencies[i] = i_end - i_start;
+        mcp_arena_reset(stream_arena);
+    }
+    t_end = bench_now_ns();
+    duration_sec = (double)(t_end - t_start) / 1000000000.0;
+    rss_kb = bench_get_rss_kb(0);
+
+    bench_stats_t stats_stream;
+    bench_calc_stats("direct_streaming_serialize", latencies, iterations, duration_sec, rss_kb, &stats_stream);
+    bench_print_stats(&stats_stream);
+
+    /* -------------------------------------------------------------
+     * 4. Benchmark: Arena Allocation & O(1) Bulk Reset
+     * ------------------------------------------------------------- */
+    mcp_arena_t *bench_arena = mcp_arena_create(NULL, 16384);
+
+    /* Warm-up */
+    for (size_t i = 0; i < 100; i++) {
+        for (int k = 0; k < 10; k++) {
+            void *p = mcp_arena_alloc(bench_arena, 64);
+            (void)p;
+        }
+        mcp_arena_reset(bench_arena);
+    }
+
+    t_start = bench_now_ns();
+    for (size_t i = 0; i < iterations; i++) {
+        uint64_t i_start = bench_now_ns();
+        for (int k = 0; k < 10; k++) {
+            void *p = mcp_arena_alloc(bench_arena, 64);
+            (void)p;
+        }
+        mcp_arena_reset(bench_arena);
+        uint64_t i_end = bench_now_ns();
+        latencies[i] = i_end - i_start;
+    }
+    t_end = bench_now_ns();
+    duration_sec = (double)(t_end - t_start) / 1000000000.0;
+    rss_kb = bench_get_rss_kb(0);
+
+    bench_stats_t stats_arena;
+    bench_calc_stats("arena_alloc_10x_and_reset", latencies, iterations, duration_sec, rss_kb, &stats_arena);
+    bench_print_stats(&stats_arena);
+
+    mcp_arena_destroy(stream_arena);
+    mcp_arena_destroy(bench_arena);
 
     mcp_json_free_string(ctx, wire_str);
     free(latencies);
