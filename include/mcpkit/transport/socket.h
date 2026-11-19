@@ -49,6 +49,17 @@ mcp_transport_t *mcp_socket_transport_create(mcp_context_t *ctx, const char *hos
                                              uint16_t port, bool server_mode);
 
 /**
+ * @brief Wraps an already-connected socket descriptor in a client-mode transport.
+ *
+ * Useful for socketpair(2) or descriptors accepted outside mcpkit.
+ *
+ * @param ctx Context; may be NULL.
+ * @param fd Connected socket descriptor.
+ * @return Owned transport handle, or NULL on allocation failure.
+ */
+mcp_transport_t *mcp_socket_transport_from_fd(mcp_context_t *ctx, int fd);
+
+/**
  * @brief Accepts and serves multiple TCP connections concurrently.
  *
  * Binds and listens on 0.0.0.0:port (port 0 = ephemeral port; use

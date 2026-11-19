@@ -23,6 +23,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -162,51 +163,112 @@ static mcp_status_t sock_start(mcp_context_t *ctx, mcp_transport_t *t) {
     return MCP_OK;
 }
 
-static mcp_status_t sock_send(mcp_context_t *ctx, mcp_transport_t *t, const char *data,
-                              size_t len) {
-    if (t == NULL || (data == NULL && len > 0)) {
+static mcp_status_t sock_sendv(mcp_context_t *ctx, mcp_transport_t *t,
+                               const mcp_iovec_t *iov, size_t iovcnt) {
+    if (t == NULL || iov == NULL || iovcnt == 0) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
     socket_backend_t *b = mcp_transport_backend(ctx, t);
     if (b == NULL || b->fd < 0) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
+
     uint64_t read_ms = 0, write_ms = 0;
     mcp_transport_get_timeout(ctx, t, &read_ms, &write_ms);
     (void)read_ms;
     uint64_t deadline = write_ms == 0 ? 0 : now_ms() + write_ms;
-    size_t off = 0;
-    while (off < len) {
+
+    /* Total vectors: user vectors + 1 for trailing '\n'. */
+    size_t total_vecs = iovcnt + 1;
+    struct iovec stack_iov[16];
+    struct iovec *k_iov = stack_iov;
+    const mcp_allocator_t *a = alloc_of(ctx);
+
+    if (total_vecs > sizeof(stack_iov) / sizeof(stack_iov[0])) {
+        k_iov = a->malloc_fn(total_vecs * sizeof(struct iovec), a->userdata);
+        if (k_iov == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+    }
+
+    for (size_t i = 0; i < iovcnt; i++) {
+        k_iov[i].iov_base = (void *)iov[i].iov_base;
+        k_iov[i].iov_len = iov[i].iov_len;
+    }
+    static const char kNewline = '\n';
+    k_iov[iovcnt].iov_base = (void *)&kNewline;
+    k_iov[iovcnt].iov_len = 1;
+
+    size_t cur_vec = 0;
+    mcp_status_t st = MCP_OK;
+
+    while (cur_vec < total_vecs) {
+        /* Skip any empty vectors at current position */
+        if (k_iov[cur_vec].iov_len == 0) {
+            cur_vec++;
+            continue;
+        }
+
         if (deadline != 0) {
-            mcp_status_t ws = wait_until(b->fd, POLLOUT, deadline);
-            if (ws != MCP_OK) {
-                return ws;
+            st = wait_until(b->fd, POLLOUT, deadline);
+            if (st != MCP_OK) {
+                break;
             }
         }
-        ssize_t n = send(b->fd, data + off, len - off, MSG_NOSIGNAL);
+
+        struct msghdr msg;
+        memset(&msg, 0, sizeof(msg));
+        msg.msg_iov = &k_iov[cur_vec];
+        msg.msg_iovlen = total_vecs - cur_vec;
+
+        ssize_t n = sendmsg(b->fd, &msg, MSG_NOSIGNAL);
         if (n < 0) {
             if (errno == EINTR) {
                 continue;
             }
-            return MCP_ERR_IO;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                if (deadline != 0) {
+                    continue;
+                }
+            }
+            st = MCP_ERR_IO;
+            break;
         }
         if (n == 0) {
-            return MCP_ERR_IO;
+            st = MCP_ERR_IO;
+            break;
         }
-        off += (size_t)n;
-    }
-    // MSG_NOSIGNAL: a peer that closed the socket yields EPIPE ->
-    // MCP_ERR_IO instead of the default SIGPIPE process kill.
-    if (deadline != 0) {
-        mcp_status_t ws = wait_until(b->fd, POLLOUT, deadline);
-        if (ws != MCP_OK) {
-            return ws;
+
+        /* Advance vectors by bytes written */
+        size_t written = (size_t)n;
+        while (written > 0 && cur_vec < total_vecs) {
+            if (written >= k_iov[cur_vec].iov_len) {
+                written -= k_iov[cur_vec].iov_len;
+                k_iov[cur_vec].iov_len = 0;
+                cur_vec++;
+            } else {
+                k_iov[cur_vec].iov_base = (char *)k_iov[cur_vec].iov_base + written;
+                k_iov[cur_vec].iov_len -= written;
+                written = 0;
+            }
         }
     }
-    if (send(b->fd, "\n", 1, MSG_NOSIGNAL) < 0) {
-        return MCP_ERR_IO;
+
+    if (k_iov != stack_iov) {
+        a->free_fn(k_iov, a->userdata);
     }
-    return MCP_OK;
+    return st;
+}
+
+static mcp_status_t sock_send(mcp_context_t *ctx, mcp_transport_t *t, const char *data,
+                              size_t len) {
+    if (t == NULL || (data == NULL && len > 0)) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_iovec_t v[1] = {
+        {.iov_base = data, .iov_len = len}
+    };
+    return sock_sendv(ctx, t, v, 1);
 }
 
 static mcp_status_t sock_recv(mcp_context_t *ctx, mcp_transport_t *t, char **line_out) {
@@ -345,12 +407,10 @@ static const mcp_transport_ops_t kSocketOps = {
     .send = sock_send,
     .recv = sock_recv,
     .stop = sock_stop,
-    .sendv = NULL,
+    .sendv = sock_sendv,
 };
 
-// Wraps an already-connected fd in a client-mode transport. Used by
-// mcp_socket_serve to hand each accepted connection to a worker.
-static mcp_transport_t *socket_transport_from_fd(mcp_context_t *ctx, int fd) {
+mcp_transport_t *mcp_socket_transport_from_fd(mcp_context_t *ctx, int fd) {
     const mcp_allocator_t *a = alloc_of(ctx);
     socket_backend_t *b = a->malloc_fn(sizeof(*b), a->userdata);
     if (b == NULL) {
@@ -368,6 +428,8 @@ static mcp_transport_t *socket_transport_from_fd(mcp_context_t *ctx, int fd) {
     }
     return t;
 }
+
+#define socket_transport_from_fd mcp_socket_transport_from_fd
 
 /* Helpers for the per-connection serve loop (serve_one_conn). */
 static mcp_status_t conn_send_error(mcp_context_t *ctx, mcp_transport_t *t, int code,

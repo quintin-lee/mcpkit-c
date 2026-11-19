@@ -2,8 +2,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 
 #include "mcpkit/core/error.h"
+#include "mcpkit/transport/socket.h"
 #include "mcpkit/transport/transport.h"
 
 typedef struct mock_backend {
@@ -156,10 +158,53 @@ static void test_sendv_validation(void) {
     mcp_transport_destroy(NULL, t);
 }
 
+static void test_socket_sendv_roundtrip(void) {
+    int sv[2];
+    int rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    assert(rc == 0);
+    (void)rc;
+
+    mcp_transport_t *t1 = mcp_socket_transport_from_fd(NULL, sv[0]);
+    mcp_transport_t *t2 = mcp_socket_transport_from_fd(NULL, sv[1]);
+    assert(t1 != NULL);
+    assert(t2 != NULL);
+
+    mcp_iovec_t iov[3] = {
+        {.iov_base = "{\"method\":", .iov_len = 10},
+        {.iov_base = "\"ping\",", .iov_len = 7},
+        {.iov_base = "\"id\":1}", .iov_len = 7},
+    };
+
+    mcp_status_t st = mcp_transport_sendv(NULL, t1, iov, 3);
+    assert(st == MCP_OK);
+
+    char *line = NULL;
+    st = mcp_transport_recv(NULL, t2, &line);
+    assert(st == MCP_OK);
+    assert(line != NULL);
+    assert(strcmp(line, "{\"method\":\"ping\",\"id\":1}") == 0);
+    free(line);
+
+    /* Also verify sock_send works with single vector */
+    st = mcp_transport_send(NULL, t2, "{\"result\":\"pong\"}", 17);
+    assert(st == MCP_OK);
+
+    line = NULL;
+    st = mcp_transport_recv(NULL, t1, &line);
+    assert(st == MCP_OK);
+    assert(line != NULL);
+    assert(strcmp(line, "{\"result\":\"pong\"}") == 0);
+    free(line);
+
+    mcp_transport_destroy(NULL, t1);
+    mcp_transport_destroy(NULL, t2);
+}
+
 int main(void) {
     test_sendv_ops_invoked();
     test_sendv_fallback_concatenation();
     test_sendv_validation();
+    test_socket_sendv_roundtrip();
     printf("test_transport_sendv: all tests passed\n");
     return 0;
 }
