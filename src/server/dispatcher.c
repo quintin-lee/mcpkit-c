@@ -116,18 +116,19 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
         *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "session not initialized");
         return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
     }
+    mcp_context_t *id_ctx = (session != NULL && session->ctx != NULL) ? session->ctx : ctx;
     mcp_id_type_t id_type = mcp_message_id_type(ctx, req);
     if (id_type != MCP_ID_NONE) {
         const char *id_str = mcp_message_id_string(ctx, req);
         double id_num = 0;
         mcp_message_id_number(ctx, req, &id_num);
-        if (mcp_idset_contains(ctx, session->ids, id_type, id_str, id_num)) {
+        if (mcp_idset_contains(id_ctx, session->ids, id_type, id_str, id_num)) {
             dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=duplicate_id method=%s", method);
             atomic_fetch_add(&srv->c_requests_error, 1);
             *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "duplicate request id");
             return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
         }
-        if (mcp_idset_add(ctx, session->ids, id_type, id_str, id_num) != MCP_OK) {
+        if (mcp_idset_add(id_ctx, session->ids, id_type, id_str, id_num) != MCP_OK) {
             dlogf_srv(ctx, srv, MCP_LOG_ERROR, "event=id_tracking_failed method=%s", method);
             atomic_fetch_add(&srv->c_requests_error, 1);
             *resp_out = err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "id tracking failed");

@@ -22,6 +22,7 @@ static mcp_session_t *session_new(mcp_context_t *ctx) {
         return NULL;
     }
     memset(s, 0, sizeof(*s));
+    s->ctx = ctx;
     s->granted = 0xFFFFFFFFu;
     s->ids = mcp_idset_create(ctx);
     if (s->ids == NULL) {
@@ -35,6 +36,9 @@ static mcp_session_t *session_new(mcp_context_t *ctx) {
 void session_free(mcp_context_t *ctx, mcp_session_t *s) {
     if (s == NULL) {
         return;
+    }
+    if (ctx == NULL) {
+        ctx = s->ctx;
     }
     mcp_idset_destroy(ctx, s->ids);
     mcp_json_destroy(ctx, s->client_meta);
@@ -361,6 +365,7 @@ mcp_status_t mcp_session_subscribe_resource(mcp_context_t *ctx, mcp_session_t *s
     if (session == NULL || uri == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
+    mcp_context_t *pctx = session->ctx != NULL ? session->ctx : ctx;
     pthread_mutex_lock(&session->direct_sub_lock);
     for (size_t i = 0; i < session->n_direct_subscribed; i++) {
         if (strcmp(session->direct_subscribed_uris[i], uri) == 0) {
@@ -370,7 +375,7 @@ mcp_status_t mcp_session_subscribe_resource(mcp_context_t *ctx, mcp_session_t *s
     }
     if (session->n_direct_subscribed == session->cap_direct_subscribed) {
         size_t ncap = session->cap_direct_subscribed == 0 ? 4 : session->cap_direct_subscribed * 2;
-        char **nu = srv_realloc(ctx, session->direct_subscribed_uris, ncap * sizeof(*nu));
+        char **nu = srv_realloc(pctx, session->direct_subscribed_uris, ncap * sizeof(*nu));
         if (nu == NULL) {
             pthread_mutex_unlock(&session->direct_sub_lock);
             return MCP_ERR_NOMEM;
@@ -378,7 +383,7 @@ mcp_status_t mcp_session_subscribe_resource(mcp_context_t *ctx, mcp_session_t *s
         session->direct_subscribed_uris = nu;
         session->cap_direct_subscribed = ncap;
     }
-    char *copy = srv_strdup(ctx, uri);
+    char *copy = srv_strdup(pctx, uri);
     if (copy == NULL) {
         pthread_mutex_unlock(&session->direct_sub_lock);
         return MCP_ERR_NOMEM;
@@ -392,10 +397,11 @@ mcp_status_t mcp_session_unsubscribe_resource(mcp_context_t *ctx, mcp_session_t 
     if (session == NULL || uri == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
+    mcp_context_t *pctx = session->ctx != NULL ? session->ctx : ctx;
     pthread_mutex_lock(&session->direct_sub_lock);
     for (size_t i = 0; i < session->n_direct_subscribed; i++) {
         if (strcmp(session->direct_subscribed_uris[i], uri) == 0) {
-            srv_free(ctx, session->direct_subscribed_uris[i]);
+            srv_free(pctx, session->direct_subscribed_uris[i]);
             session->direct_subscribed_uris[i] =
                 session->direct_subscribed_uris[--session->n_direct_subscribed];
             break;
@@ -419,4 +425,12 @@ bool mcp_session_is_subscribed_to_resource(const mcp_session_t *session, const c
     }
     pthread_mutex_unlock(&s->direct_sub_lock);
     return false;
+}
+
+const char *mcp_session_get_client_name(const mcp_session_t *session) {
+    return session != NULL ? session->client_name : NULL;
+}
+
+const char *mcp_session_get_client_version(const mcp_session_t *session) {
+    return session != NULL ? session->client_version : NULL;
 }

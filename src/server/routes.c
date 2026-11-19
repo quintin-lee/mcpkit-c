@@ -324,23 +324,24 @@ static mcp_message_t *route_initialize(mcp_context_t *ctx, mcp_server_t *srv, mc
     }
     s->negotiated = mcp_proto_version_parse(ver);
     const mcp_json_value_t *info = mcp_json_object_get(ctx, params, "clientInfo");
+    mcp_context_t *pctx = (s != NULL && s->ctx != NULL) ? s->ctx : ctx;
     if (info != NULL) {
         const char *name = NULL;
         const char *cver = NULL;
         if (get_string(ctx, info, "name", &name) == MCP_OK && name != NULL) {
-            char *copy = srv_strdup(ctx, name);
+            char *copy = srv_strdup(pctx, name);
             if (copy == NULL) {
                 return NULL;
             }
-            srv_free(ctx, s->client_name);
+            srv_free(pctx, s->client_name);
             s->client_name = copy;
         }
         if (get_string(ctx, info, "version", &cver) == MCP_OK && cver != NULL) {
-            char *copy = srv_strdup(ctx, cver);
+            char *copy = srv_strdup(pctx, cver);
             if (copy == NULL) {
                 return NULL;
             }
-            srv_free(ctx, s->client_version);
+            srv_free(pctx, s->client_version);
             s->client_version = copy;
         }
     }
@@ -351,12 +352,12 @@ static mcp_message_t *route_initialize(mcp_context_t *ctx, mcp_server_t *srv, mc
     }
     const mcp_json_value_t *meta = mcp_message_meta(ctx, req);
     if (meta != NULL) {
-        mcp_json_value_t *clone = mcp_json_clone(ctx, meta);
+        mcp_json_value_t *clone = mcp_json_clone(pctx, meta);
         if (clone == NULL) {
             mcp_json_destroy(ctx, result);
             return NULL;
         }
-        mcp_json_destroy(ctx, s->client_meta);
+        mcp_json_destroy(pctx, s->client_meta);
         s->client_meta = clone;
     }
     if (decorate_result(ctx, srv, s, result, false) != MCP_OK) {
@@ -995,6 +996,7 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
         }
         pthread_mutex_lock(&srv->subscribed_lock);
         {
+            mcp_context_t *pctx = (srv->ctx != NULL) ? srv->ctx : ctx;
             if (is_sub) {
                 bool seen = false;
                 for (size_t i = 0; i < srv->n_subscribed; i++) {
@@ -1006,7 +1008,7 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
                 if (!seen) {
                     if (srv->n_subscribed == srv->cap_subscribed) {
                         size_t ncap = srv->cap_subscribed == 0 ? 4 : srv->cap_subscribed * 2;
-                        char **nu = srv_realloc(ctx, srv->subscribed_uris, ncap * sizeof(*nu));
+                        char **nu = srv_realloc(pctx, srv->subscribed_uris, ncap * sizeof(*nu));
                         if (nu == NULL) {
                             pthread_mutex_unlock(&srv->subscribed_lock);
                             return NULL;
@@ -1014,7 +1016,7 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
                         srv->subscribed_uris = nu;
                         srv->cap_subscribed = ncap;
                     }
-                    char *copy = srv_strdup(ctx, uri);
+                    char *copy = srv_strdup(pctx, uri);
                     if (copy == NULL) {
                         pthread_mutex_unlock(&srv->subscribed_lock);
                         return NULL;
@@ -1024,7 +1026,7 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
             } else {
                 for (size_t i = 0; i < srv->n_subscribed; i++) {
                     if (strcmp(srv->subscribed_uris[i], uri) == 0) {
-                        srv_free(ctx, srv->subscribed_uris[i]);
+                        srv_free(pctx, srv->subscribed_uris[i]);
                         srv->subscribed_uris[i] = srv->subscribed_uris[--srv->n_subscribed];
                         break;
                     }
@@ -1086,16 +1088,17 @@ static mcp_message_t *route_subscriptions_listen(mcp_context_t *ctx, mcp_server_
     }
 
     if (s != NULL) {
+        mcp_context_t *pctx = (s->ctx != NULL) ? s->ctx : ctx;
         s->subscription_active = false;
         if (s->sub_id_str != NULL) {
-            srv_free(ctx, s->sub_id_str);
+            srv_free(pctx, s->sub_id_str);
             s->sub_id_str = NULL;
         }
         if (s->sub_resource_uris != NULL) {
             for (size_t i = 0; i < s->n_sub_resource_uris; i++) {
-                srv_free(ctx, s->sub_resource_uris[i]);
+                srv_free(pctx, s->sub_resource_uris[i]);
             }
-            srv_free(ctx, s->sub_resource_uris);
+            srv_free(pctx, s->sub_resource_uris);
             s->sub_resource_uris = NULL;
             s->n_sub_resource_uris = 0;
         }
@@ -1106,7 +1109,7 @@ static mcp_message_t *route_subscriptions_listen(mcp_context_t *ctx, mcp_server_
         s->sub_id_type = mcp_message_id_type(ctx, req);
         if (s->sub_id_type == MCP_ID_STRING) {
             const char *id_str = mcp_message_id_string(ctx, req);
-            s->sub_id_str = srv_strdup(ctx, id_str ? id_str : "");
+            s->sub_id_str = srv_strdup(pctx, id_str ? id_str : "");
         } else if (s->sub_id_type == MCP_ID_NUMBER) {
             mcp_message_id_number(ctx, req, &s->sub_id_num);
         }
@@ -1137,13 +1140,13 @@ static mcp_message_t *route_subscriptions_listen(mcp_context_t *ctx, mcp_server_
             if (ru != NULL && mcp_json_type(ctx, ru) == MCP_JSON_ARRAY) {
                 size_t n = mcp_json_array_size(ctx, ru);
                 if (n > 0) {
-                    s->sub_resource_uris = srv_malloc(ctx, n * sizeof(char *));
+                    s->sub_resource_uris = srv_malloc(pctx, n * sizeof(char *));
                     if (s->sub_resource_uris != NULL) {
                         for (size_t i = 0; i < n; i++) {
                             const mcp_json_value_t *item = mcp_json_array_get(ctx, ru, i);
                             const char *uri_str = NULL;
                             if (item != NULL && mcp_json_string_value(ctx, item, &uri_str) == MCP_OK && uri_str != NULL) {
-                                s->sub_resource_uris[s->n_sub_resource_uris++] = srv_strdup(ctx, uri_str);
+                                s->sub_resource_uris[s->n_sub_resource_uris++] = srv_strdup(pctx, uri_str);
                             }
                         }
                     }

@@ -257,4 +257,20 @@ mcp_status_t mcp_session_unsubscribe_resource(mcp_context_t *ctx, mcp_session_t 
  */
 bool mcp_session_is_subscribed_to_resource(const mcp_session_t *session, const char *uri);
 
+/**
+ * @brief Returns the client name negotiated during initialize, or NULL.
+ *
+ * @param session Target session.
+ * @return Borrowed pointer to client name string, or NULL.
+ */
+const char *mcp_session_get_client_name(const mcp_session_t *session);
+
+/**
+ * @brief Returns the client version negotiated during initialize, or NULL.
+ *
+ * @param session Target session.
+ * @return Borrowed pointer to client version string, or NULL.
+ */
+const char *mcp_session_get_client_version(const mcp_session_t *session);
+
 #endif

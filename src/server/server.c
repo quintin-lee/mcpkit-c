@@ -59,6 +59,7 @@ mcp_server_t *mcp_server_create(mcp_context_t *ctx, const char *name, const char
         return NULL;
     }
     memset(srv, 0, sizeof(*srv));
+    srv->ctx = ctx;
     atomic_init(&srv->c_requests_total, 0);
     atomic_init(&srv->c_requests_error, 0);
     atomic_init(&srv->c_notifications_total, 0);
@@ -170,6 +171,9 @@ static void free_subscribed(mcp_context_t *ctx, mcp_server_t *srv) {
 void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     if (srv == NULL) {
         return;
+    }
+    if (ctx == NULL) {
+        ctx = srv->ctx;
     }
     free_all_sessions(ctx, srv);
     free_all_tools(ctx, srv);

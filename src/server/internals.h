@@ -68,6 +68,7 @@ struct mcp_prompt {
 };
 
 struct mcp_session {
+    mcp_context_t *ctx;
     bool initialized;
     bool apps_host;
     uint32_t granted;
@@ -99,6 +100,7 @@ struct mcp_session {
 };
 
 struct mcp_server {
+    mcp_context_t *ctx;
     char *name;
     char *version;
     mcp_tool_t **tools;

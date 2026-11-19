@@ -38,7 +38,31 @@
 #include "mcpkit/transport/http.h"
 #include "mcpkit/transport/ring_buffer.h"
 #include "mcpkit/transport/ws.h"
+#include "mcpkit/core/arena.h"
 #include "../core/sha1.h"
+
+static pthread_key_t s_thread_arena_key;
+static pthread_once_t s_thread_arena_once = PTHREAD_ONCE_INIT;
+
+static void destroy_thread_arena(void *ptr) {
+    if (ptr != NULL) {
+        mcp_arena_destroy((mcp_arena_t *)ptr);
+    }
+}
+
+static void init_thread_arena_key(void) {
+    pthread_key_create(&s_thread_arena_key, destroy_thread_arena);
+}
+
+static mcp_arena_t *get_worker_thread_arena(void) {
+    pthread_once(&s_thread_arena_once, init_thread_arena_key);
+    mcp_arena_t *arena = (mcp_arena_t *)pthread_getspecific(s_thread_arena_key);
+    if (arena == NULL) {
+        arena = mcp_arena_create(NULL, 16384);
+        pthread_setspecific(s_thread_arena_key, arena);
+    }
+    return arena;
+}
 
 static uint64_t now_ms(void) {
     struct timespec ts;
@@ -444,6 +468,14 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
     mcp_async_server_t *s = task->server;
     mcp_context_t *ctx = s->ctx;
 
+    mcp_arena_t *arena = get_worker_thread_arena();
+    mcp_allocator_t req_alloc = mcp_arena_as_allocator(arena);
+    mcp_context_config_t req_cfg = {.allocator = &req_alloc};
+    mcp_context_t *req_ctx = mcp_context_create(&req_cfg);
+    if (req_ctx == NULL) {
+        req_ctx = ctx;
+    }
+
     if (task->entry != NULL) {
         mtx_lock(&task->entry->session_lock);
     } else if (task->is_ws && task->conn != NULL) {
@@ -451,19 +483,19 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
     }
 
     size_t body_len_in = task->json_body != NULL ? strlen(task->json_body) : 0;
-    mcp_message_t *msg = mcp_message_parse(ctx, task->json_body, body_len_in);
+    mcp_message_t *msg = mcp_message_parse(req_ctx, task->json_body, body_len_in);
     mcp_message_t *resp = NULL;
     bool is_notification = false;
     char computed_etag[64] = {0};
 
     if (msg != NULL) {
-        if (mcp_message_kind(ctx, msg) == MCP_MSG_NOTIFICATION) {
+        if (mcp_message_kind(req_ctx, msg) == MCP_MSG_NOTIFICATION) {
             is_notification = true;
-            mcp_server_notify(ctx, s->server, task->session, msg);
+            mcp_server_notify(req_ctx, s->server, task->session, msg);
         } else {
             /* Check conditional caching for tools/list, resources/list, prompts/list without pagination cursor */
             if (!task->is_ws) {
-                const char *method = mcp_message_method(ctx, msg);
+                const char *method = mcp_message_method(req_ctx, msg);
                 uint64_t rev = 0;
                 bool has_rev = false;
                 if (method != NULL) {
@@ -484,15 +516,15 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
                 }
 
                 if (has_rev) {
-                    const mcp_json_value_t *params = mcp_message_params(ctx, msg);
-                    const mcp_json_value_t *cur = (params != NULL) ? mcp_json_object_get(ctx, params, "cursor") : NULL;
+                    const mcp_json_value_t *params = mcp_message_params(req_ctx, msg);
+                    const mcp_json_value_t *cur = (params != NULL) ? mcp_json_object_get(req_ctx, params, "cursor") : NULL;
                     if (cur == NULL) {
                         snprintf(computed_etag, sizeof(computed_etag), "\"%016lx\"", (unsigned long)rev);
                         if (task->if_none_match[0] != '\0' &&
                             (strcmp(task->if_none_match, "*") == 0 ||
                              strcmp(task->if_none_match, computed_etag) == 0)) {
                             /* Match -> emit 304 Not Modified */
-                            mcp_message_destroy(ctx, msg);
+                            mcp_message_destroy(req_ctx, msg);
                             if (task->entry != NULL) {
                                 atomic_store_explicit(&task->entry->last_active, (int64_t)time(NULL), memory_order_release);
                                 mtx_unlock(&task->entry->session_lock);
@@ -536,15 +568,20 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
                                 pthread_cond_broadcast(&s->pending_cv);
                             }
                             pthread_mutex_unlock(&s->pending_mtx);
+                            srv_free(ctx, task);
+                            if (req_ctx != ctx) {
+                                mcp_context_destroy(req_ctx);
+                            }
+                            mcp_arena_reset(arena);
                             return;
                         }
                     }
                 }
             }
 
-            mcp_server_dispatch(ctx, s->server, task->session, msg, &resp);
+            mcp_server_dispatch(req_ctx, s->server, task->session, msg, &resp);
         }
-        mcp_message_destroy(ctx, msg);
+        mcp_message_destroy(req_ctx, msg);
     }
 
     if (task->entry != NULL) {
@@ -558,8 +595,8 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
         if (!is_notification) {
             char *resp_text = NULL;
             if (resp != NULL) {
-                resp_text = mcp_message_serialize(ctx, resp);
-                mcp_message_destroy(ctx, resp);
+                resp_text = mcp_message_serialize(req_ctx, resp);
+                mcp_message_destroy(req_ctx, resp);
             }
             if (resp_text == NULL) {
                 resp_text = srv_strdup(ctx, "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Internal error\"}}");
@@ -578,7 +615,7 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
                 if (mcp_ws_encode_frame(ctx, &frame, &ws_bytes, &ws_len) == MCP_OK) {
                     enqueue_response(s, task->conn, (char *)ws_bytes, ws_len, false);
                 }
-                mcp_json_free_string(ctx, resp_text);
+                mcp_json_free_string(req_ctx, resp_text);
             }
         }
     } else {
@@ -596,8 +633,8 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
         } else {
             char *resp_text = NULL;
             if (resp != NULL) {
-                resp_text = mcp_message_serialize(ctx, resp);
-                mcp_message_destroy(ctx, resp);
+                resp_text = mcp_message_serialize(req_ctx, resp);
+                mcp_message_destroy(req_ctx, resp);
             }
             if (resp_text == NULL) {
                 resp_text = srv_strdup(ctx, "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Internal error\"}}");
@@ -656,7 +693,7 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
                     full_resp[full_len] = '\0';
                     enqueue_response(s, task->conn, full_resp, full_len, close_after);
                 }
-                mcp_json_free_string(ctx, resp_text);
+                mcp_json_free_string(req_ctx, resp_text);
             }
         }
     }
@@ -674,6 +711,11 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
     pthread_mutex_unlock(&s->pending_mtx);
 
     srv_free(ctx, task);
+
+    if (req_ctx != ctx) {
+        mcp_context_destroy(req_ctx);
+    }
+    mcp_arena_reset(arena);
 }
 
 static void handle_client_read(mcp_context_t *ctx, int fd, mcp_event_mask_t events, void *user);
