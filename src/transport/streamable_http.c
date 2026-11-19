@@ -82,6 +82,38 @@ static http_session_slot_t *table_find(http_session_table_t *t, const char *sid)
 static mcp_status_t send_bytes(mcp_context_t *ctx, mcp_http_io_t *io, int status,
                                const char *reason, const char *ctype, const char *body,
                                size_t body_len, const char *xname, const char *xvalue) {
+    /* Fast path: for small responses and error codes, format directly into stack buffer
+       to eliminate all heap allocations. */
+    char stack_buf[1024];
+    size_t needed = 128 + (reason != NULL ? strlen(reason) : 0) + body_len +
+                    (ctype != NULL ? strlen(ctype) + 32 : 0) +
+                    (xname != NULL ? strlen(xname) + strlen(xvalue != NULL ? xvalue : "") + 32 : 0) +
+                    32;
+    if (needed < sizeof(stack_buf)) {
+        int n = snprintf(stack_buf, sizeof(stack_buf), "HTTP/1.1 %d %s\r\n", status, reason != NULL ? reason : "");
+        if (n > 0) {
+            size_t pos = (size_t)n;
+            if (ctype != NULL) {
+                n = snprintf(stack_buf + pos, sizeof(stack_buf) - pos, "Content-Type: %s\r\n", ctype);
+                if (n > 0) pos += (size_t)n;
+            }
+            if (xname != NULL && xvalue != NULL) {
+                n = snprintf(stack_buf + pos, sizeof(stack_buf) - pos, "%s: %s\r\n", xname, xvalue);
+                if (n > 0) pos += (size_t)n;
+            }
+            n = snprintf(stack_buf + pos, sizeof(stack_buf) - pos, "Content-Length: %zu\r\n\r\n", body_len);
+            if (n > 0) {
+                pos += (size_t)n;
+                if (body != NULL && body_len > 0) {
+                    memcpy(stack_buf + pos, body, body_len);
+                    pos += body_len;
+                }
+                return io->write(ctx, io->user, stack_buf, pos);
+            }
+        }
+    }
+
+    /* Fallback dynamic path for large payloads */
     mcp_http_response_t *resp = mcp_http_response_new(ctx, status, reason);
     if (resp == NULL) {
         return MCP_ERR_NOMEM;
