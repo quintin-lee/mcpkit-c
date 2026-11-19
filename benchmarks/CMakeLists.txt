@@ -13,3 +13,6 @@ target_link_libraries(bench_http_throughput PRIVATE mcpkit_core pthread)
 
 add_executable(bench_ws_throughput bench_ws_throughput.c)
 target_link_libraries(bench_ws_throughput PRIVATE mcpkit_core pthread)
+
+add_executable(bench_async_server bench_async_server.c)
+target_link_libraries(bench_async_server PRIVATE mcpkit_core pthread)
