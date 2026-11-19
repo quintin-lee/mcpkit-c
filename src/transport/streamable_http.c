@@ -478,6 +478,22 @@ static bool xmcp_values_match(const xmcp_anno_t *anno,
     return false;
 }
 
+static void set_err_param(char *dst, size_t dst_cap, const char *src) {
+    if (dst == NULL || dst_cap == 0) {
+        return;
+    }
+    if (src == NULL) {
+        dst[0] = '\0';
+        return;
+    }
+    size_t i = 0;
+    while (i + 1 < dst_cap && src[i] != '\0') {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
+}
+
 /* Returns true if the check passes (headers consistent or no annotations).
    On failure copies the failing parameter name into *err_param (buf of at
    least 64 bytes); leaves it as empty string on success. */
@@ -514,18 +530,14 @@ static bool xmcp_check_headers(mcp_context_t *ctx, mcp_server_t *server,
         char hdr_name_buf[128];
         int n = snprintf(hdr_name_buf, sizeof(hdr_name_buf), "Mcp-Param-%s", anno->header_name);
         if (n <= 0 || (size_t)n >= sizeof(hdr_name_buf)) {
-            if (err_param != NULL && err_cap > 0) {
-                snprintf(err_param, err_cap, "%s", anno->param_name);
-            }
+            set_err_param(err_param, err_cap, anno->param_name);
             return false; /* header name too long to form */
         }
         const char *hdr_val = mcp_http_header(ctx, req, hdr_name_buf);
 
         /* Body has a value but header is missing → fail */
         if (body_val != NULL && hdr_val == NULL) {
-            if (err_param != NULL && err_cap > 0) {
-                snprintf(err_param, err_cap, "%s", anno->param_name);
-            }
+            set_err_param(err_param, err_cap, anno->param_name);
             return false;
         }
 
@@ -535,16 +547,12 @@ static bool xmcp_check_headers(mcp_context_t *ctx, mcp_server_t *server,
             mcp_status_t st = mcp_base64_sentinel_decode(ctx, hdr_val, &decoded);
             if (st != MCP_OK) {
                 mcp_oauth_free_string(ctx, decoded); /* may be NULL on error */
-                if (err_param != NULL && err_cap > 0) {
-                    snprintf(err_param, err_cap, "%s", anno->param_name);
-                }
+                set_err_param(err_param, err_cap, anno->param_name);
                 return false;
             }
             if (!xmcp_values_match(anno, decoded, ctx, body_val)) {
                 mcp_oauth_free_string(ctx, decoded);
-                if (err_param != NULL && err_cap > 0) {
-                    snprintf(err_param, err_cap, "%s", anno->param_name);
-                }
+                set_err_param(err_param, err_cap, anno->param_name);
                 return false;
             }
             mcp_oauth_free_string(ctx, decoded);
