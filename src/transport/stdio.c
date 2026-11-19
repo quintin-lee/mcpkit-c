@@ -24,6 +24,7 @@
 #include <poll.h>
 #include <stdbool.h>
 #include <string.h>
+#include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -95,22 +96,107 @@ static mcp_status_t stdio_start(mcp_context_t *ctx, mcp_transport_t *t) {
     return t != NULL ? MCP_OK : MCP_ERR_INVALID_ARGUMENT;
 }
 
-static mcp_status_t stdio_send(mcp_context_t *ctx, mcp_transport_t *t, const char *data,
-                               size_t len) {
-    if (t == NULL || (data == NULL && len > 0)) {
+static mcp_status_t stdio_sendv(mcp_context_t *ctx, mcp_transport_t *t,
+                                const mcp_iovec_t *iov, size_t iovcnt) {
+    if (t == NULL || iov == NULL || iovcnt == 0) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
     stdio_backend_t *b = mcp_transport_backend(ctx, t);
     if (b == NULL || b->out == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
-    if (len > 0 && fwrite(data, 1, len, b->out) != len) {
-        return MCP_ERR_IO;
+
+    int fd = fileno(b->out);
+    if (fd >= 0) {
+        /* Flush any pending userspace stdio buffer before direct fd write */
+        fflush(b->out);
+
+        size_t total_vecs = iovcnt + 1;
+        struct iovec stack_iov[16];
+        struct iovec *k_iov = stack_iov;
+        const mcp_allocator_t *a = alloc_of(ctx);
+
+        if (total_vecs > sizeof(stack_iov) / sizeof(stack_iov[0])) {
+            k_iov = a->malloc_fn(total_vecs * sizeof(struct iovec), a->userdata);
+            if (k_iov == NULL) {
+                return MCP_ERR_NOMEM;
+            }
+        }
+
+        for (size_t i = 0; i < iovcnt; i++) {
+            k_iov[i].iov_base = (void *)iov[i].iov_base;
+            k_iov[i].iov_len = iov[i].iov_len;
+        }
+        static const char kNewline = '\n';
+        k_iov[iovcnt].iov_base = (void *)&kNewline;
+        k_iov[iovcnt].iov_len = 1;
+
+        size_t cur_vec = 0;
+        mcp_status_t st = MCP_OK;
+
+        while (cur_vec < total_vecs) {
+            if (k_iov[cur_vec].iov_len == 0) {
+                cur_vec++;
+                continue;
+            }
+            ssize_t n = writev(fd, &k_iov[cur_vec], total_vecs - cur_vec);
+            if (n < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                st = MCP_ERR_IO;
+                break;
+            }
+            if (n == 0) {
+                st = MCP_ERR_IO;
+                break;
+            }
+            size_t written = (size_t)n;
+            while (written > 0 && cur_vec < total_vecs) {
+                if (written >= k_iov[cur_vec].iov_len) {
+                    written -= k_iov[cur_vec].iov_len;
+                    k_iov[cur_vec].iov_len = 0;
+                    cur_vec++;
+                } else {
+                    k_iov[cur_vec].iov_base = (char *)k_iov[cur_vec].iov_base + written;
+                    k_iov[cur_vec].iov_len -= written;
+                    written = 0;
+                }
+            }
+        }
+
+        if (k_iov != stack_iov) {
+            a->free_fn(k_iov, a->userdata);
+        }
+        return st;
+    }
+
+    /* Fallback for streams without valid file descriptor (e.g. fmemopen) */
+    for (size_t i = 0; i < iovcnt; i++) {
+        if (iov[i].iov_len > 0) {
+            if (iov[i].iov_base == NULL) {
+                return MCP_ERR_INVALID_ARGUMENT;
+            }
+            if (fwrite(iov[i].iov_base, 1, iov[i].iov_len, b->out) != iov[i].iov_len) {
+                return MCP_ERR_IO;
+            }
+        }
     }
     if (fputc('\n', b->out) == EOF || fflush(b->out) == EOF) {
         return MCP_ERR_IO;
     }
     return MCP_OK;
+}
+
+static mcp_status_t stdio_send(mcp_context_t *ctx, mcp_transport_t *t, const char *data,
+                               size_t len) {
+    if (t == NULL || (data == NULL && len > 0)) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_iovec_t v[1] = {
+        {.iov_base = data, .iov_len = len}
+    };
+    return stdio_sendv(ctx, t, v, 1);
 }
 
 static mcp_status_t stash_store(mcp_context_t *ctx, stdio_backend_t *b, const char *data,
@@ -300,7 +386,7 @@ static const mcp_transport_ops_t kStdioOps = {
     .send = stdio_send,
     .recv = stdio_recv,
     .stop = stdio_stop,
-    .sendv = NULL,
+    .sendv = stdio_sendv,
 };
 
 mcp_transport_t *mcp_stdio_transport_create(mcp_context_t *ctx, FILE *in, FILE *out) {

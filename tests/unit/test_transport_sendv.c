@@ -1,11 +1,14 @@
+#define _DEFAULT_SOURCE
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include "mcpkit/core/error.h"
 #include "mcpkit/transport/socket.h"
+#include "mcpkit/transport/stdio.h"
 #include "mcpkit/transport/transport.h"
 
 typedef struct mock_backend {
@@ -150,6 +153,7 @@ static void test_sendv_validation(void) {
     mcp_iovec_t iov[1] = {
         {.iov_base = "test", .iov_len = 4},
     };
+    (void)iov;
 
     assert(mcp_transport_sendv(NULL, NULL, iov, 1) == MCP_ERR_INVALID_ARGUMENT);
     assert(mcp_transport_sendv(NULL, t, NULL, 1) == MCP_ERR_INVALID_ARGUMENT);
@@ -177,6 +181,7 @@ static void test_socket_sendv_roundtrip(void) {
 
     mcp_status_t st = mcp_transport_sendv(NULL, t1, iov, 3);
     assert(st == MCP_OK);
+    (void)st;
 
     char *line = NULL;
     st = mcp_transport_recv(NULL, t2, &line);
@@ -200,11 +205,62 @@ static void test_socket_sendv_roundtrip(void) {
     mcp_transport_destroy(NULL, t2);
 }
 
+static void test_stdio_sendv_loopback(void) {
+    int pfd[2];
+    int rc = pipe(pfd);
+    assert(rc == 0);
+    (void)rc;
+
+    FILE *in = fdopen(pfd[0], "r");
+    FILE *out = fdopen(pfd[1], "w");
+    assert(in != NULL);
+    assert(out != NULL);
+
+    mcp_transport_t *sender = mcp_stdio_transport_create(NULL, NULL, out);
+    mcp_transport_t *receiver = mcp_stdio_transport_create(NULL, in, NULL);
+    assert(sender != NULL);
+    assert(receiver != NULL);
+
+    mcp_iovec_t iov[3] = {
+        {.iov_base = "hello ", .iov_len = 6},
+        {.iov_base = "vector ", .iov_len = 7},
+        {.iov_base = "stdio", .iov_len = 5},
+    };
+
+    mcp_status_t st = mcp_transport_sendv(NULL, sender, iov, 3);
+    assert(st == MCP_OK);
+    (void)st;
+
+    char *line = NULL;
+    st = mcp_transport_recv(NULL, receiver, &line);
+    assert(st == MCP_OK);
+    assert(line != NULL);
+    assert(strcmp(line, "hello vector stdio") == 0);
+    free(line);
+
+    /* Also verify stdio_send works */
+    st = mcp_transport_send(NULL, sender, "single line", 11);
+    assert(st == MCP_OK);
+
+    line = NULL;
+    st = mcp_transport_recv(NULL, receiver, &line);
+    assert(st == MCP_OK);
+    assert(line != NULL);
+    assert(strcmp(line, "single line") == 0);
+    free(line);
+
+    mcp_transport_destroy(NULL, sender);
+    mcp_transport_destroy(NULL, receiver);
+    fclose(in);
+    fclose(out);
+}
+
 int main(void) {
     test_sendv_ops_invoked();
     test_sendv_fallback_concatenation();
     test_sendv_validation();
     test_socket_sendv_roundtrip();
+    test_stdio_sendv_loopback();
     printf("test_transport_sendv: all tests passed\n");
     return 0;
 }
