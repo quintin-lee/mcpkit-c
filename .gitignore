@@ -21,3 +21,4 @@ compile_commands.json
 /skills-lock.json
 .jeikcode/codegraph/
 .omp/
+.superpowers/
