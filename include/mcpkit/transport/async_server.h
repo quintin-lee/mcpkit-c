@@ -127,6 +127,28 @@ mcp_status_t mcp_async_server_step(mcp_context_t *ctx, mcp_async_server_t *s, in
 void           mcp_async_server_stop(mcp_context_t *ctx, mcp_async_server_t *s);
 
 /**
+ * @brief Gracefully drains an async server, closing listener and waiting for in-flight requests.
+ *
+ * Stops accepting new connections immediately by closing the listen socket.
+ * Signals existing clients to close:
+ *   - HTTP: pending responses carry `Connection: close`.
+ *   - WebSocket: sends RFC 6455 1001 (Going Away) Close frame.
+ *   - SSE: terminates event streams.
+ *
+ * If timeout_ms > 0, waits up to timeout_ms for active connections to reach 0.
+ * If timeout_ms <= 0, waits indefinitely.
+ * If timeout expires before all connections close, forcefully closes remaining connections
+ * and returns MCP_ERR_TIMEOUT.
+ *
+ * @param ctx Context; may be NULL.
+ * @param s Server handle.
+ * @param timeout_ms Maximum time to wait in ms (<= 0 for indefinite).
+ * @return MCP_OK if all connections drained cleanly, MCP_ERR_TIMEOUT if deadline exceeded,
+ *         or other error status.
+ */
+mcp_status_t mcp_async_server_drain(mcp_context_t *ctx, mcp_async_server_t *s, int timeout_ms);
+
+/**
  * @brief Returns the current number of active connections tracked by the server.
  * @param s Async server handle; may be NULL.
  * @return Active connection count, or 0 if s is NULL.

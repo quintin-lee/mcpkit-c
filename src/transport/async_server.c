@@ -140,6 +140,10 @@ struct mcp_async_server {
     pthread_mutex_t pending_mtx;
     pthread_cond_t pending_cv;
     size_t pending;
+
+    atomic_bool draining;
+    pthread_mutex_t drain_mtx;
+    pthread_cond_t drain_cv;
 };
 
 static const mcp_allocator_t *alloc_of(mcp_context_t *ctx) {
@@ -267,6 +271,9 @@ static void conn_detach_and_close(mcp_async_server_t *s, async_conn_t *conn) {
     if (atomic_load_explicit(&s->conns_count, memory_order_relaxed) > 0) {
         atomic_fetch_sub_explicit(&s->conns_count, 1, memory_order_relaxed);
     }
+    pthread_mutex_lock(&s->drain_mtx);
+    pthread_cond_broadcast(&s->drain_cv);
+    pthread_mutex_unlock(&s->drain_mtx);
     mtx_unlock(&s->conns_mtx);
     conn_unref(conn);
 }
@@ -491,23 +498,25 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
                 size_t body_len = strlen(resp_text);
                 char hdr_buf[512];
                 int hlen = 0;
+                const char *conn_hdr = (atomic_load(&s->draining) || atomic_load(&task->conn->closing)) ? "close" : "keep-alive";
+                bool close_after = (atomic_load(&s->draining) || atomic_load(&task->conn->closing));
                 if (task->session_id[0] != '\0') {
                     hlen = snprintf(hdr_buf, sizeof(hdr_buf),
                                     "HTTP/1.1 200 OK\r\n"
                                     "Content-Type: application/json\r\n"
                                     "Content-Length: %zu\r\n"
                                     "Mcp-Session-Id: %s\r\n"
-                                    "Connection: keep-alive\r\n"
+                                    "Connection: %s\r\n"
                                     "\r\n",
-                                    body_len, task->session_id);
+                                    body_len, task->session_id, conn_hdr);
                 } else {
                     hlen = snprintf(hdr_buf, sizeof(hdr_buf),
                                     "HTTP/1.1 200 OK\r\n"
                                     "Content-Type: application/json\r\n"
                                     "Content-Length: %zu\r\n"
-                                    "Connection: keep-alive\r\n"
+                                    "Connection: %s\r\n"
                                     "\r\n",
-                                    body_len);
+                                    body_len, conn_hdr);
                 }
                 size_t full_len = (size_t)hlen + body_len;
                 char *full_resp = srv_malloc(ctx, full_len + 1);
@@ -515,7 +524,7 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
                     memcpy(full_resp, hdr_buf, (size_t)hlen);
                     memcpy(full_resp + hlen, resp_text, body_len);
                     full_resp[full_len] = '\0';
-                    enqueue_response(s, task->conn, full_resp, full_len, false);
+                    enqueue_response(s, task->conn, full_resp, full_len, close_after);
                 }
                 mcp_json_free_string(ctx, resp_text);
             }
@@ -1184,6 +1193,9 @@ mcp_async_server_t *mcp_async_server_create(mcp_context_t *ctx, mcp_server_t *se
     pthread_mutex_init(&s->pending_mtx, NULL);
     pthread_cond_init(&s->pending_cv, NULL);
     s->pending = 0;
+    atomic_init(&s->draining, false);
+    pthread_mutex_init(&s->drain_mtx, NULL);
+    pthread_cond_init(&s->drain_cv, NULL);
 
     s->reactor = mcp_reactor_create(ctx);
     if (s->reactor == NULL) {
@@ -1451,6 +1463,132 @@ void mcp_async_server_stop(mcp_context_t *ctx, mcp_async_server_t *s) {
     }
 }
 
+static void force_close_all_conns(mcp_async_server_t *s) {
+    async_conn_t *to_close[64];
+    size_t count = 0;
+    mtx_lock(&s->conns_mtx);
+    for (async_conn_t *c = s->conns; c != NULL && count < 64; c = c->next) {
+        conn_ref(c);
+        to_close[count++] = c;
+    }
+    mtx_unlock(&s->conns_mtx);
+
+    for (size_t i = 0; i < count; i++) {
+        conn_detach_and_close(s, to_close[i]);
+        conn_unref(to_close[i]);
+    }
+}
+
+mcp_status_t mcp_async_server_drain(mcp_context_t *ctx, mcp_async_server_t *s, int timeout_ms) {
+    (void)ctx;
+    if (s == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    atomic_store(&s->draining, true);
+
+    /* 1. Close and remove listen socket immediately to stop accepting new conns */
+    if (s->listen_fd >= 0) {
+        mcp_reactor_remove(s->ctx, s->reactor, s->listen_fd);
+        close(s->listen_fd);
+        s->listen_fd = -1;
+    }
+
+    /* 2. Proactively signal existing connections to close */
+    async_conn_t *imm_close[64];
+    size_t imm_count = 0;
+    mtx_lock(&s->conns_mtx);
+    for (async_conn_t *c = s->conns; c != NULL; c = c->next) {
+        if (c->type == CONN_WS) {
+            /* RFC 6455 1001 Close frame ("Going Away") */
+            mcp_ws_frame_t frame = {
+                .fin = true,
+                .opcode = MCP_WS_OP_CLOSE,
+                .masked = false,
+                .payload_len = 2,
+                .payload = "\x03\xe9", /* 1001 */
+            };
+            uint8_t *cbytes = NULL;
+            size_t clen = 0;
+            if (mcp_ws_encode_frame(s->ctx, &frame, &cbytes, &clen) == MCP_OK) {
+                enqueue_response(s, c, (char *)cbytes, clen, false);
+            }
+        } else if (c->type == CONN_SSE) {
+            if (c->write_buf == NULL) {
+                if (imm_count < 64) {
+                    conn_ref(c);
+                    imm_close[imm_count++] = c;
+                }
+            } else {
+                atomic_store(&c->closing, true);
+            }
+        } else if (c->type == CONN_HTTP_INIT) {
+            if (c->read_len == 0 && c->write_buf == NULL && !c->http_in_flight) {
+                if (imm_count < 64) {
+                    conn_ref(c);
+                    imm_close[imm_count++] = c;
+                }
+            } else {
+                atomic_store(&c->closing, true);
+            }
+        }
+    }
+    mtx_unlock(&s->conns_mtx);
+
+    for (size_t i = 0; i < imm_count; i++) {
+        conn_detach_and_close(s, imm_close[i]);
+        conn_unref(imm_close[i]);
+    }
+    mcp_reactor_wakeup(s->ctx, s->reactor);
+
+    /* 3. Wait for active connections to drain */
+    uint64_t start = now_ms();
+    uint64_t deadline = (timeout_ms > 0) ? (start + (uint64_t)timeout_ms) : 0;
+
+    if (atomic_load(&s->running)) {
+        pthread_mutex_lock(&s->drain_mtx);
+        while (atomic_load_explicit(&s->conns_count, memory_order_relaxed) > 0) {
+            if (timeout_ms > 0) {
+                uint64_t cur = now_ms();
+                if (cur >= deadline) {
+                    pthread_mutex_unlock(&s->drain_mtx);
+                    force_close_all_conns(s);
+                    return MCP_ERR_TIMEOUT;
+                }
+                uint64_t rem_ms = deadline - cur;
+                struct timespec ts;
+                clock_gettime(CLOCK_REALTIME, &ts);
+                ts.tv_sec += rem_ms / 1000u;
+                ts.tv_nsec += (rem_ms % 1000u) * 1000000u;
+                if (ts.tv_nsec >= 1000000000u) {
+                    ts.tv_sec += 1;
+                    ts.tv_nsec -= 1000000000u;
+                }
+                pthread_cond_timedwait(&s->drain_cv, &s->drain_mtx, &ts);
+            } else {
+                pthread_cond_wait(&s->drain_cv, &s->drain_mtx);
+            }
+        }
+        pthread_mutex_unlock(&s->drain_mtx);
+    } else {
+        while (atomic_load_explicit(&s->conns_count, memory_order_relaxed) > 0) {
+            uint64_t cur = now_ms();
+            if (timeout_ms > 0 && cur >= deadline) {
+                force_close_all_conns(s);
+                return MCP_ERR_TIMEOUT;
+            }
+            int step_to = 50;
+            if (timeout_ms > 0 && deadline - cur < 50) {
+                step_to = (int)(deadline - cur);
+                if (step_to <= 0) step_to = 1;
+            }
+            mcp_async_server_step(s->ctx, s, step_to);
+        }
+    }
+
+    return MCP_OK;
+}
+
 void mcp_async_server_destroy(mcp_context_t *ctx, mcp_async_server_t *s) {
     if (s == NULL) return;
     mcp_async_server_stop(ctx, s);
@@ -1512,5 +1650,7 @@ void mcp_async_server_destroy(mcp_context_t *ctx, mcp_async_server_t *s) {
     mtx_destroy(&s->conns_mtx);
     pthread_mutex_destroy(&s->pending_mtx);
     pthread_cond_destroy(&s->pending_cv);
+    pthread_mutex_destroy(&s->drain_mtx);
+    pthread_cond_destroy(&s->drain_cv);
     srv_free(ctx, s);
 }

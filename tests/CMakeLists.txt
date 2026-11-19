@@ -146,6 +146,10 @@ add_executable(test_async_backpressure unit/test_async_backpressure.c)
 target_link_libraries(test_async_backpressure PRIVATE mcpkit_core)
 add_test(NAME test_async_backpressure COMMAND test_async_backpressure)
 
+add_executable(test_async_drain unit/test_async_drain.c)
+target_link_libraries(test_async_drain PRIVATE mcpkit_core)
+add_test(NAME test_async_drain COMMAND test_async_drain)
+
 add_executable(test_ws_frame unit/test_ws_frame.c)
 target_link_libraries(test_ws_frame PRIVATE mcpkit_core)
 add_test(NAME test_ws_frame COMMAND test_ws_frame)
