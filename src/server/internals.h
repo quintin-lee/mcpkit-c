@@ -60,6 +60,15 @@ struct mcp_resource {
     mcp_resource_cleanup_fn cleanup;
 };
 
+struct mcp_resource_template {
+    char *uri_template;
+    char *name;
+    char *description;
+    char *mime_type;
+    mcp_resource_template_read_fn on_read;
+    void *user_data;
+};
+
 struct mcp_prompt {
     char *name;
     char *description;
@@ -97,6 +106,7 @@ struct mcp_session {
     // Notification sink
     mcp_session_sink_fn notify_sink;
     void *notify_userdata;
+    mcp_server_t *server;
 };
 
 struct mcp_server {
@@ -109,6 +119,9 @@ struct mcp_server {
     mcp_resource_t **resources;
     size_t n_resources;
     size_t cap_resources;
+    mcp_resource_template_t **resource_templates;
+    size_t n_resource_templates;
+    size_t cap_resource_templates;
     mcp_prompt_t **prompts;
     size_t n_prompts;
     size_t cap_prompts;
@@ -189,6 +202,9 @@ void session_free(mcp_context_t *ctx, mcp_session_t *s);
  */
 void dlogf_srv(mcp_context_t *ctx, mcp_server_t *srv, mcp_log_level_t level,
                const char *fmt, ...);
+
+mcp_status_t mcp_server_deliver_notification(mcp_context_t *ctx, mcp_server_t *srv,
+                                             mcp_session_t *sess, mcp_message_t *notif);
 
 /**
  * @brief Routes a validated MCP request to its concrete method handler.

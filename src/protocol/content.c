@@ -265,6 +265,14 @@ mcp_json_value_t *mcp_content_resource_new_annotated(mcp_context_t *ctx,
     return obj;
 }
 
+mcp_json_value_t *mcp_content_resource_new(mcp_context_t *ctx,
+                                           const char *uri,
+                                           const char *mime_type,
+                                           const char *text_or_blob,
+                                           bool is_binary) {
+    return mcp_content_resource_new_annotated(ctx, uri, mime_type, text_or_blob, is_binary, NULL);
+}
+
 mcp_status_t mcp_content_extract_annotations(mcp_context_t *ctx,
                                              const mcp_json_value_t *content_obj,
                                              mcp_content_annotations_t *out_annotations) {
@@ -326,5 +334,48 @@ mcp_json_value_t *mcp_tool_result_text_new(mcp_context_t *ctx, const char *text)
 
 mcp_json_value_t *mcp_tool_result_error_new(mcp_context_t *ctx, const char *error_msg) {
     return tool_result_single_text(ctx, error_msg, true);
+}
+
+mcp_json_value_t *mcp_tool_result_resource_new(mcp_context_t *ctx,
+                                               const char *uri,
+                                               const char *mime_type,
+                                               const char *text_or_blob,
+                                               bool is_binary) {
+    if (uri == NULL || text_or_blob == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *item = mcp_content_resource_new(ctx, uri, mime_type, text_or_blob, is_binary);
+    if (item == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *arr = mcp_json_array_new(ctx);
+    if (arr == NULL) {
+        mcp_json_destroy(ctx, item);
+        return NULL;
+    }
+    if (mcp_json_array_append(ctx, arr, item) != MCP_OK) {
+        mcp_json_destroy(ctx, item);
+        mcp_json_destroy(ctx, arr);
+        return NULL;
+    }
+    mcp_json_value_t *result = mcp_json_object_new(ctx);
+    if (result == NULL) {
+        mcp_json_destroy(ctx, arr);
+        return NULL;
+    }
+    if (mcp_json_object_set_take(ctx, result, "content", arr) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    mcp_json_value_t *err_v = mcp_json_bool_new(ctx, false);
+    if (err_v == NULL) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    if (mcp_json_object_set_take(ctx, result, "isError", err_v) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    return result;
 }
 

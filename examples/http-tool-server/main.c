@@ -169,6 +169,37 @@ static mcp_status_t info_resource_read(mcp_context_t *ctx, mcp_session_t *sessio
     return MCP_OK;
 }
 
+/**
+ * @brief Resource Template Read Handler: test://files/{+path}
+ */
+static mcp_status_t dynamic_file_read(mcp_context_t *ctx, mcp_session_t *session,
+                                      const char *uri, const mcp_json_value_t *vars,
+                                      void *user_data, mcp_json_value_t **contents_out) {
+    (void)session;
+    (void)user_data;
+    const mcp_json_value_t *pv = mcp_json_object_get(ctx, vars, "path");
+    const char *path = NULL;
+    if (pv == NULL || mcp_json_string_value(ctx, pv, &path) != MCP_OK || path == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    char buf[256];
+    snprintf(buf, sizeof(buf), "Dynamic content for path: %s", path);
+
+    mcp_json_value_t *item = mcp_json_object_new(ctx);
+    mcp_json_value_t *arr = mcp_json_array_new(ctx);
+    if (!item || !arr) {
+        mcp_json_destroy(ctx, item);
+        mcp_json_destroy(ctx, arr);
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_object_set_take(ctx, item, "uri", mcp_json_string_new(ctx, uri));
+    mcp_json_object_set_take(ctx, item, "mimeType", mcp_json_string_new(ctx, "text/plain"));
+    mcp_json_object_set_take(ctx, item, "text", mcp_json_string_new(ctx, buf));
+    mcp_json_array_append(ctx, arr, item);
+    *contents_out = arr;
+    return MCP_OK;
+}
+
 int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT, on_signal);
@@ -236,7 +267,16 @@ int main(int argc, char **argv) {
         mcp_server_add_resource(ctx, server, r);
     }
 
-    /* 7. Create worker thread pool for parallel tool execution */
+    /* 7. Register Resource Template: test://files/{+path} */
+    {
+        mcp_resource_template_t *tmpl = mcp_resource_template_new(ctx, "test://files/{+path}",
+                                                                 "Dynamic File Access",
+                                                                 "Access virtual files by relative path",
+                                                                 "text/plain", dynamic_file_read, NULL);
+        mcp_server_add_resource_template(ctx, server, tmpl);
+    }
+
+    /* 8. Create worker thread pool for parallel tool execution */
     mcp_executor_t *pool = mcp_threadpool_create(ctx, 4);
     if (pool == NULL) {
         fprintf(stderr, "Failed to create thread pool\n");
@@ -277,6 +317,8 @@ int main(int argc, char **argv) {
     printf("    - get_system_time()\n");
     printf("  Registered Resources:\n");
     printf("    - test://info (application/json)\n");
+    printf("  Registered Resource Templates:\n");
+    printf("    - test://files/{+path}\n");
     printf("==================================================================\n");
     printf("Press Ctrl+C to terminate server.\n\n");
     fflush(stdout);

@@ -109,6 +109,25 @@ mcp_json_value_t *mcp_content_resource_new_annotated(mcp_context_t *ctx,
                                                      const mcp_content_annotations_t *annotations);
 
 /**
+ * @brief Creates an EmbeddedResource item without annotations.
+ *
+ * Result shape: {"type":"resource","resource":{"uri":"...","mimeType":"...",
+ *                "text"|"blob":"..."}}
+ *
+ * @param ctx Context; may be NULL.
+ * @param uri Resource URI; not owned.
+ * @param mime_type Optional MIME type; not owned, may be NULL.
+ * @param text_or_blob Content text string or Base64 blob; not owned.
+ * @param is_binary True if text_or_blob is a base64 blob ("blob" field), false if UTF-8 ("text").
+ * @return Owned JSON object, or NULL on OOM.
+ */
+mcp_json_value_t *mcp_content_resource_new(mcp_context_t *ctx,
+                                           const char *uri,
+                                           const char *mime_type,
+                                           const char *text_or_blob,
+                                           bool is_binary);
+
+/**
  * @brief Extracts annotations from a content item JSON object.
  *
  * Reads content_obj["annotations"] if present and populates out_annotations.
@@ -144,6 +163,24 @@ mcp_json_value_t *mcp_tool_result_text_new(mcp_context_t *ctx, const char *text)
  * @return Owned JSON object, or NULL on OOM or invalid argument.
  */
 mcp_json_value_t *mcp_tool_result_error_new(mcp_context_t *ctx, const char *error_msg);
+
+/**
+ * @brief Creates a standard tool result JSON object containing an EmbeddedResource item.
+ *
+ * Result shape: {"content":[{"type":"resource","resource":{...}}],"isError":false}
+ *
+ * @param ctx Context; may be NULL.
+ * @param uri Resource URI; not owned.
+ * @param mime_type Optional MIME type; not owned, may be NULL.
+ * @param text_or_blob Content text string or Base64 blob; not owned.
+ * @param is_binary True if text_or_blob is a base64 blob ("blob" field), false if UTF-8 ("text").
+ * @return Owned JSON object, or NULL on OOM or invalid argument.
+ */
+mcp_json_value_t *mcp_tool_result_resource_new(mcp_context_t *ctx,
+                                               const char *uri,
+                                               const char *mime_type,
+                                               const char *text_or_blob,
+                                               bool is_binary);
 
 #ifdef __cplusplus
 }

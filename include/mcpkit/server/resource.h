@@ -22,6 +22,27 @@
 typedef struct mcp_context mcp_context_t;
 typedef struct mcp_session mcp_session_t;
 typedef struct mcp_resource mcp_resource_t;
+typedef struct mcp_resource_template mcp_resource_template_t;
+
+/**
+ * @brief Resource template read-handler callback signature.
+ *
+ * Invoked when an incoming resources/read URI matches the template pattern.
+ *
+ * @param ctx Context for allocation.
+ * @param session Current session (borrowed; not owned).
+ * @param uri The concrete request URI (borrowed).
+ * @param vars Borrowed JSON object containing extracted variables (e.g. {"path": "docs/readme.md"}).
+ * @param user_data Opaque pointer passed to mcp_resource_template_new.
+ * @param contents_out On MCP_OK, must be set to an owned JSON array. The
+ *                     dispatcher destroys it after building the response.
+ * @return MCP_OK on success; any other MCP_ERR_* on handler failure.
+ */
+typedef mcp_status_t (*mcp_resource_template_read_fn)(mcp_context_t *ctx, mcp_session_t *session,
+                                                      const char *uri,
+                                                      const mcp_json_value_t *vars,
+                                                      void *user_data,
+                                                      mcp_json_value_t **contents_out);
 
 /**
  * @brief Resource read-handler callback signature.
@@ -84,5 +105,32 @@ void mcp_resource_destroy(mcp_context_t *ctx, mcp_resource_t *res);
  */
 mcp_status_t mcp_resource_set_cleanup(mcp_context_t *ctx, mcp_resource_t *res,
                                       mcp_resource_cleanup_fn fn_or_null);
+
+/**
+ * @brief Creates a resource template descriptor.
+ *
+ * @param ctx Context; may be NULL.
+ * @param uri_template RFC 6570 URI template (e.g. "file:///{path}"); strdup'd internally.
+ * @param name Display name; strdup'd internally; must not be NULL.
+ * @param description_or_null Optional description; strdup'd internally; may be NULL.
+ * @param mime_type_or_null Optional MIME type; strdup'd internally; may be NULL.
+ * @param on_read Read callback invoked when a concrete URI matches uri_template.
+ * @param user_data Opaque pointer forwarded to handler.
+ * @return Owned mcp_resource_template_t, or NULL on error/OOM.
+ */
+mcp_resource_template_t *mcp_resource_template_new(mcp_context_t *ctx,
+                                                   const char *uri_template,
+                                                   const char *name,
+                                                   const char *description_or_null,
+                                                   const char *mime_type_or_null,
+                                                   mcp_resource_template_read_fn on_read,
+                                                   void *user_data);
+
+/**
+ * @brief Destroys a resource template.
+ * @param ctx Context; may be NULL.
+ * @param tmpl Resource template to destroy; NULL is a no-op.
+ */
+void mcp_resource_template_destroy(mcp_context_t *ctx, mcp_resource_template_t *tmpl);
 
 #endif

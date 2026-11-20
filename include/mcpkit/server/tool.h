@@ -67,7 +67,33 @@ typedef struct mcp_tool_call_ctx {
 
     /** Borrowed string from `params.requestState`; NULL on first call. */
     const char *request_state;
+
+    /** Borrowed progress token from `params._meta.progressToken` (string or number);
+     *  NULL if no progress tracking was requested by the client. */
+    const mcp_json_value_t *progress_token;
+
+    /** Borrowed pointer to current session; non-NULL during dispatch. */
+    mcp_session_t *session;
 } mcp_tool_call_ctx_t;
+
+/**
+ * @brief Reports intermediate execution progress for an in-flight tool call.
+ *
+ * If the client requested progress tracking via `_meta.progressToken`, this constructs
+ * and dispatches a standard `notifications/progress` message to the client.
+ *
+ * @param ctx Context for allocation.
+ * @param call_ctx Invocation context containing the session and progress_token.
+ * @param progress Amount of progress completed (required).
+ * @param total Total progress (optional; pass negative value, e.g. -1.0, if unknown).
+ * @param message_or_null Optional human-readable message describing current progress; may be NULL.
+ * @return MCP_OK on success; MCP_ERR_NOT_FOUND if call_ctx has no progress_token (safe to ignore);
+ *         MCP_ERR_INVALID_ARGUMENT if call_ctx is NULL.
+ */
+mcp_status_t mcp_tool_report_progress(mcp_context_t *ctx,
+                                      const mcp_tool_call_ctx_t *call_ctx,
+                                      double progress, double total,
+                                      const char *message_or_null);
 
 /**
  * @brief Tool handler callback signature (V2 — MRTR-capable).

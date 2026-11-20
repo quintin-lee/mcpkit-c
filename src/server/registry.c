@@ -246,3 +246,47 @@ void mcp_prompt_destroy(mcp_context_t *ctx, mcp_prompt_t *prompt) {
     srv_free(ctx, prompt->description);
     srv_free(ctx, prompt);
 }
+
+mcp_resource_template_t *mcp_resource_template_new(mcp_context_t *ctx,
+                                                   const char *uri_template,
+                                                   const char *name,
+                                                   const char *description_or_null,
+                                                   const char *mime_type_or_null,
+                                                   mcp_resource_template_read_fn on_read,
+                                                   void *user_data) {
+    if (uri_template == NULL || name == NULL) {
+        return NULL;
+    }
+    mcp_resource_template_t *tmpl = srv_malloc(ctx, sizeof(*tmpl));
+    if (tmpl == NULL) {
+        return NULL;
+    }
+    tmpl->uri_template = srv_strdup(ctx, uri_template);
+    tmpl->name = srv_strdup(ctx, name);
+    tmpl->description = srv_strdup(ctx, description_or_null);
+    tmpl->mime_type = srv_strdup(ctx, mime_type_or_null);
+    if (tmpl->uri_template == NULL || tmpl->name == NULL ||
+        (description_or_null != NULL && tmpl->description == NULL) ||
+        (mime_type_or_null != NULL && tmpl->mime_type == NULL)) {
+        srv_free(ctx, tmpl->uri_template);
+        srv_free(ctx, tmpl->name);
+        srv_free(ctx, tmpl->description);
+        srv_free(ctx, tmpl->mime_type);
+        srv_free(ctx, tmpl);
+        return NULL;
+    }
+    tmpl->on_read = on_read;
+    tmpl->user_data = user_data;
+    return tmpl;
+}
+
+void mcp_resource_template_destroy(mcp_context_t *ctx, mcp_resource_template_t *tmpl) {
+    if (tmpl == NULL) {
+        return;
+    }
+    srv_free(ctx, tmpl->uri_template);
+    srv_free(ctx, tmpl->name);
+    srv_free(ctx, tmpl->description);
+    srv_free(ctx, tmpl->mime_type);
+    srv_free(ctx, tmpl);
+}

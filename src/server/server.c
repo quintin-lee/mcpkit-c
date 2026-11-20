@@ -118,6 +118,13 @@ static void free_all_resources(mcp_context_t *ctx, mcp_server_t *srv) {
     srv_free(ctx, srv->resources);
 }
 
+static void free_all_resource_templates(mcp_context_t *ctx, mcp_server_t *srv) {
+    for (size_t i = 0; i < srv->n_resource_templates; i++) {
+        mcp_resource_template_destroy(ctx, srv->resource_templates[i]);
+    }
+    srv_free(ctx, srv->resource_templates);
+}
+
 static void free_all_prompts(mcp_context_t *ctx, mcp_server_t *srv) {
     for (size_t i = 0; i < srv->n_prompts; i++) {
         mcp_prompt_destroy(ctx, srv->prompts[i]);
@@ -178,6 +185,7 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     free_all_sessions(ctx, srv);
     free_all_tools(ctx, srv);
     free_all_resources(ctx, srv);
+    free_all_resource_templates(ctx, srv);
     free_all_prompts(ctx, srv);
     free_all_completions(ctx, srv);
     free_outbox(ctx, srv);
@@ -432,6 +440,20 @@ mcp_status_t mcp_server_add_resource(mcp_context_t *ctx, mcp_server_t *srv, mcp_
     return append_ptr(ctx, (void ***)&srv->resources, &srv->n_resources, &srv->cap_resources, res);
 }
 
+mcp_status_t mcp_server_add_resource_template(mcp_context_t *ctx, mcp_server_t *srv,
+                                              mcp_resource_template_t *tmpl) {
+    if (srv == NULL || tmpl == NULL || tmpl->uri_template == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    for (size_t i = 0; i < srv->n_resource_templates; i++) {
+        if (strcmp(srv->resource_templates[i]->uri_template, tmpl->uri_template) == 0) {
+            return MCP_ERR_ALREADY_EXISTS;
+        }
+    }
+    return append_ptr(ctx, (void ***)&srv->resource_templates,
+                      &srv->n_resource_templates, &srv->cap_resource_templates, tmpl);
+}
+
 mcp_status_t mcp_server_add_prompt(mcp_context_t *ctx, mcp_server_t *srv, mcp_prompt_t *prompt) {
     if (srv == NULL || prompt == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
@@ -464,6 +486,22 @@ mcp_status_t mcp_server_remove_resource(mcp_context_t *ctx, mcp_server_t *srv, c
         if (strcmp(srv->resources[i]->uri, uri) == 0) {
             mcp_resource_destroy(ctx, srv->resources[i]);
             srv->resources[i] = srv->resources[--srv->n_resources];
+            return MCP_OK;
+        }
+    }
+    return MCP_ERR_NOT_FOUND;
+}
+
+mcp_status_t mcp_server_remove_resource_template(mcp_context_t *ctx, mcp_server_t *srv,
+                                                 const char *uri_template) {
+    if (srv == NULL || uri_template == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_context_t *pctx = (srv->ctx != NULL) ? srv->ctx : ctx;
+    for (size_t i = 0; i < srv->n_resource_templates; i++) {
+        if (strcmp(srv->resource_templates[i]->uri_template, uri_template) == 0) {
+            mcp_resource_template_destroy(pctx, srv->resource_templates[i]);
+            srv->resource_templates[i] = srv->resource_templates[--srv->n_resource_templates];
             return MCP_OK;
         }
     }
@@ -706,8 +744,8 @@ mcp_skill_registry_t *mcp_server_get_skill_registry(mcp_server_t *srv) {
     return srv != NULL ? srv->skill_reg : NULL;
 }
 
-static mcp_status_t deliver_notification(mcp_context_t *ctx, mcp_server_t *srv,
-                                         mcp_session_t *sess, mcp_message_t *notif) {
+mcp_status_t mcp_server_deliver_notification(mcp_context_t *ctx, mcp_server_t *srv,
+                                             mcp_session_t *sess, mcp_message_t *notif) {
     if (sess != NULL) {
         pthread_mutex_lock(&sess->direct_sub_lock);
         mcp_session_sink_fn sink = sess->notify_sink;
@@ -723,7 +761,11 @@ static mcp_status_t deliver_notification(mcp_context_t *ctx, mcp_server_t *srv,
             return MCP_OK;
         }
     }
-    return outbox_push(ctx, srv, notif);
+    if (srv != NULL) {
+        return outbox_push(ctx, srv, notif);
+    }
+    mcp_message_destroy(ctx, notif);
+    return MCP_OK;
 }
 
 mcp_status_t mcp_server_notify_resource_updated(mcp_context_t *ctx, mcp_server_t *server,
@@ -760,7 +802,7 @@ mcp_status_t mcp_server_notify_resource_updated(mcp_context_t *ctx, mcp_server_t
                                                             "notifications/resources/updated",
                                                             params, &notif);
             if (st == MCP_OK && notif != NULL) {
-                deliver_notification(ctx, server, sess, notif);
+                mcp_server_deliver_notification(ctx, server, sess, notif);
             }
         }
     }
@@ -790,7 +832,7 @@ mcp_status_t mcp_server_notify_tools_changed(mcp_context_t *ctx, mcp_server_t *s
                                                             "notifications/tools/list_changed",
                                                             NULL, &notif);
             if (st == MCP_OK && notif != NULL) {
-                deliver_notification(ctx, server, sess, notif);
+                mcp_server_deliver_notification(ctx, server, sess, notif);
             }
         }
     }
@@ -820,7 +862,7 @@ mcp_status_t mcp_server_notify_prompts_changed(mcp_context_t *ctx, mcp_server_t 
                                                             "notifications/prompts/list_changed",
                                                             NULL, &notif);
             if (st == MCP_OK && notif != NULL) {
-                deliver_notification(ctx, server, sess, notif);
+                mcp_server_deliver_notification(ctx, server, sess, notif);
             }
         }
     }

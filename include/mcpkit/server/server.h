@@ -49,6 +49,7 @@ typedef struct mcp_server mcp_server_t;
 typedef struct mcp_session mcp_session_t;
 typedef struct mcp_tool mcp_tool_t;
 typedef struct mcp_resource mcp_resource_t;
+typedef struct mcp_resource_template mcp_resource_template_t;
 typedef struct mcp_prompt mcp_prompt_t;
 typedef struct mcp_json_value mcp_json_value_t;
 typedef struct mcp_task_mgr mcp_task_mgr_t;
@@ -130,6 +131,19 @@ mcp_status_t mcp_server_add_resource(mcp_context_t *ctx, mcp_server_t *server,
                                      mcp_resource_t *res);
 
 /**
+ * @brief Adds a resource template to the server's registry.
+ *
+ * @param ctx Context; may be NULL.
+ * @param server Target server.
+ * @param tmpl Resource template to register; server TAKES ownership on MCP_OK.
+ *             On any error the caller retains ownership.
+ * @return MCP_OK on success; MCP_ERR_ALREADY_EXISTS if a template with the
+ *         same uriTemplate pattern is already registered.
+ */
+mcp_status_t mcp_server_add_resource_template(mcp_context_t *ctx, mcp_server_t *server,
+                                              mcp_resource_template_t *tmpl);
+
+/**
  * @brief Adds a prompt to the server's registry.
  *
  * @param ctx Context; may be NULL.
@@ -161,6 +175,16 @@ mcp_status_t mcp_server_remove_tool(mcp_context_t *ctx, mcp_server_t *server,
  */
 mcp_status_t mcp_server_remove_resource(mcp_context_t *ctx, mcp_server_t *server,
                                         const char *uri);
+
+/**
+ * @brief Removes and destroys the resource template identified by its URI template pattern.
+ * @param ctx Context; may be NULL.
+ * @param server Target server.
+ * @param uri_template URI template pattern to remove.
+ * @return MCP_OK on success; MCP_ERR_NOT_FOUND if no template has that pattern.
+ */
+mcp_status_t mcp_server_remove_resource_template(mcp_context_t *ctx, mcp_server_t *server,
+                                                 const char *uri_template);
 
 /**
  * @brief Removes and destroys the prompt identified by name.

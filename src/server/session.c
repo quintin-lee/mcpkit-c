@@ -156,6 +156,7 @@ mcp_session_t *mcp_server_create_session(mcp_context_t *ctx, mcp_server_t *srv) 
     if (s == NULL) {
         return NULL;
     }
+    s->server = srv;
     pthread_mutex_lock(&srv->sessions_lock);
     if (srv->n_sessions == srv->cap_sessions) {
         size_t ncap = srv->cap_sessions == 0 ? 4 : srv->cap_sessions * 2;
@@ -433,4 +434,48 @@ const char *mcp_session_get_client_name(const mcp_session_t *session) {
 
 const char *mcp_session_get_client_version(const mcp_session_t *session) {
     return session != NULL ? session->client_version : NULL;
+}
+
+mcp_status_t mcp_session_notify_progress(mcp_context_t *ctx, mcp_session_t *session,
+                                         const mcp_json_value_t *progress_token,
+                                         double progress, double total,
+                                         const char *message_or_null) {
+    if (session == NULL || progress_token == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    if (params == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_value_t *tok_clone = mcp_json_clone(ctx, progress_token);
+    mcp_json_value_t *prog_v = mcp_json_number_new(ctx, progress);
+    if (tok_clone == NULL || prog_v == NULL) {
+        mcp_json_destroy(ctx, tok_clone);
+        mcp_json_destroy(ctx, prog_v);
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_object_set_take(ctx, params, "progressToken", tok_clone);
+    mcp_json_object_set_take(ctx, params, "progress", prog_v);
+
+    if (total >= 0.0) {
+        mcp_json_value_t *tot_v = mcp_json_number_new(ctx, total);
+        if (tot_v != NULL) {
+            mcp_json_object_set_take(ctx, params, "total", tot_v);
+        }
+    }
+    if (message_or_null != NULL) {
+        mcp_json_value_t *msg_v = mcp_json_string_new(ctx, message_or_null);
+        if (msg_v != NULL) {
+            mcp_json_object_set_take(ctx, params, "message", msg_v);
+        }
+    }
+
+    mcp_message_t *notif = mcp_notification_new(ctx, "notifications/progress", params);
+    if (notif == NULL) {
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+
+    return mcp_server_deliver_notification(ctx, session->server, session, notif);
 }

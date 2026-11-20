@@ -273,4 +273,20 @@ const char *mcp_session_get_client_name(const mcp_session_t *session);
  */
 const char *mcp_session_get_client_version(const mcp_session_t *session);
 
+/**
+ * @brief Sends a `notifications/progress` notification to the session.
+ *
+ * @param ctx Context for allocation.
+ * @param session Target session.
+ * @param progress_token Progress token JSON value (string or number); must not be NULL.
+ * @param progress Amount of progress completed.
+ * @param total Total progress (optional; pass negative value if unknown/omitted).
+ * @param message_or_null Optional progress status message; may be NULL.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if session or progress_token is NULL.
+ */
+mcp_status_t mcp_session_notify_progress(mcp_context_t *ctx, mcp_session_t *session,
+                                         const mcp_json_value_t *progress_token,
+                                         double progress, double total,
+                                         const char *message_or_null);
+
 #endif

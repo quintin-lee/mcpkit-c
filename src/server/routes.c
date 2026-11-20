@@ -19,8 +19,10 @@
 #include "mcpkit/protocol/message.h"
 #include "mcpkit/protocol/mrtr.h"
 #include "mcpkit/protocol/policy.h"
+#include "mcpkit/protocol/uri_template.h"
 #include "mcpkit/server/server.h"
 #include "mcpkit/server/session.h"
+#include "mcpkit/server/tool.h"
 
 #define MCP_LIST_PAGE_SIZE 100u
 
@@ -514,6 +516,20 @@ static mcp_message_t *tool_error_result(mcp_context_t *ctx, const mcp_message_t 
     return resp;
 }
 
+mcp_status_t mcp_tool_report_progress(mcp_context_t *ctx,
+                                      const mcp_tool_call_ctx_t *call_ctx,
+                                      double progress, double total,
+                                      const char *message_or_null) {
+    if (call_ctx == NULL || call_ctx->session == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (call_ctx->progress_token == NULL) {
+        return MCP_ERR_NOT_FOUND;
+    }
+    return mcp_session_notify_progress(ctx, call_ctx->session, call_ctx->progress_token,
+                                       progress, total, message_or_null);
+}
+
 static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s,
                                        const mcp_message_t *req) {
     const mcp_json_value_t *params = mcp_message_params(ctx, req);
@@ -548,10 +564,20 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
     if ((tool->required & ~s->granted) != 0) {
         return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "tools/call: permission denied");
     }
+
+    const mcp_json_value_t *progress_token = NULL;
+    const mcp_json_value_t *meta_obj = params != NULL ? mcp_json_object_get(ctx, params, "_meta") : NULL;
+    if (meta_obj == NULL) {
+        meta_obj = mcp_message_meta(ctx, req);
+    }
+    if (meta_obj != NULL && mcp_json_type(ctx, meta_obj) == MCP_JSON_OBJECT) {
+        progress_token = mcp_json_object_get(ctx, meta_obj, "progressToken");
+    }
+
     mcp_json_value_t *result = NULL;
     mcp_status_t st;
     if (tool->handler_v2 != NULL) {
-        /* V2 path: extract MRTR fields and populate call context */
+        /* V2 path: extract MRTR fields, progress token, and populate call context */
         mcp_tool_call_ctx_t call_ctx;
         call_ctx.args            = args;
         call_ctx.input_responses = mcp_json_object_get(ctx, params, "inputResponses");
@@ -559,7 +585,9 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
         if (rs_val != NULL && mcp_json_type(ctx, rs_val) == MCP_JSON_STRING) {
             mcp_json_string_value(ctx, rs_val, &rs_str);
         }
-        call_ctx.request_state = rs_str;
+        call_ctx.request_state  = rs_str;
+        call_ctx.progress_token = progress_token;
+        call_ctx.session        = s;
         st = tool->handler_v2(ctx, s, &call_ctx, tool->user_data, &result);
     } else {
         /* V1 path: unchanged */
@@ -673,14 +701,37 @@ static mcp_message_t *route_resources_read(mcp_context_t *ctx, mcp_server_t *srv
         return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "resources/read: missing uri");
     }
     mcp_resource_t *res = find_resource(srv, uri);
-    if (res == NULL) {
-        return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "resources/read: unknown resource");
-    }
-    if (res->on_read == NULL) {
-        return err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "resources/read: no reader");
-    }
     mcp_json_value_t *contents = NULL;
-    mcp_status_t st = res->on_read(ctx, s, uri, res->user_data, &contents);
+    mcp_status_t st = MCP_OK;
+
+    if (res != NULL) {
+        if (res->on_read == NULL) {
+            return err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "resources/read: no reader");
+        }
+        st = res->on_read(ctx, s, uri, res->user_data, &contents);
+    } else {
+        /* Not a static resource; attempt matching against registered URI templates */
+        mcp_resource_template_t *matched_tmpl = NULL;
+        mcp_json_value_t *matched_vars = NULL;
+        for (size_t i = 0; i < srv->n_resource_templates; i++) {
+            mcp_json_value_t *vars = NULL;
+            if (mcp_uri_template_match(ctx, srv->resource_templates[i]->uri_template, uri, &vars) == MCP_OK) {
+                matched_tmpl = srv->resource_templates[i];
+                matched_vars = vars;
+                break;
+            }
+        }
+        if (matched_tmpl == NULL) {
+            return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "resources/read: unknown resource");
+        }
+        if (matched_tmpl->on_read == NULL) {
+            mcp_json_destroy(ctx, matched_vars);
+            return err_resp(ctx, req, MCP_RPC_INTERNAL_ERROR, "resources/read: no reader");
+        }
+        st = matched_tmpl->on_read(ctx, s, uri, matched_vars, matched_tmpl->user_data, &contents);
+        mcp_json_destroy(ctx, matched_vars);
+    }
+
     if (st != MCP_OK) {
         return err_resp(ctx, req, mcp_status_to_rpc_code(st), "resources/read: handler failed");
     }
@@ -1049,6 +1100,11 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
         return resp;
     }
     if (strcmp(method, "resources/templates/list") == 0) {
+        size_t off = page_offset(ctx, req);
+        if (off == (size_t)-1) {
+            return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "resources/templates/list: bad cursor");
+        }
+
         mcp_json_value_t *result = mcp_json_object_new(ctx);
         mcp_json_value_t *arr = mcp_json_array_new(ctx);
         if (result == NULL || arr == NULL) {
@@ -1056,10 +1112,44 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
             mcp_json_destroy(ctx, arr);
             return NULL;
         }
-        if (mcp_json_object_set_take(ctx, result, "templates", arr) != MCP_OK) {
-            // set_take owns (and freed) arr on failure; result is still ours.
+
+        size_t end = off + MCP_LIST_PAGE_SIZE;
+        if (end > srv->n_resource_templates) {
+            end = srv->n_resource_templates;
+        }
+
+        for (size_t i = off; i < end; i++) {
+            mcp_resource_template_t *t = srv->resource_templates[i];
+            mcp_json_value_t *item = mcp_json_object_new(ctx);
+            if (item == NULL) {
+                mcp_json_destroy(ctx, result);
+                mcp_json_destroy(ctx, arr);
+                return NULL;
+            }
+            set_string(ctx, item, "uriTemplate", t->uri_template);
+            set_string(ctx, item, "name", t->name);
+            if (t->description != NULL) {
+                set_string(ctx, item, "description", t->description);
+            }
+            if (t->mime_type != NULL) {
+                set_string(ctx, item, "mimeType", t->mime_type);
+            }
+            mcp_json_array_append(ctx, arr, item);
+        }
+
+        mcp_json_value_t *arr_legacy = mcp_json_clone(ctx, arr);
+        if (arr_legacy != NULL) {
+            mcp_json_object_set_take(ctx, result, "templates", arr_legacy);
+        }
+        if (mcp_json_object_set_take(ctx, result, "resourceTemplates", arr) != MCP_OK) {
             mcp_json_destroy(ctx, result);
             return NULL;
+        }
+        if (end < srv->n_resource_templates) {
+            if (set_next_cursor(ctx, result, end) != MCP_OK) {
+                mcp_json_destroy(ctx, result);
+                return NULL;
+            }
         }
         if (decorate_result(ctx, srv, s, result, true) != MCP_OK) {
             mcp_json_destroy(ctx, result);

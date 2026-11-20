@@ -271,7 +271,46 @@ else
     fail "Resource read mismatch: $RES_RESP"
 fi
 
+# -----------------------------------------------------------------------------
+# Test 11: List Resource Templates - resources/templates/list
+# -----------------------------------------------------------------------------
+info "Step 11: List Resource Templates (resources/templates/list)"
+TMPL_RESP=$(curl -s -X POST "$BASE_URL" \
+    -H "Content-Type: application/json" \
+    -H "Mcp-Session-Id: $SESSION_ID" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 9,
+      "method": "resources/templates/list"
+    }')
+
+if echo "$TMPL_RESP" | grep -q '"uriTemplate":"test://files/{+path}"'; then
+    pass "Resource template 'test://files/{+path}' discovered successfully"
+else
+    fail "Resource template listing mismatch: $TMPL_RESP"
+fi
+
+# -----------------------------------------------------------------------------
+# Test 12: Read Parameterized Resource via Template Match
+# -----------------------------------------------------------------------------
+info "Step 12: Read Dynamic Resource via Template Match"
+DYN_RESP=$(curl -s -X POST "$BASE_URL" \
+    -H "Content-Type: application/json" \
+    -H "Mcp-Session-Id: $SESSION_ID" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 10,
+      "method": "resources/read",
+      "params": {"uri": "test://files/reports/2026-audit.pdf"}
+    }')
+
+if echo "$DYN_RESP" | grep -q 'Dynamic content for path: reports/2026-audit.pdf'; then
+    pass "Dynamic resource successfully resolved template pattern and extracted path variable"
+else
+    fail "Dynamic resource resolution mismatch: $DYN_RESP"
+fi
+
 echo ""
 echo -e "${GREEN}${BOLD}================================================================${RESET}"
-echo -e "${GREEN}${BOLD} 🎉 All 10 test stages executed sequentially and passed successfully!${RESET}"
+echo -e "${GREEN}${BOLD} 🎉 All 12 test stages executed sequentially and passed successfully!${RESET}"
 echo -e "${GREEN}${BOLD}================================================================${RESET}"
