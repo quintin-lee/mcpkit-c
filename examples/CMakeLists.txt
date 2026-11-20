@@ -34,6 +34,9 @@ target_link_libraries(mrtr-server PRIVATE mcpkit_core)
 add_executable(async-server async-server/main.c)
 target_link_libraries(async-server PRIVATE mcpkit_core)
 
+add_executable(http-tool-server http-tool-server/main.c)
+target_link_libraries(http-tool-server PRIVATE mcpkit_core)
+
 add_executable(ws-client ws-client/main.c)
 target_link_libraries(ws-client PRIVATE mcpkit_core)
 
