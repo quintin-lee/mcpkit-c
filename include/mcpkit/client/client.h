@@ -345,6 +345,37 @@ mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
                                  mcp_json_value_t **result_out);
 
 /**
+ * @brief Sends completion/complete for a prompt reference (official schema ref/prompt).
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param prompt_name Prompt name; not owned.
+ * @param arg_name Argument name to complete; not owned.
+ * @param arg_value Current argument value prefix; not owned.
+ * @param result_out Receives a caller-owned cloned result on MCP_OK; may be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_complete_prompt(mcp_context_t *ctx, mcp_client_t *client,
+                                        const char *prompt_name, const char *arg_name,
+                                        const char *arg_value, mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends completion/complete for a resource reference (official schema ref/resource).
+ *
+ * @param ctx Context; may be NULL.
+ * @param client Target client.
+ * @param resource_uri Resource URI; not owned.
+ * @param arg_name Argument name to complete; not owned.
+ * @param arg_value Current argument value prefix; not owned.
+ * @param result_out Receives a caller-owned cloned result on MCP_OK; may be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_complete_resource(mcp_context_t *ctx, mcp_client_t *client,
+                                          const char *resource_uri, const char *arg_name,
+                                          const char *arg_value, mcp_json_value_t **result_out);
+
+
+/**
  * @brief Sends tasks/get to query task status.
  *
  * @param ctx Context; may be NULL.

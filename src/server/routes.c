@@ -977,14 +977,53 @@ static mcp_message_t *route_completion_complete(mcp_context_t *ctx, mcp_server_t
                         "completion/complete: missing ref object");
     }
     const char *ref_str = NULL;
-    if (get_string(ctx, ref_obj, "value", &ref_str) != MCP_OK || ref_str == NULL) {
+    const char *ref_type = NULL;
+    get_string(ctx, ref_obj, "type", &ref_type);
+
+    if (ref_type != NULL) {
+        if (strcmp(ref_type, "ref/prompt") == 0) {
+            get_string(ctx, ref_obj, "name", &ref_str);
+        } else if (strcmp(ref_type, "ref/resource") == 0) {
+            get_string(ctx, ref_obj, "uri", &ref_str);
+        }
+    }
+    if (ref_str == NULL) {
+        /* Fallback: try "value", then "name", then "uri" */
+        if (get_string(ctx, ref_obj, "value", &ref_str) != MCP_OK || ref_str == NULL) {
+            if (get_string(ctx, ref_obj, "name", &ref_str) != MCP_OK || ref_str == NULL) {
+                get_string(ctx, ref_obj, "uri", &ref_str);
+            }
+        }
+    }
+    if (ref_str == NULL) {
         return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS,
-                        "completion/complete: ref.value missing or not a string");
+                        "completion/complete: ref identifier (name/uri/value) missing or not a string");
     }
     // Find the first registered provider whose ref_prefix matches the reference.
     for (size_t i = 0; i < srv->n_completions; i++) {
-        size_t plen = strlen(srv->completions[i].ref_prefix);
-        if (strncmp(ref_str, srv->completions[i].ref_prefix, plen) == 0) {
+        const char *prefix = srv->completions[i].ref_prefix;
+        size_t plen = strlen(prefix);
+        bool match = (strncmp(ref_str, prefix, plen) == 0);
+        if (!match && ref_type != NULL) {
+            if (strcmp(ref_type, "ref/prompt") == 0) {
+                if (strncmp(prefix, "prompt/", 7) == 0) {
+                    if (strncmp(ref_str, prefix + 7, strlen(prefix + 7)) == 0) {
+                        match = true;
+                    }
+                } else if (strcmp(prefix, "ref/prompt") == 0) {
+                    match = true;
+                }
+            } else if (strcmp(ref_type, "ref/resource") == 0) {
+                if (strncmp(prefix, "resource/", 9) == 0) {
+                    if (strncmp(ref_str, prefix + 9, strlen(prefix + 9)) == 0) {
+                        match = true;
+                    }
+                } else if (strcmp(prefix, "ref/resource") == 0) {
+                    match = true;
+                }
+            }
+        }
+        if (match) {
             const mcp_json_value_t *args_ref = mcp_json_object_get(ctx, params, "argument");
             // Clone so the provider never sees a dangling pointer into the request
             // DOM (which the caller destroys after mcp_server_dispatch returns).
@@ -1019,6 +1058,18 @@ static mcp_message_t *route_completion_complete(mcp_context_t *ctx, mcp_server_t
                 mcp_json_destroy(ctx, comps);
                 return NULL;
             }
+            /* Official MCP structure: completion: { values: string[], total: int, hasMore: bool } */
+            mcp_json_value_t *completion_obj = mcp_json_object_new(ctx);
+            if (completion_obj != NULL) {
+                size_t total_count = mcp_json_array_size(ctx, comps);
+                mcp_json_value_t *comps_clone = mcp_json_clone(ctx, comps);
+                if (comps_clone != NULL) {
+                    mcp_json_object_set_take(ctx, completion_obj, "values", comps_clone);
+                }
+                mcp_json_object_set_take(ctx, completion_obj, "total", mcp_json_number_new(ctx, (double)total_count));
+                mcp_json_object_set_take(ctx, completion_obj, "hasMore", mcp_json_bool_new(ctx, false));
+                mcp_json_object_set_take(ctx, result, "completion", completion_obj);
+            }
             if (mcp_json_object_set_take(ctx, result, "completions", comps) != MCP_OK) {
                 mcp_json_destroy(ctx, result);
                 return NULL;
@@ -1041,6 +1092,16 @@ static mcp_message_t *route_completion_complete(mcp_context_t *ctx, mcp_server_t
         mcp_json_destroy(ctx, result);
         mcp_json_destroy(ctx, comps);
         return NULL;
+    }
+    mcp_json_value_t *completion_obj = mcp_json_object_new(ctx);
+    if (completion_obj != NULL) {
+        mcp_json_value_t *values_empty = mcp_json_array_new(ctx);
+        if (values_empty != NULL) {
+            mcp_json_object_set_take(ctx, completion_obj, "values", values_empty);
+        }
+        mcp_json_object_set_take(ctx, completion_obj, "total", mcp_json_number_new(ctx, 0.0));
+        mcp_json_object_set_take(ctx, completion_obj, "hasMore", mcp_json_bool_new(ctx, false));
+        mcp_json_object_set_take(ctx, result, "completion", completion_obj);
     }
     if (mcp_json_object_set_take(ctx, result, "completions", comps) != MCP_OK) {
         mcp_json_destroy(ctx, result);

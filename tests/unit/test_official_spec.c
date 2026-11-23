@@ -193,9 +193,150 @@ static void test_item1_capabilities_and_resource_notifications(void) {
     printf("PASS: test_item1_capabilities_and_resource_notifications\n");
 }
 
+/* =========================================================================
+ * Item 2: Completion parameter schema alignment (ref/prompt, ref/resource)
+ * ========================================================================= */
+static mcp_json_value_t *test_completion_provider(mcp_context_t *ctx,
+                                                 mcp_session_t *session,
+                                                 const mcp_json_value_t *argument,
+                                                 void *user_data) {
+    (void)session;
+    (void)argument;
+    (void)user_data;
+    mcp_json_value_t *arr = mcp_json_array_new(ctx);
+    mcp_json_array_append(ctx, arr, mcp_json_string_new(ctx, "python"));
+    mcp_json_array_append(ctx, arr, mcp_json_string_new(ctx, "perl"));
+    return arr;
+}
+
+static void test_item2_completion_schema_alignment(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    assert(ctx != NULL);
+
+    mcp_server_t *srv = mcp_server_create(ctx, "test-item2-srv", "1.0.0");
+    assert(srv != NULL);
+
+    assert(mcp_server_register_completion_provider(ctx, srv, "code_template", test_completion_provider, NULL) == MCP_OK);
+    assert(mcp_server_register_completion_provider(ctx, srv, "resource/docs", test_completion_provider, NULL) == MCP_OK);
+
+    mcp_session_t *sess = mcp_server_create_session(ctx, srv);
+    assert(sess != NULL);
+
+    /* Initialize session */
+    mcp_json_value_t *ip = mcp_initialize_params_new(ctx, "test-client", "1.0.0");
+    mcp_message_t *ireq = mcp_request_new_string_id(ctx, "init-2", "initialize", ip);
+    mcp_message_t *iresp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, ireq, &iresp) == MCP_OK);
+    mcp_message_destroy(ctx, ireq);
+    mcp_message_destroy(ctx, iresp);
+
+    mcp_message_t *init_notif = mcp_initialized_notification_new(ctx);
+    assert(mcp_server_notify(ctx, srv, sess, init_notif) == MCP_OK);
+    mcp_message_destroy(ctx, init_notif);
+
+    /* Test 1: Official schema ref/prompt */
+    {
+        mcp_json_value_t *params = mcp_json_object_new(ctx);
+        mcp_json_value_t *ref_obj = mcp_json_object_new(ctx);
+        mcp_json_object_set_take(ctx, ref_obj, "type", mcp_json_string_new(ctx, "ref/prompt"));
+        mcp_json_object_set_take(ctx, ref_obj, "name", mcp_json_string_new(ctx, "code_template"));
+        mcp_json_object_set_take(ctx, params, "ref", ref_obj);
+
+        mcp_json_value_t *arg_obj = mcp_json_object_new(ctx);
+        mcp_json_object_set_take(ctx, arg_obj, "name", mcp_json_string_new(ctx, "lang"));
+        mcp_json_object_set_take(ctx, arg_obj, "value", mcp_json_string_new(ctx, "p"));
+        mcp_json_object_set_take(ctx, params, "argument", arg_obj);
+
+        mcp_message_t *req = mcp_request_new_string_id(ctx, "comp-1", "completion/complete", params);
+        mcp_message_t *resp = NULL;
+        assert(mcp_server_dispatch(ctx, srv, sess, req, &resp) == MCP_OK);
+        assert(resp != NULL);
+
+        const mcp_json_value_t *res = mcp_message_result(ctx, resp);
+        assert(res != NULL);
+
+        /* Verify official completion structure */
+        const mcp_json_value_t *comp_obj = mcp_json_object_get(ctx, res, "completion");
+        assert(comp_obj != NULL);
+        const mcp_json_value_t *values = mcp_json_object_get(ctx, comp_obj, "values");
+        assert(values != NULL && mcp_json_array_size(ctx, values) == 2);
+        (void)values;
+
+        const mcp_json_value_t *total = mcp_json_object_get(ctx, comp_obj, "total");
+        double d_total = 0;
+        assert(total != NULL && mcp_json_number_value(ctx, total, &d_total) == MCP_OK && d_total == 2.0);
+        (void)total;
+        (void)d_total;
+
+        /* Verify backwards-compat completions */
+        const mcp_json_value_t *legacy_comps = mcp_json_object_get(ctx, res, "completions");
+        assert(legacy_comps != NULL && mcp_json_array_size(ctx, legacy_comps) == 2);
+        (void)legacy_comps;
+
+        mcp_message_destroy(ctx, req);
+        mcp_message_destroy(ctx, resp);
+    }
+
+    /* Test 2: Official schema ref/resource */
+    {
+        mcp_json_value_t *params = mcp_json_object_new(ctx);
+        mcp_json_value_t *ref_obj = mcp_json_object_new(ctx);
+        mcp_json_object_set_take(ctx, ref_obj, "type", mcp_json_string_new(ctx, "ref/resource"));
+        mcp_json_object_set_take(ctx, ref_obj, "uri", mcp_json_string_new(ctx, "resource/docs/api"));
+        mcp_json_object_set_take(ctx, params, "ref", ref_obj);
+
+        mcp_message_t *req = mcp_request_new_string_id(ctx, "comp-2", "completion/complete", params);
+        mcp_message_t *resp = NULL;
+        assert(mcp_server_dispatch(ctx, srv, sess, req, &resp) == MCP_OK);
+        assert(resp != NULL);
+
+        const mcp_json_value_t *res = mcp_message_result(ctx, resp);
+        assert(res != NULL);
+        const mcp_json_value_t *comp_obj = mcp_json_object_get(ctx, res, "completion");
+        assert(comp_obj != NULL);
+        const mcp_json_value_t *values = mcp_json_object_get(ctx, comp_obj, "values");
+        assert(values != NULL && mcp_json_array_size(ctx, values) == 2);
+        (void)values;
+        (void)comp_obj;
+
+        mcp_message_destroy(ctx, req);
+        mcp_message_destroy(ctx, resp);
+    }
+
+    /* Test 3: Legacy schema {"type":"ref", "value":"code_template"} */
+    {
+        mcp_json_value_t *params = mcp_json_object_new(ctx);
+        mcp_json_value_t *ref_obj = mcp_json_object_new(ctx);
+        mcp_json_object_set_take(ctx, ref_obj, "type", mcp_json_string_new(ctx, "ref"));
+        mcp_json_object_set_take(ctx, ref_obj, "value", mcp_json_string_new(ctx, "code_template"));
+        mcp_json_object_set_take(ctx, params, "ref", ref_obj);
+
+        mcp_message_t *req = mcp_request_new_string_id(ctx, "comp-3", "completion/complete", params);
+        mcp_message_t *resp = NULL;
+        assert(mcp_server_dispatch(ctx, srv, sess, req, &resp) == MCP_OK);
+        assert(resp != NULL);
+
+        const mcp_json_value_t *res = mcp_message_result(ctx, resp);
+        assert(res != NULL);
+        const mcp_json_value_t *comp_obj = mcp_json_object_get(ctx, res, "completion");
+        assert(comp_obj != NULL);
+        (void)comp_obj;
+
+        mcp_message_destroy(ctx, req);
+        mcp_message_destroy(ctx, resp);
+    }
+
+    (void)sess;
+
+    mcp_server_destroy(ctx, srv);
+    mcp_context_destroy(ctx);
+    printf("PASS: test_item2_completion_schema_alignment\n");
+}
+
 int main(void) {
     printf("Starting Official MCP Spec Compliance Tests...\n");
     test_item1_capabilities_and_resource_notifications();
+    test_item2_completion_schema_alignment();
     printf("All Official MCP Spec Compliance Tests Passed!\n");
     return 0;
 }

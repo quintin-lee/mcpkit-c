@@ -766,6 +766,67 @@ mcp_status_t mcp_client_complete(mcp_context_t *ctx, mcp_client_t *client,
     return mcp_client_request(ctx, client, "completion/complete", params, result_out);
 }
 
+mcp_status_t mcp_client_complete_prompt(mcp_context_t *ctx, mcp_client_t *client,
+                                        const char *prompt_name, const char *arg_name,
+                                        const char *arg_value, mcp_json_value_t **result_out) {
+    if (client == NULL || prompt_name == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_value_t *ref_obj = params != NULL ? mcp_json_object_new(ctx) : NULL;
+    if (params == NULL || ref_obj == NULL) {
+        mcp_json_destroy(ctx, params);
+        mcp_json_destroy(ctx, ref_obj);
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_object_set_take(ctx, ref_obj, "type", mcp_json_string_new(ctx, "ref/prompt"));
+    mcp_json_object_set_take(ctx, ref_obj, "name", mcp_json_string_new(ctx, prompt_name));
+    mcp_json_object_set_take(ctx, params, "ref", ref_obj);
+
+    if (arg_name != NULL) {
+        mcp_json_value_t *arg_obj = mcp_json_object_new(ctx);
+        if (arg_obj != NULL) {
+            mcp_json_object_set_take(ctx, arg_obj, "name", mcp_json_string_new(ctx, arg_name));
+            if (arg_value != NULL) {
+                mcp_json_object_set_take(ctx, arg_obj, "value", mcp_json_string_new(ctx, arg_value));
+            }
+            mcp_json_object_set_take(ctx, params, "argument", arg_obj);
+        }
+    }
+    return mcp_client_request(ctx, client, "completion/complete", params, result_out);
+}
+
+mcp_status_t mcp_client_complete_resource(mcp_context_t *ctx, mcp_client_t *client,
+                                          const char *resource_uri, const char *arg_name,
+                                          const char *arg_value, mcp_json_value_t **result_out) {
+    if (client == NULL || resource_uri == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_value_t *ref_obj = params != NULL ? mcp_json_object_new(ctx) : NULL;
+    if (params == NULL || ref_obj == NULL) {
+        mcp_json_destroy(ctx, params);
+        mcp_json_destroy(ctx, ref_obj);
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_object_set_take(ctx, ref_obj, "type", mcp_json_string_new(ctx, "ref/resource"));
+    mcp_json_object_set_take(ctx, ref_obj, "uri", mcp_json_string_new(ctx, resource_uri));
+    mcp_json_object_set_take(ctx, params, "ref", ref_obj);
+
+    if (arg_name != NULL) {
+        mcp_json_value_t *arg_obj = mcp_json_object_new(ctx);
+        if (arg_obj != NULL) {
+            mcp_json_object_set_take(ctx, arg_obj, "name", mcp_json_string_new(ctx, arg_name));
+            if (arg_value != NULL) {
+                mcp_json_object_set_take(ctx, arg_obj, "value", mcp_json_string_new(ctx, arg_value));
+            }
+            mcp_json_object_set_take(ctx, params, "argument", arg_obj);
+        }
+    }
+    return mcp_client_request(ctx, client, "completion/complete", params, result_out);
+}
+
+
 mcp_status_t mcp_client_tasks_get(mcp_context_t *ctx, mcp_client_t *client,
                                   const char *task_id, mcp_json_value_t **result_out) {
     if (client == NULL || task_id == NULL) {
