@@ -447,6 +447,11 @@ add_executable(test_phase2_spec unit/test_phase2_spec.c)
 target_link_libraries(test_phase2_spec PRIVATE mcpkit_core)
 add_test(NAME test_phase2_spec COMMAND test_phase2_spec)
 
+add_executable(test_official_spec unit/test_official_spec.c)
+target_link_libraries(test_official_spec PRIVATE mcpkit_core)
+add_test(NAME test_official_spec COMMAND test_official_spec)
+
+
 
 if(MCPKIT_BUILD_TLS)
   # Generate a self-signed cert in the build directory for the TLS test.

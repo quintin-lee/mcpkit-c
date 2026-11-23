@@ -177,6 +177,8 @@ struct mcp_server {
     // Host-supplied _meta object injected into list/discover responses.
     // Cloned at set time; NULL = no _meta injection.
     mcp_json_value_t *response_meta;
+    // Host-supplied custom capabilities merged into initialize responses.
+    mcp_json_value_t *custom_capabilities;
     // Guards all reads/writes of subscribed_uris, n_subscribed, cap_subscribed
     // from concurrent dispatch threads (route_advanced subscribe/unsubscribe).
     pthread_mutex_t subscribed_lock;

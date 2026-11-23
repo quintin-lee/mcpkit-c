@@ -634,6 +634,21 @@ mcp_status_t mcp_server_set_response_meta(mcp_context_t *ctx, mcp_server_t *srv,
                                            mcp_json_value_t *meta_json);
 
 /**
+ * @brief Sets custom capabilities to be merged into initialize responses.
+ *
+ * Allows host applications to declare custom capabilities or override default
+ * capabilities advertised during initialize handshake.
+ *
+ * @param ctx       Context; may be NULL.
+ * @param srv       Server handle (non-NULL required).
+ * @param caps_json Custom capabilities JSON object (cloned); pass NULL to clear.
+ * @return MCP_OK on success; MCP_ERR_NOMEM on clone failure;
+ *         MCP_ERR_INVALID_ARGUMENT if srv is NULL.
+ */
+mcp_status_t mcp_server_set_capabilities(mcp_context_t *ctx, mcp_server_t *srv,
+                                         const mcp_json_value_t *caps_json);
+
+/**
  * @brief Enables the MCP Tasks extension (SEP-2663) on the server.
  *
  * Allocates and initializes the server's task manager if not already enabled.
@@ -714,6 +729,17 @@ mcp_status_t mcp_server_notify_resource_updated(mcp_context_t *ctx,
  * @return MCP_OK on success.
  */
 mcp_status_t mcp_server_notify_tools_changed(mcp_context_t *ctx, mcp_server_t *server);
+
+/**
+ * @brief Notifies sessions that the registered resources list has changed.
+ *
+ * Emits "notifications/resources/list_changed" to all sessions (or filtered sessions).
+ *
+ * @param ctx     Context; may be NULL.
+ * @param server  Target server.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_server_notify_resources_changed(mcp_context_t *ctx, mcp_server_t *server);
 
 /**
  * @brief Notifies sessions that the registered prompts list has changed.

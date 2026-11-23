@@ -223,6 +223,7 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
         srv->skill_reg = NULL;
     }
     mcp_json_destroy(ctx, srv->response_meta);
+    mcp_json_destroy(ctx, srv->custom_capabilities);
     srv_free(ctx, srv->list_cache_scope);
     pthread_mutex_destroy(&srv->subscribed_lock);
     pthread_mutex_destroy(&srv->sessions_lock);
@@ -981,6 +982,20 @@ mcp_status_t mcp_server_set_response_meta(mcp_context_t *ctx, mcp_server_t *srv,
     return MCP_OK;
 }
 
+mcp_status_t mcp_server_set_capabilities(mcp_context_t *ctx, mcp_server_t *srv,
+                                         const mcp_json_value_t *caps_json) {
+    if (srv == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *clone = (caps_json != NULL) ? mcp_json_clone(ctx, caps_json) : NULL;
+    if (caps_json != NULL && clone == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_destroy(ctx, srv->custom_capabilities);
+    srv->custom_capabilities = clone;
+    return MCP_OK;
+}
+
 mcp_status_t mcp_server_enable_tasks(mcp_context_t *ctx, mcp_server_t *srv) {
     if (srv == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
@@ -1097,6 +1112,36 @@ mcp_status_t mcp_server_notify_tools_changed(mcp_context_t *ctx, mcp_server_t *s
             mcp_message_t *notif = NULL;
             mcp_status_t st = mcp_session_build_notification(ctx, sess,
                                                             "notifications/tools/list_changed",
+                                                            NULL, &notif);
+            if (st == MCP_OK && notif != NULL) {
+                mcp_server_deliver_notification(ctx, server, sess, notif);
+            }
+        }
+    }
+    pthread_mutex_unlock(&server->sessions_lock);
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_notify_resources_changed(mcp_context_t *ctx, mcp_server_t *server) {
+    if (server == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    pthread_mutex_lock(&server->sessions_lock);
+    for (size_t i = 0; i < server->n_sessions; i++) {
+        mcp_session_t *sess = server->sessions[i];
+        if (sess == NULL) continue;
+
+        bool matches = true;
+        if (sess->subscription_active) {
+            matches = mcp_session_is_subscribed_to_notification(ctx, sess,
+                                                                "notifications/resources/list_changed", NULL);
+        }
+
+        if (matches) {
+            mcp_message_t *notif = NULL;
+            mcp_status_t st = mcp_session_build_notification(ctx, sess,
+                                                            "notifications/resources/list_changed",
                                                             NULL, &notif);
             if (st == MCP_OK && notif != NULL) {
                 mcp_server_deliver_notification(ctx, server, sess, notif);

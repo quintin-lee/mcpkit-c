@@ -352,6 +352,71 @@ static mcp_message_t *route_initialize(mcp_context_t *ctx, mcp_server_t *srv, mc
     if (result == NULL) {
         return NULL;
     }
+    mcp_json_value_t *caps = (mcp_json_value_t *)mcp_json_object_get(ctx, result, "capabilities");
+    if (caps != NULL) {
+        /* Always advertise logging capability */
+        mcp_json_value_t *logging_cap = mcp_json_object_new(ctx);
+        if (logging_cap != NULL) {
+            mcp_json_object_set_take(ctx, caps, "logging", logging_cap);
+        }
+
+        /* Advertise tools capability if tools are registered */
+        if (srv->n_tools > 0) {
+            mcp_json_value_t *tools_cap = mcp_json_object_new(ctx);
+            if (tools_cap != NULL) {
+                mcp_json_object_set_take(ctx, tools_cap, "listChanged", mcp_json_bool_new(ctx, true));
+                mcp_json_object_set_take(ctx, caps, "tools", tools_cap);
+            }
+        }
+
+        /* Advertise resources capability if resources or templates are registered */
+        if (srv->n_resources > 0 || srv->n_resource_templates > 0) {
+            mcp_json_value_t *res_cap = mcp_json_object_new(ctx);
+            if (res_cap != NULL) {
+                mcp_json_object_set_take(ctx, res_cap, "subscribe", mcp_json_bool_new(ctx, true));
+                mcp_json_object_set_take(ctx, res_cap, "listChanged", mcp_json_bool_new(ctx, true));
+                mcp_json_object_set_take(ctx, caps, "resources", res_cap);
+            }
+        }
+
+        /* Advertise prompts capability if prompts are registered */
+        if (srv->n_prompts > 0) {
+            mcp_json_value_t *prompts_cap = mcp_json_object_new(ctx);
+            if (prompts_cap != NULL) {
+                mcp_json_object_set_take(ctx, prompts_cap, "listChanged", mcp_json_bool_new(ctx, true));
+                mcp_json_object_set_take(ctx, caps, "prompts", prompts_cap);
+            }
+        }
+
+        /* Advertise extensions: tasks and skills */
+        if (srv->task_mgr != NULL || srv->skill_reg != NULL) {
+            mcp_json_value_t *exts = mcp_json_object_new(ctx);
+            if (exts != NULL) {
+                if (srv->task_mgr != NULL) {
+                    mcp_json_object_set_take(ctx, exts, "io.modelcontextprotocol/tasks", mcp_json_object_new(ctx));
+                }
+                if (srv->skill_reg != NULL) {
+                    mcp_json_object_set_take(ctx, exts, "io.modelcontextprotocol/skills", mcp_json_object_new(ctx));
+                }
+                mcp_json_object_set_take(ctx, caps, "extensions", exts);
+            }
+        }
+
+        /* Merge host-supplied custom capabilities if configured */
+        if (srv->custom_capabilities != NULL) {
+            size_t n = mcp_json_object_size(ctx, srv->custom_capabilities);
+            for (size_t i = 0; i < n; i++) {
+                const char *k = mcp_json_object_key_at(ctx, srv->custom_capabilities, i);
+                const mcp_json_value_t *v = mcp_json_object_get(ctx, srv->custom_capabilities, k);
+                if (k != NULL && v != NULL) {
+                    mcp_json_value_t *v_clone = mcp_json_clone(ctx, v);
+                    if (v_clone != NULL) {
+                        mcp_json_object_set_take(ctx, caps, k, v_clone);
+                    }
+                }
+            }
+        }
+    }
     const mcp_json_value_t *meta = mcp_message_meta(ctx, req);
     if (meta != NULL) {
         mcp_json_value_t *clone = mcp_json_clone(pctx, meta);
