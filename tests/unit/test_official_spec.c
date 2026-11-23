@@ -482,11 +482,108 @@ static void test_item3_cancellation_mechanism(void) {
     printf("PASS: test_item3_cancellation_mechanism\n");
 }
 
+/* =========================================================================
+ * Item 4: Server logging notifications (notifications/message)
+ * ========================================================================= */
+static void test_item4_server_logging_notifications(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    assert(ctx != NULL);
+
+    mcp_server_t *srv = mcp_server_create(ctx, "test-item4-srv", "1.0.0");
+    assert(srv != NULL);
+
+    mcp_session_t *sess = mcp_server_create_session(ctx, srv);
+    assert(sess != NULL);
+
+    mock_sink_t sink = {0};
+    mcp_session_set_sink(sess, mock_session_sink, &sink);
+
+    /* Initialize session */
+    mcp_json_value_t *ip = mcp_initialize_params_new(ctx, "test-client", "1.0.0");
+    mcp_message_t *ireq = mcp_request_new_string_id(ctx, "init-4", "initialize", ip);
+    mcp_message_t *iresp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, ireq, &iresp) == MCP_OK);
+    mcp_message_destroy(ctx, ireq);
+    mcp_message_destroy(ctx, iresp);
+
+    mcp_message_t *init_notif = mcp_initialized_notification_new(ctx);
+    assert(mcp_server_notify(ctx, srv, sess, init_notif) == MCP_OK);
+    mcp_message_destroy(ctx, init_notif);
+
+    /* 1. Send log without level filter set */
+    assert(mcp_server_send_log_text(ctx, srv, sess, MCP_LOG_INFO, "db", "db connected") == MCP_OK);
+    assert(sink.call_count == 1);
+    assert(strstr(sink.last_payload, "notifications/message") != NULL);
+    assert(strstr(sink.last_payload, "\"level\":\"info\"") != NULL);
+    assert(strstr(sink.last_payload, "\"logger\":\"db\"") != NULL);
+    assert(strstr(sink.last_payload, "\"data\":\"db connected\"") != NULL);
+
+    /* 2. Set level to warning */
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_object_set_take(ctx, params, "level", mcp_json_string_new(ctx, "warning"));
+    mcp_message_t *set_lvl_req = mcp_request_new_string_id(ctx, "lvl-1", "logging/setLevel", params);
+    mcp_message_t *set_lvl_resp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, set_lvl_req, &set_lvl_resp) == MCP_OK);
+    assert(set_lvl_resp != NULL);
+    assert(mcp_message_result(ctx, set_lvl_resp) != NULL);
+    mcp_message_destroy(ctx, set_lvl_req);
+    mcp_message_destroy(ctx, set_lvl_resp);
+
+    /* 3. Send DEBUG: should be filtered out */
+    sink.call_count = 0;
+    assert(mcp_server_send_log_text(ctx, srv, sess, MCP_LOG_DEBUG, "db", "debug detail") == MCP_OK);
+    assert(sink.call_count == 0);
+
+    /* 4. Send INFO: should be filtered out */
+    assert(mcp_server_send_log_text(ctx, srv, sess, MCP_LOG_INFO, "db", "info detail") == MCP_OK);
+    assert(sink.call_count == 0);
+
+    /* 5. Send WARN: should pass */
+    assert(mcp_server_send_log_text(ctx, srv, sess, MCP_LOG_WARN, "db", "warning detail") == MCP_OK);
+    assert(sink.call_count == 1);
+    assert(strstr(sink.last_payload, "notifications/message") != NULL);
+    assert(strstr(sink.last_payload, "\"level\":\"warning\"") != NULL);
+    assert(strstr(sink.last_payload, "\"data\":\"warning detail\"") != NULL);
+
+    /* 6. Send ERROR with structured JSON data */
+    mcp_json_value_t *struct_data = mcp_json_object_new(ctx);
+    mcp_json_object_set_take(ctx, struct_data, "status", mcp_json_number_new(ctx, 500));
+    mcp_json_object_set_take(ctx, struct_data, "msg", mcp_json_string_new(ctx, "internal error"));
+    assert(mcp_server_send_log(ctx, srv, sess, MCP_LOG_ERROR, "auth", struct_data) == MCP_OK);
+    mcp_json_destroy(ctx, struct_data);
+    assert(sink.call_count == 2);
+    assert(strstr(sink.last_payload, "\"level\":\"error\"") != NULL);
+    assert(strstr(sink.last_payload, "\"status\":500") != NULL);
+
+    /* 7. Verify all official log level strings acceptably set */
+    const char *official_levels[] = {
+        "debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"
+    };
+    for (size_t i = 0; i < sizeof(official_levels) / sizeof(official_levels[0]); i++) {
+        mcp_json_value_t *p = mcp_json_object_new(ctx);
+        mcp_json_object_set_take(ctx, p, "level", mcp_json_string_new(ctx, official_levels[i]));
+        char id_buf[32];
+        snprintf(id_buf, sizeof(id_buf), "lvl-loop-%zu", i);
+        mcp_message_t *r = mcp_request_new_string_id(ctx, id_buf, "logging/setLevel", p);
+        mcp_message_t *rep = NULL;
+        assert(mcp_server_dispatch(ctx, srv, sess, r, &rep) == MCP_OK);
+        assert(rep != NULL && mcp_message_result(ctx, rep) != NULL);
+        mcp_message_destroy(ctx, r);
+        mcp_message_destroy(ctx, rep);
+    }
+
+
+    mcp_server_destroy(ctx, srv);
+    mcp_context_destroy(ctx);
+    printf("PASS: test_item4_server_logging_notifications\n");
+}
+
 int main(void) {
     printf("Starting Official MCP Spec Compliance Tests...\n");
     test_item1_capabilities_and_resource_notifications();
     test_item2_completion_schema_alignment();
     test_item3_cancellation_mechanism();
+    test_item4_server_logging_notifications();
     printf("All Official MCP Spec Compliance Tests Passed!\n");
     return 0;
 }

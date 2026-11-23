@@ -98,7 +98,11 @@ struct mcp_session {
     // Deep clone of the "_meta" field carried in the initialize request.
     // NULL if the client did not send one. Destroyed with the session.
     mcp_json_value_t *client_meta;
+    // Session-specific log level floor (MCP logging utility)
+    bool session_log_level_set;
+    mcp_log_level_t session_log_floor;
     // Active subscription state (Phase 2, SEP-2575 subscriptions/listen)
+
     bool subscription_active;
     mcp_id_type_t sub_id_type;
     char *sub_id_str;

@@ -1159,12 +1159,18 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
             mapped = MCP_LOG_INFO;
         } else if (strcmp(lvl, "warning") == 0 || strcmp(lvl, "warn") == 0) {
             mapped = MCP_LOG_WARN;
-        } else if (strcmp(lvl, "error") == 0) {
+        } else if (strcmp(lvl, "error") == 0 || strcmp(lvl, "critical") == 0 ||
+                   strcmp(lvl, "alert") == 0 || strcmp(lvl, "emergency") == 0) {
             mapped = MCP_LOG_ERROR;
         } else {
             return err_resp(ctx, req, MCP_RPC_INVALID_PARAMS, "logging/setLevel: bad level");
         }
+        if (s != NULL) {
+            s->session_log_floor = mapped;
+            s->session_log_level_set = true;
+        }
         atomic_store(&srv->log_floor, (int)mapped);
+
         mcp_json_value_t *result = mcp_json_object_new(ctx);
         if (result == NULL) {
             return NULL;

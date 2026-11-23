@@ -759,6 +759,35 @@ mcp_status_t mcp_server_notify_tools_changed(mcp_context_t *ctx, mcp_server_t *s
 mcp_status_t mcp_server_notify_resources_changed(mcp_context_t *ctx, mcp_server_t *server);
 
 /**
+ * @brief Sends a log message notification ("notifications/message") to a session or all sessions.
+ *
+ * Messages are filtered against the session's negotiated minimum log level.
+ *
+ * @param ctx         Context; may be NULL.
+ * @param server      Server handle (non-NULL).
+ * @param session     Target session, or NULL to broadcast to all sessions.
+ * @param level       Logging level.
+ * @param logger_name Optional logger name (e.g. "worker"), may be NULL.
+ * @param data        Log data JSON value (cloned by server).
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_server_send_log(mcp_context_t *ctx, mcp_server_t *server,
+                                 mcp_session_t *session,
+                                 mcp_log_level_t level,
+                                 const char *logger_name,
+                                 const mcp_json_value_t *data);
+
+/**
+ * @brief Convenience helper to send a text log message notification.
+ */
+mcp_status_t mcp_server_send_log_text(mcp_context_t *ctx, mcp_server_t *server,
+                                      mcp_session_t *session,
+                                      mcp_log_level_t level,
+                                      const char *logger_name,
+                                      const char *text_message);
+
+
+/**
  * @brief Notifies sessions that the registered prompts list has changed.
  *
  * Emits "notifications/prompts/list_changed" to all sessions.

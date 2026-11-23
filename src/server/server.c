@@ -1305,4 +1305,96 @@ mcp_status_t mcp_server_cancel_request(mcp_context_t *ctx, mcp_server_t *server,
     return mcp_server_deliver_notification(ctx, server, session, notif);
 }
 
+static const char *log_level_to_mcp_string(mcp_log_level_t level) {
+    switch (level) {
+        case MCP_LOG_DEBUG: return "debug";
+        case MCP_LOG_INFO:  return "info";
+        case MCP_LOG_WARN:  return "warning";
+        case MCP_LOG_ERROR: return "error";
+        default:            return "info";
+    }
+}
+
+mcp_status_t mcp_server_send_log(mcp_context_t *ctx, mcp_server_t *server,
+                                 mcp_session_t *session,
+                                 mcp_log_level_t level,
+                                 const char *logger_name,
+                                 const mcp_json_value_t *data) {
+    if (server == NULL || data == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    if (session != NULL) {
+        if (session->session_log_level_set && level < session->session_log_floor) {
+            return MCP_OK;
+        }
+        mcp_json_value_t *params = mcp_json_object_new(ctx);
+        if (params == NULL) return MCP_ERR_NOMEM;
+        mcp_json_object_set_take(ctx, params, "level", mcp_json_string_new(ctx, log_level_to_mcp_string(level)));
+        if (logger_name != NULL) {
+            mcp_json_object_set_take(ctx, params, "logger", mcp_json_string_new(ctx, logger_name));
+        }
+        mcp_json_value_t *data_clone = mcp_json_clone(ctx, data);
+        if (data_clone == NULL) {
+            mcp_json_destroy(ctx, params);
+            return MCP_ERR_NOMEM;
+        }
+        mcp_json_object_set_take(ctx, params, "data", data_clone);
+
+        mcp_message_t *notif = mcp_notification_new(ctx, "notifications/message", params);
+        if (notif == NULL) {
+            mcp_json_destroy(ctx, params);
+            return MCP_ERR_NOMEM;
+        }
+        return mcp_server_deliver_notification(ctx, server, session, notif);
+    }
+
+    /* Broadcast to sessions matching filter */
+    pthread_mutex_lock(&server->sessions_lock);
+    for (size_t i = 0; i < server->n_sessions; i++) {
+        mcp_session_t *sess = server->sessions[i];
+        if (sess == NULL) continue;
+        if (sess->session_log_level_set && level < sess->session_log_floor) {
+            continue;
+        }
+        mcp_json_value_t *params = mcp_json_object_new(ctx);
+        if (params == NULL) continue;
+        mcp_json_object_set_take(ctx, params, "level", mcp_json_string_new(ctx, log_level_to_mcp_string(level)));
+        if (logger_name != NULL) {
+            mcp_json_object_set_take(ctx, params, "logger", mcp_json_string_new(ctx, logger_name));
+        }
+        mcp_json_value_t *data_clone = mcp_json_clone(ctx, data);
+        if (data_clone == NULL) {
+            mcp_json_destroy(ctx, params);
+            continue;
+        }
+        mcp_json_object_set_take(ctx, params, "data", data_clone);
+
+        mcp_message_t *notif = mcp_notification_new(ctx, "notifications/message", params);
+        if (notif != NULL) {
+            mcp_server_deliver_notification(ctx, server, sess, notif);
+        }
+    }
+    pthread_mutex_unlock(&server->sessions_lock);
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_send_log_text(mcp_context_t *ctx, mcp_server_t *server,
+                                      mcp_session_t *session,
+                                      mcp_log_level_t level,
+                                      const char *logger_name,
+                                      const char *text_message) {
+    if (server == NULL || text_message == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *data = mcp_json_string_new(ctx, text_message);
+    if (data == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_status_t st = mcp_server_send_log(ctx, server, session, level, logger_name, data);
+    mcp_json_destroy(ctx, data);
+    return st;
+}
+
+
 
