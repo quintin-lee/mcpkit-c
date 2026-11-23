@@ -38,7 +38,11 @@ struct mcp_client {
     /* MRTR elicitation callback (NULL = no auto-retry on input_required). */
     mcp_client_mrtr_elicit_fn mrtr_elicit_fn;
     void *mrtr_elicit_ud;
+    /* Notification callback for server-initiated notifications. */
+    mcp_client_notification_fn notification_handler;
+    void *notification_ud;
     /* Stored OAuth 2.1 Bearer token (NULL if unauthenticated). */
+
     char *bearer_token;
     /* P4-a T4: client-side tool schema cache for Mcp-Param-* mirroring.
      * Grows on demand; entries are deep-cloned input schemas. */

@@ -311,6 +311,81 @@ mcp_status_t mcp_client_read_resource(mcp_context_t *ctx, mcp_client_t *client,
                                       const char *uri, mcp_json_value_t **result_out);
 
 /**
+ * @brief Sends resources/list.
+ *
+ * @param ctx        Context; may be NULL.
+ * @param client     Target client.
+ * @param cursor     Optional pagination cursor; may be NULL.
+ * @param result_out Receives the caller-owned cloned result JSON object on MCP_OK.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_list_resources(mcp_context_t *ctx, mcp_client_t *client,
+                                       const char *cursor, mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends resources/templates/list.
+ *
+ * @param ctx        Context; may be NULL.
+ * @param client     Target client.
+ * @param cursor     Optional pagination cursor; may be NULL.
+ * @param result_out Receives the caller-owned cloned result JSON object on MCP_OK.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_list_resource_templates(mcp_context_t *ctx, mcp_client_t *client,
+                                                const char *cursor, mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends resources/subscribe to subscribe to resource updates.
+ *
+ * @param ctx        Context; may be NULL.
+ * @param client     Target client.
+ * @param uri        Target resource URI.
+ * @param result_out Receives caller-owned cloned result on MCP_OK; may be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_subscribe_resource(mcp_context_t *ctx, mcp_client_t *client,
+                                           const char *uri, mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends resources/unsubscribe to unsubscribe from resource updates.
+ *
+ * @param ctx        Context; may be NULL.
+ * @param client     Target client.
+ * @param uri        Target resource URI.
+ * @param result_out Receives caller-owned cloned result on MCP_OK; may be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_unsubscribe_resource(mcp_context_t *ctx, mcp_client_t *client,
+                                             const char *uri, mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends prompts/list.
+ *
+ * @param ctx        Context; may be NULL.
+ * @param client     Target client.
+ * @param cursor     Optional pagination cursor; may be NULL.
+ * @param result_out Receives the caller-owned cloned result JSON object on MCP_OK.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_list_prompts(mcp_context_t *ctx, mcp_client_t *client,
+                                     const char *cursor, mcp_json_value_t **result_out);
+
+/**
+ * @brief Sends logging/setLevel to adjust the server logging threshold.
+ *
+ * @param ctx        Context; may be NULL.
+ * @param client     Target client.
+ * @param level_str  Logging level string ("debug", "info", "warning", "error", etc.).
+ * @param result_out Receives caller-owned cloned result on MCP_OK; may be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_set_logging_level(mcp_context_t *ctx, mcp_client_t *client,
+                                          const char *level_str, mcp_json_value_t **result_out);
+
+
+
+
+/**
  * @brief Sends prompts/get with the named prompt and args.
  *
  * args is consumed on all paths.
@@ -511,6 +586,20 @@ typedef bool (*mcp_client_notification_fn)(mcp_client_t *client,
                                            const char *method,
                                            const mcp_json_value_t *params,
                                            void *user_data);
+
+/**
+ * @brief Registers a callback to receive server-initiated notifications.
+ *
+ * @param ctx      Context; may be NULL.
+ * @param client   Target client.
+ * @param handler  Notification handler callback; pass NULL to clear.
+ * @param user_data Opaque pointer forwarded to handler.
+ */
+void mcp_client_set_notification_handler(mcp_context_t *ctx,
+                                         mcp_client_t *client,
+                                         mcp_client_notification_fn handler,
+                                         void *user_data);
+
 
 /**
  * @brief High-level helper: subscribes to server notifications and pumps incoming events.

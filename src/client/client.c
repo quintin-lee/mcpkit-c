@@ -143,27 +143,38 @@ static mcp_status_t roundtrip(mcp_context_t *ctx, mcp_client_t *c, const char *m
     if (st != MCP_OK) {
         return st;
     }
-    char *line = NULL;
-    st = mcp_transport_recv(ctx, c->t, &line);
-    if (st != MCP_OK) {
-        return st;
+    for (;;) {
+        char *line = NULL;
+        st = mcp_transport_recv(ctx, c->t, &line);
+        if (st != MCP_OK) {
+            return st;
+        }
+        mcp_message_t *resp = mcp_message_parse(ctx, line, strlen(line));
+        mcp_json_free_string(ctx, line);
+        if (resp == NULL) {
+            return MCP_ERR_PROTOCOL;
+        }
+        if (mcp_message_kind(ctx, resp) == MCP_MSG_NOTIFICATION) {
+            if (c->notification_handler != NULL) {
+                c->notification_handler(c, mcp_message_method(ctx, resp),
+                                        mcp_message_params(ctx, resp), c->notification_ud);
+            }
+            mcp_message_destroy(ctx, resp);
+            continue;
+        }
+        if (mcp_message_kind(ctx, resp) != MCP_MSG_RESPONSE) {
+            mcp_message_destroy(ctx, resp);
+            return MCP_ERR_PROTOCOL;
+        }
+        double got = 0.0;
+        if (mcp_message_id_number(ctx, resp, &got) != MCP_OK || got != id) {
+            mcp_message_destroy(ctx, resp);
+            return MCP_ERR_PROTOCOL;
+        }
+        *resp_out = resp;
+        return MCP_OK;
     }
-    mcp_message_t *resp = mcp_message_parse(ctx, line, strlen(line));
-    mcp_json_free_string(ctx, line);
-    if (resp == NULL) {
-        return MCP_ERR_PROTOCOL;
-    }
-    if (mcp_message_kind(ctx, resp) != MCP_MSG_RESPONSE) {
-        mcp_message_destroy(ctx, resp);
-        return MCP_ERR_PROTOCOL;
-    }
-    double got = 0.0;
-    if (mcp_message_id_number(ctx, resp, &got) != MCP_OK || got != id) {
-        mcp_message_destroy(ctx, resp);
-        return MCP_ERR_PROTOCOL;
-    }
-    *resp_out = resp;
-    return MCP_OK;
+
 }
 
 mcp_status_t mcp_client_request(mcp_context_t *ctx, mcp_client_t *client,
@@ -1138,8 +1149,13 @@ mcp_status_t mcp_client_recv_message(mcp_context_t *ctx, mcp_client_t *client,
     if (msg == NULL) {
         return MCP_ERR_PROTOCOL;
     }
+    if (mcp_message_kind(ctx, msg) == MCP_MSG_NOTIFICATION && client->notification_handler != NULL) {
+        client->notification_handler(client, mcp_message_method(ctx, msg),
+                                     mcp_message_params(ctx, msg), client->notification_ud);
+    }
     *msg_out = msg;
     return MCP_OK;
+
 }
 
 mcp_status_t mcp_client_listen_stream(mcp_context_t *ctx,
@@ -1800,3 +1816,90 @@ const mcp_client_xmcp_param_view_t *mcp_client_get_xmcp_params(
      * (two char* fields), so a pointer cast is safe. */
     return (const mcp_client_xmcp_param_view_t *)(void *)&client->xmcp_params[0];
 }
+
+mcp_status_t mcp_client_list_resources(mcp_context_t *ctx, mcp_client_t *client,
+                                       const char *cursor, mcp_json_value_t **result_out) {
+    if (client == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = NULL;
+    if (cursor != NULL) {
+        params = mcp_json_object_new(ctx);
+        if (params == NULL) return MCP_ERR_NOMEM;
+        mcp_json_object_set_take(ctx, params, "cursor", mcp_json_string_new(ctx, cursor));
+    }
+    return mcp_client_request(ctx, client, "resources/list", params, result_out);
+}
+
+mcp_status_t mcp_client_list_resource_templates(mcp_context_t *ctx, mcp_client_t *client,
+                                                const char *cursor, mcp_json_value_t **result_out) {
+    if (client == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = NULL;
+    if (cursor != NULL) {
+        params = mcp_json_object_new(ctx);
+        if (params == NULL) return MCP_ERR_NOMEM;
+        mcp_json_object_set_take(ctx, params, "cursor", mcp_json_string_new(ctx, cursor));
+    }
+    return mcp_client_request(ctx, client, "resources/templates/list", params, result_out);
+}
+
+mcp_status_t mcp_client_subscribe_resource(mcp_context_t *ctx, mcp_client_t *client,
+                                           const char *uri, mcp_json_value_t **result_out) {
+    if (client == NULL || uri == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    if (params == NULL) return MCP_ERR_NOMEM;
+    mcp_json_object_set_take(ctx, params, "uri", mcp_json_string_new(ctx, uri));
+    return mcp_client_request(ctx, client, "resources/subscribe", params, result_out);
+}
+
+mcp_status_t mcp_client_unsubscribe_resource(mcp_context_t *ctx, mcp_client_t *client,
+                                             const char *uri, mcp_json_value_t **result_out) {
+    if (client == NULL || uri == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    if (params == NULL) return MCP_ERR_NOMEM;
+    mcp_json_object_set_take(ctx, params, "uri", mcp_json_string_new(ctx, uri));
+    return mcp_client_request(ctx, client, "resources/unsubscribe", params, result_out);
+}
+
+mcp_status_t mcp_client_list_prompts(mcp_context_t *ctx, mcp_client_t *client,
+                                     const char *cursor, mcp_json_value_t **result_out) {
+    if (client == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = NULL;
+    if (cursor != NULL) {
+        params = mcp_json_object_new(ctx);
+        if (params == NULL) return MCP_ERR_NOMEM;
+        mcp_json_object_set_take(ctx, params, "cursor", mcp_json_string_new(ctx, cursor));
+    }
+    return mcp_client_request(ctx, client, "prompts/list", params, result_out);
+}
+
+mcp_status_t mcp_client_set_logging_level(mcp_context_t *ctx, mcp_client_t *client,
+                                          const char *level_str, mcp_json_value_t **result_out) {
+    if (client == NULL || level_str == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    if (params == NULL) return MCP_ERR_NOMEM;
+    mcp_json_object_set_take(ctx, params, "level", mcp_json_string_new(ctx, level_str));
+    return mcp_client_request(ctx, client, "logging/setLevel", params, result_out);
+}
+
+void mcp_client_set_notification_handler(mcp_context_t *ctx,
+                                         mcp_client_t *client,
+                                         mcp_client_notification_fn handler,
+                                         void *user_data) {
+    (void)ctx;
+    if (client != NULL) {
+        client->notification_handler = handler;
+        client->notification_ud = user_data;
+    }
+}
+

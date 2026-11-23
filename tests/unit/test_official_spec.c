@@ -578,12 +578,204 @@ static void test_item4_server_logging_notifications(void) {
     printf("PASS: test_item4_server_logging_notifications\n");
 }
 
+/* =========================================================================
+ * Item 5: Client standard methods and notification dispatching
+ * ========================================================================= */
+typedef struct {
+    char sent[4096];
+    size_t sent_len;
+    const char **script;
+    size_t nscript;
+    size_t cursor;
+    int nsent;
+} fake_client_transport_t;
+
+static mcp_status_t fake_t_start(mcp_context_t *ctx, mcp_transport_t *t) {
+    (void)ctx;
+    (void)t;
+    return MCP_OK;
+}
+
+static mcp_status_t fake_t_send(mcp_context_t *ctx, mcp_transport_t *t, const char *data, size_t len) {
+    (void)ctx;
+    fake_client_transport_t *f = (fake_client_transport_t *)mcp_transport_backend(ctx, t);
+    assert(len < sizeof(f->sent));
+    memcpy(f->sent, data, len);
+    f->sent[len] = '\0';
+    f->sent_len = len;
+    f->nsent++;
+    return MCP_OK;
+}
+
+static mcp_status_t fake_t_recv(mcp_context_t *ctx, mcp_transport_t *t, char **line_out) {
+    fake_client_transport_t *f = (fake_client_transport_t *)mcp_transport_backend(ctx, t);
+    assert(f->cursor < f->nscript);
+    const char *line = f->script[f->cursor++];
+    size_t n = strlen(line) + 1;
+    const mcp_allocator_t *alloc = ctx != NULL ? mcp_context_allocator(ctx) : mcp_default_allocator();
+    char *buf = alloc->malloc_fn(n, alloc->userdata);
+    assert(buf != NULL);
+    memcpy(buf, line, n);
+    *line_out = buf;
+    return MCP_OK;
+}
+
+static mcp_status_t fake_t_stop(mcp_context_t *ctx, mcp_transport_t *t) {
+    (void)ctx;
+    (void)t;
+    return MCP_OK;
+}
+
+static const mcp_transport_ops_t kFakeClientOps = {
+    .start = fake_t_start,
+    .send  = fake_t_send,
+    .recv  = fake_t_recv,
+    .stop  = fake_t_stop,
+    .sendv = NULL,
+};
+
+typedef struct {
+    int call_count;
+    char last_method[64];
+    char last_level[32];
+} test_client_notif_sink_t;
+
+static bool on_client_notification_cb(mcp_client_t *client,
+                                      const char *method,
+                                      const mcp_json_value_t *params,
+                                      void *user_data) {
+    (void)client;
+    test_client_notif_sink_t *sink = (test_client_notif_sink_t *)user_data;
+    if (sink == NULL) return true;
+    sink->call_count++;
+    if (method != NULL) {
+        snprintf(sink->last_method, sizeof(sink->last_method), "%s", method);
+    }
+    if (params != NULL) {
+        const mcp_json_value_t *lv = mcp_json_object_get(NULL, params, "level");
+        if (lv != NULL) {
+            const char *lvs = NULL;
+            if (mcp_json_string_value(NULL, lv, &lvs) == MCP_OK && lvs != NULL) {
+                snprintf(sink->last_level, sizeof(sink->last_level), "%s", lvs);
+            }
+        }
+    }
+    return true;
+}
+
+
+static void test_item5_client_apis_and_notifications(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    assert(ctx != NULL);
+
+    fake_client_transport_t fake;
+    memset(&fake, 0, sizeof(fake));
+
+    const char *script[] = {
+        /* 1. resources/list response */
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"resources\":[]}}",
+        /* 2. resources/templates/list response */
+        "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"resourceTemplates\":[]}}",
+        /* 3. resources/subscribe response */
+        "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{}}",
+        /* 4. resources/unsubscribe response */
+        "{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{}}",
+        /* 5. prompts/list response */
+        "{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":{\"prompts\":[]}}",
+        /* 6. logging/setLevel response */
+        "{\"jsonrpc\":\"2.0\",\"id\":6,\"result\":{}}",
+        /* 7. notification interleaved before response */
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}",
+        "{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{}}",
+        /* 8. notification received directly via recv_message */
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"test\"}}"
+    };
+    fake.script = script;
+    fake.nscript = sizeof(script) / sizeof(script[0]);
+
+    mcp_transport_t *t = mcp_transport_create(ctx, &kFakeClientOps, &fake);
+    assert(t != NULL);
+    mcp_client_t *c = mcp_client_create(ctx, t);
+    assert(c != NULL);
+
+    test_client_notif_sink_t notif_sink = {0};
+    mcp_client_set_notification_handler(ctx, c, on_client_notification_cb, &notif_sink);
+
+    /* 1. Test resources/list */
+    mcp_json_value_t *res1 = NULL;
+    assert(mcp_client_list_resources(ctx, c, "c1", &res1) == MCP_OK);
+    assert(res1 != NULL);
+    assert(strstr(fake.sent, "\"method\":\"resources/list\"") != NULL);
+    assert(strstr(fake.sent, "\"cursor\":\"c1\"") != NULL);
+    mcp_json_destroy(ctx, res1);
+
+    /* 2. Test resources/templates/list */
+    mcp_json_value_t *res2 = NULL;
+    assert(mcp_client_list_resource_templates(ctx, c, NULL, &res2) == MCP_OK);
+    assert(res2 != NULL);
+    assert(strstr(fake.sent, "\"method\":\"resources/templates/list\"") != NULL);
+    mcp_json_destroy(ctx, res2);
+
+    /* 3. Test resources/subscribe */
+    mcp_json_value_t *res3 = NULL;
+    assert(mcp_client_subscribe_resource(ctx, c, "res://test", &res3) == MCP_OK);
+    assert(res3 != NULL);
+    assert(strstr(fake.sent, "\"method\":\"resources/subscribe\"") != NULL);
+    assert(strstr(fake.sent, "\"uri\":\"res://test\"") != NULL);
+    mcp_json_destroy(ctx, res3);
+
+    /* 4. Test resources/unsubscribe */
+    mcp_json_value_t *res4 = NULL;
+    assert(mcp_client_unsubscribe_resource(ctx, c, "res://test", &res4) == MCP_OK);
+    assert(res4 != NULL);
+    assert(strstr(fake.sent, "\"method\":\"resources/unsubscribe\"") != NULL);
+    assert(strstr(fake.sent, "\"uri\":\"res://test\"") != NULL);
+    mcp_json_destroy(ctx, res4);
+
+    /* 5. Test prompts/list */
+    mcp_json_value_t *res5 = NULL;
+    assert(mcp_client_list_prompts(ctx, c, "p_cur", &res5) == MCP_OK);
+    assert(res5 != NULL);
+    assert(strstr(fake.sent, "\"method\":\"prompts/list\"") != NULL);
+    assert(strstr(fake.sent, "\"cursor\":\"p_cur\"") != NULL);
+    mcp_json_destroy(ctx, res5);
+
+    /* 6. Test logging/setLevel */
+    mcp_json_value_t *res6 = NULL;
+    assert(mcp_client_set_logging_level(ctx, c, "warning", &res6) == MCP_OK);
+    assert(res6 != NULL);
+    assert(strstr(fake.sent, "\"method\":\"logging/setLevel\"") != NULL);
+    assert(strstr(fake.sent, "\"level\":\"warning\"") != NULL);
+    mcp_json_destroy(ctx, res6);
+
+    /* 7. Interleaved notification dispatch during roundtrip */
+    assert(notif_sink.call_count == 0);
+    assert(mcp_client_ping(ctx, c) == MCP_OK);
+    assert(notif_sink.call_count == 1);
+    assert(strcmp(notif_sink.last_method, "notifications/tools/list_changed") == 0);
+
+    /* 8. Notification dispatch during recv_message */
+    mcp_message_t *msg_in = NULL;
+    assert(mcp_client_recv_message(ctx, c, &msg_in) == MCP_OK);
+    assert(msg_in != NULL);
+    assert(notif_sink.call_count == 2);
+    assert(strcmp(notif_sink.last_method, "notifications/message") == 0);
+    assert(strcmp(notif_sink.last_level, "info") == 0);
+    mcp_message_destroy(ctx, msg_in);
+
+    mcp_client_destroy(ctx, c);
+    mcp_transport_destroy(ctx, t);
+    mcp_context_destroy(ctx);
+    printf("PASS: test_item5_client_apis_and_notifications\n");
+}
+
 int main(void) {
     printf("Starting Official MCP Spec Compliance Tests...\n");
     test_item1_capabilities_and_resource_notifications();
     test_item2_completion_schema_alignment();
     test_item3_cancellation_mechanism();
     test_item4_server_logging_notifications();
+    test_item5_client_apis_and_notifications();
     printf("All Official MCP Spec Compliance Tests Passed!\n");
     return 0;
 }
