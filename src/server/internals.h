@@ -38,6 +38,16 @@ typedef struct {
     void *user_data;
 } mcp_completion_entry_t;
 
+typedef struct mcp_pending_req {
+    uint64_t req_id;
+    char *str_id;
+    uint64_t expire_at_ms;
+    mcp_session_t *session;
+    mcp_client_response_fn callback;
+    void *user_data;
+    struct mcp_pending_req *next;
+} mcp_pending_req_t;
+
 struct mcp_tool {
     char *name;
     char *description;
@@ -147,6 +157,9 @@ struct mcp_server {
     size_t cap_outbox;
     pthread_mutex_t outbox_lock;
     atomic_uint_fast64_t next_server_id;
+    // Server-to-client pending request correlation table (Phase 2)
+    mcp_pending_req_t *pending_requests;
+    pthread_mutex_t pending_lock;
     // Advanced-method state (Phase 5): log floor consulted by dlogf on
     // dispatch routes, the resource-subscription uri set, and the
     // server-originated request id counter (starts 1.0, monotonic per-server).

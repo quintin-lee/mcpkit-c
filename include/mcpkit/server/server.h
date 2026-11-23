@@ -475,6 +475,131 @@ mcp_status_t mcp_server_request_client(mcp_context_t *ctx, mcp_server_t *server,
                                         const char *method, mcp_json_value_t *params);
 
 /**
+ * @brief Callback invoked when a response to a server-initiated request arrives or times out.
+ *
+ * @param ctx       Context used for allocation / logging.
+ * @param server    Target server.
+ * @param session   Session that received the response (may be NULL if transport is sessionless).
+ * @param req_id    The 64-bit request ID allocated when the request was sent.
+ * @param result    Borrowed JSON value of "result" if success; NULL if error or timeout.
+ * @param error     Borrowed JSON value of "error" if error or timeout; NULL if success.
+ * @param user_data Caller-provided context pointer.
+ */
+typedef void (*mcp_client_response_fn)(mcp_context_t *ctx,
+                                       mcp_server_t *server,
+                                       mcp_session_t *session,
+                                       uint64_t req_id,
+                                       const mcp_json_value_t *result,
+                                       const mcp_json_value_t *error,
+                                       void *user_data);
+
+/**
+ * @brief Sends a server-to-client request and registers a response callback.
+ *
+ * Assigns a monotonic 64-bit ID, records a pending request entry, and
+ * delivers the request message via the session (or server outbox).
+ * When the client replies or timeout expires, @p cb is invoked.
+ *
+ * On success, the server TAKES ownership of @p params (or accepts NULL params).
+ * On failure, the caller retains ownership of @p params.
+ *
+ * @param ctx             Context; may be NULL.
+ * @param server          Target server.
+ * @param session         Session to deliver to; if NULL, falls back to server outbox.
+ * @param method          Request method (e.g. "sampling/createMessage", "roots/list").
+ * @param params          Owned JSON params; may be NULL.
+ * @param timeout_ms      Timeout in milliseconds; 0 for no timeout.
+ * @param cb              Callback invoked when response arrives or times out (may be NULL).
+ * @param user_data       User data passed to @p cb.
+ * @param assigned_id_out Optional pointer to receive the assigned 64-bit request ID.
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_server_request_client_with_response(mcp_context_t *ctx,
+                                                     mcp_server_t *server,
+                                                     mcp_session_t *session,
+                                                     const char *method,
+                                                     mcp_json_value_t *params,
+                                                     uint64_t timeout_ms,
+                                                     mcp_client_response_fn cb,
+                                                     void *user_data,
+                                                     uint64_t *assigned_id_out);
+
+/**
+ * @brief Sends a "sampling/createMessage" request to the client.
+ *
+ * Convenience wrapper over mcp_server_request_client_with_response().
+ * Server takes ownership of @p params on success.
+ */
+mcp_status_t mcp_server_request_sampling(mcp_context_t *ctx,
+                                         mcp_server_t *server,
+                                         mcp_session_t *session,
+                                         mcp_json_value_t *params,
+                                         uint64_t timeout_ms,
+                                         mcp_client_response_fn cb,
+                                         void *user_data,
+                                         uint64_t *assigned_id_out);
+
+/**
+ * @brief Sends a "roots/list" request to the client.
+ *
+ * Convenience wrapper over mcp_server_request_client_with_response().
+ */
+mcp_status_t mcp_server_request_roots(mcp_context_t *ctx,
+                                      mcp_server_t *server,
+                                      mcp_session_t *session,
+                                      uint64_t timeout_ms,
+                                      mcp_client_response_fn cb,
+                                      void *user_data,
+                                      uint64_t *assigned_id_out);
+
+/**
+ * @brief Sends an "elicitation/create" request to the client.
+ *
+ * Convenience wrapper over mcp_server_request_client_with_response().
+ * Server takes ownership of @p params on success.
+ */
+mcp_status_t mcp_server_request_elicitation(mcp_context_t *ctx,
+                                            mcp_server_t *server,
+                                            mcp_session_t *session,
+                                            mcp_json_value_t *params,
+                                            uint64_t timeout_ms,
+                                            mcp_client_response_fn cb,
+                                            void *user_data,
+                                            uint64_t *assigned_id_out);
+
+/**
+ * @brief Dispatches an incoming client response message to its pending request callback.
+ *
+ * Matches the response message's ID against registered pending requests.
+ * If matched, unregisters the pending request, invokes its callback, and returns MCP_OK.
+ * If no matching pending request exists, returns MCP_ERR_NOT_FOUND.
+ *
+ * @param ctx      Context.
+ * @param server   Target server.
+ * @param session  Active session (may be NULL).
+ * @param resp     Incoming response message.
+ * @return MCP_OK if matched and dispatched; MCP_ERR_NOT_FOUND if unmatched; error code on invalid arg.
+ */
+mcp_status_t mcp_server_dispatch_response(mcp_context_t *ctx,
+                                          mcp_server_t *server,
+                                          mcp_session_t *session,
+                                          const mcp_message_t *resp);
+
+/**
+ * @brief Sweeps expired pending requests, invoking their callbacks with a timeout error.
+ *
+ * Can be called periodically by event loops or timers.
+ *
+ * @param ctx     Context.
+ * @param server  Target server.
+ * @param now_ms  Current monotonic timestamp in milliseconds; pass 0 to use system clock.
+ * @return Number of expired pending requests swept and notified.
+ */
+size_t mcp_server_sweep_pending_requests(mcp_context_t *ctx,
+                                         mcp_server_t *server,
+                                         uint64_t now_ms);
+
+/**
  * @brief Configures the `ttlMs` and `cacheScope` fields carried in
  *        list-type responses (tools/list, resources/list, prompts/list,
  *        completion/list, server/discover).

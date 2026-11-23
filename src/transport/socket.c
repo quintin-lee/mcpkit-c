@@ -509,6 +509,11 @@ static void serve_one_conn(mcp_context_t *ctx, void *arg) {
             mcp_message_destroy(ctx, msg);
             continue;
         }
+        if (kind == MCP_MSG_RESPONSE) {
+            mcp_server_dispatch_response(ctx, job->server, sess, msg);
+            mcp_message_destroy(ctx, msg);
+            continue;
+        }
         if (kind != MCP_MSG_REQUEST) {
             mcp_message_destroy(ctx, msg);
             continue;

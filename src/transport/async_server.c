@@ -492,6 +492,9 @@ static void worker_dispatch_fn(mcp_context_t *task_ctx, void *arg) {
         if (mcp_message_kind(req_ctx, msg) == MCP_MSG_NOTIFICATION) {
             is_notification = true;
             mcp_server_notify(req_ctx, s->server, task->session, msg);
+        } else if (mcp_message_kind(req_ctx, msg) == MCP_MSG_RESPONSE) {
+            is_notification = true;
+            mcp_server_dispatch_response(req_ctx, s->server, task->session, msg);
         } else {
             /* Check conditional caching for tools/list, resources/list, prompts/list without pagination cursor */
             if (!task->is_ws) {
@@ -1633,6 +1636,7 @@ mcp_status_t mcp_async_server_step(mcp_context_t *ctx, mcp_async_server_t *s, in
     if ((time_t)(time(NULL) - s->last_reap_time) >= 5) {
         s->last_reap_time = time(NULL);
         reap_expired_sessions(s);
+        mcp_server_sweep_pending_requests(ctx, s->server, 0);
     }
 
     /* Check stall eviction across active connections during step */

@@ -60,6 +60,15 @@ void session_free(mcp_context_t *ctx, mcp_session_t *s) {
     }
     pthread_mutex_unlock(&s->direct_sub_lock);
     pthread_mutex_destroy(&s->direct_sub_lock);
+    if (s->server != NULL) {
+        pthread_mutex_lock(&s->server->pending_lock);
+        for (mcp_pending_req_t *p = s->server->pending_requests; p != NULL; p = p->next) {
+            if (p->session == s) {
+                p->session = NULL;
+            }
+        }
+        pthread_mutex_unlock(&s->server->pending_lock);
+    }
     srv_free(ctx, s);
 }
 

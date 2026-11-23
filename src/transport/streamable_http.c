@@ -670,7 +670,7 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
         return send_bytes(ctx, io, 400, "Bad Request", NULL, NULL, 0, NULL, NULL);
     }
     mcp_msg_kind_t kind = mcp_message_kind(ctx, msg);
-    if (kind != MCP_MSG_REQUEST && kind != MCP_MSG_NOTIFICATION) {
+    if (kind != MCP_MSG_REQUEST && kind != MCP_MSG_NOTIFICATION && kind != MCP_MSG_RESPONSE) {
         mcp_message_destroy(ctx, msg);
         return send_bytes(ctx, io, 400, "Bad Request", NULL, NULL, 0, NULL, NULL);
     }
@@ -756,6 +756,14 @@ static mcp_status_t handle_post(mcp_context_t *ctx, mcp_server_t *server,
     }
     if (kind == MCP_MSG_NOTIFICATION) {
         mcp_server_notify(ctx, server, sess, msg);
+        mcp_message_destroy(ctx, msg);
+        if (is_stateless) {
+            mcp_server_destroy_session(ctx, server, sess);
+        }
+        return send_bytes(ctx, io, 202, "Accepted", NULL, NULL, 0, NULL, NULL);
+    }
+    if (kind == MCP_MSG_RESPONSE) {
+        mcp_server_dispatch_response(ctx, server, sess, msg);
         mcp_message_destroy(ctx, msg);
         if (is_stateless) {
             mcp_server_destroy_session(ctx, server, sess);

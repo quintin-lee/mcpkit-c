@@ -138,6 +138,7 @@ static mcp_status_t loop_run_impl(mcp_context_t *ctx, mcp_server_t *server,
                 goto done;
             }
         }
+        mcp_server_sweep_pending_requests(ctx, server, 0);
         char *line = NULL;
         st = mcp_transport_recv(ctx, t, &line);
         if (st == MCP_ERR_IO) {
@@ -164,6 +165,11 @@ static mcp_status_t loop_run_impl(mcp_context_t *ctx, mcp_server_t *server,
         mcp_msg_kind_t kind = mcp_message_kind(ctx, msg);
         if (kind == MCP_MSG_NOTIFICATION) {
             mcp_server_notify(ctx, server, sess, msg);
+            mcp_message_destroy(ctx, msg);
+            continue;
+        }
+        if (kind == MCP_MSG_RESPONSE) {
+            mcp_server_dispatch_response(ctx, server, sess, msg);
             mcp_message_destroy(ctx, msg);
             continue;
         }

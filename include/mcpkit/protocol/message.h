@@ -43,6 +43,8 @@ typedef enum {
     MCP_RPC_METHOD_NOT_FOUND = -32601,
     MCP_RPC_INVALID_PARAMS = -32602,
     MCP_RPC_INTERNAL_ERROR = -32603,
+    /* Request timeout code in JSON-RPC 2.0 server error reserved range (-32000 to -32099) */
+    MCP_RPC_REQUEST_TIMEOUT = -32000,
     /* MCP 2026-07-28 spec error codes (-32020 to -32099 reserved) */
     MCP_RPC_HEADER_MISMATCH = -32020,
     MCP_RPC_MISSING_REQUIRED_CLIENT_CAPABILITY = -32021,
@@ -189,6 +191,15 @@ mcp_status_t mcp_message_id_number(mcp_context_t *ctx, const mcp_message_t *msg,
  * @return Borrowed value, or NULL if absent.
  */
 const mcp_json_value_t *mcp_message_result(mcp_context_t *ctx, const mcp_message_t *msg);
+
+/**
+ * @brief Returns the `"error"` object.
+ *
+ * @param ctx  Context.
+ * @param msg  Message to inspect.
+ * @return Borrowed JSON object value, or NULL if absent.
+ */
+const mcp_json_value_t *mcp_message_error(mcp_context_t *ctx, const mcp_message_t *msg);
 
 /**
  * @brief Returns the `"error.code"` field.

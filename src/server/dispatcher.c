@@ -71,6 +71,9 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
         return MCP_ERR_INVALID_ARGUMENT;
     }
     *resp_out = NULL;
+    if (mcp_message_kind(ctx, req) == MCP_MSG_RESPONSE) {
+        return mcp_server_dispatch_response(ctx, srv, session, req);
+    }
     if (mcp_message_kind(ctx, req) != MCP_MSG_REQUEST) {
         return MCP_ERR_INVALID_ARGUMENT;
     }

@@ -1,3 +1,5 @@
+#define _DEFAULT_SOURCE
+
 /**
  * @file server.c
  *
@@ -13,8 +15,11 @@
  */
 #include "mcpkit/server/server.h"
 
+#include <inttypes.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 
 #include "internals.h"
 #include "mcpkit/json/json.h"
@@ -68,6 +73,8 @@ mcp_server_t *mcp_server_create(mcp_context_t *ctx, const char *name, const char
     pthread_mutex_init(&srv->subscribed_lock, NULL);
     pthread_mutex_init(&srv->sessions_lock, NULL);
     pthread_mutex_init(&srv->outbox_lock, NULL);
+    pthread_mutex_init(&srv->pending_lock, NULL);
+    srv->pending_requests = NULL;
     atomic_init(&srv->next_server_id, 1000ULL);
     srv->list_ttl_ms = 0;
     srv->list_cache_scope = NULL;
@@ -164,6 +171,22 @@ static void free_outbox(mcp_context_t *ctx, mcp_server_t *srv) {
     pthread_mutex_unlock(&srv->outbox_lock);
 }
 
+// Pending request state table: freed in bulk at teardown.
+static void free_all_pending_requests(mcp_context_t *ctx, mcp_server_t *srv) {
+    pthread_mutex_lock(&srv->pending_lock);
+    mcp_pending_req_t *pnode = srv->pending_requests;
+    srv->pending_requests = NULL;
+    pthread_mutex_unlock(&srv->pending_lock);
+    while (pnode != NULL) {
+        mcp_pending_req_t *next = pnode->next;
+        if (pnode->str_id != NULL) {
+            srv_free(ctx, pnode->str_id);
+        }
+        srv_free(ctx, pnode);
+        pnode = next;
+    }
+}
+
 // Resource-subscription set: each entry is a srv_strdup'd uri owned by
 // the server; freed in bulk at teardown.
 static void free_subscribed(mcp_context_t *ctx, mcp_server_t *srv) {
@@ -189,6 +212,7 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     free_all_prompts(ctx, srv);
     free_all_completions(ctx, srv);
     free_outbox(ctx, srv);
+    free_all_pending_requests(ctx, srv);
     free_subscribed(ctx, srv);
     if (srv->task_mgr != NULL) {
         mcp_task_mgr_free(ctx, srv->task_mgr);
@@ -203,6 +227,7 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     pthread_mutex_destroy(&srv->subscribed_lock);
     pthread_mutex_destroy(&srv->sessions_lock);
     pthread_mutex_destroy(&srv->outbox_lock);
+    pthread_mutex_destroy(&srv->pending_lock);
     srv_free(ctx, srv->name);
     srv_free(ctx, srv->version);
     srv_free(ctx, srv);
@@ -671,18 +696,260 @@ mcp_status_t mcp_server_outbox_pop(mcp_context_t *ctx, mcp_server_t *srv,
     return MCP_OK;
 }
 
-mcp_status_t mcp_server_request_client(mcp_context_t *ctx, mcp_server_t *srv,
-                                       const char *method, mcp_json_value_t *params) {
+mcp_status_t mcp_server_request_client_with_response(mcp_context_t *ctx,
+                                                     mcp_server_t *srv,
+                                                     mcp_session_t *session,
+                                                     const char *method,
+                                                     mcp_json_value_t *params,
+                                                     uint64_t timeout_ms,
+                                                     mcp_client_response_fn cb,
+                                                     void *user_data,
+                                                     uint64_t *assigned_id_out) {
     if (srv == NULL || method == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
     }
-    // Server takes params on success; builder retains on failure (no leak).
+
     uint64_t id = atomic_fetch_add(&srv->next_server_id, 1);
+    if (assigned_id_out != NULL) {
+        *assigned_id_out = id;
+    }
+
+    mcp_pending_req_t *entry = NULL;
+    if (cb != NULL || timeout_ms > 0) {
+        entry = (mcp_pending_req_t *)srv_malloc(ctx, sizeof(mcp_pending_req_t));
+        if (entry == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+        entry->req_id = id;
+        entry->str_id = NULL;
+        entry->session = session;
+        entry->callback = cb;
+        entry->user_data = user_data;
+        entry->next = NULL;
+        if (timeout_ms > 0) {
+            struct timespec ts;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            entry->expire_at_ms = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000 + timeout_ms;
+        } else {
+            entry->expire_at_ms = 0;
+        }
+
+        pthread_mutex_lock(&srv->pending_lock);
+        entry->next = srv->pending_requests;
+        srv->pending_requests = entry;
+        pthread_mutex_unlock(&srv->pending_lock);
+    }
+
     mcp_message_t *req = mcp_request_new_number_id(ctx, (double)id, method, params);
     if (req == NULL) {
+        if (entry != NULL) {
+            pthread_mutex_lock(&srv->pending_lock);
+            mcp_pending_req_t **curr = &srv->pending_requests;
+            while (*curr != NULL) {
+                if (*curr == entry) {
+                    *curr = entry->next;
+                    break;
+                }
+                curr = &(*curr)->next;
+            }
+            pthread_mutex_unlock(&srv->pending_lock);
+            srv_free(ctx, entry);
+        }
         return MCP_ERR_NOMEM;
     }
-    return outbox_push(ctx, srv, req);
+
+    mcp_status_t st = mcp_server_deliver_notification(ctx, srv, session, req);
+    if (st != MCP_OK) {
+        if (entry != NULL) {
+            pthread_mutex_lock(&srv->pending_lock);
+            mcp_pending_req_t **curr = &srv->pending_requests;
+            while (*curr != NULL) {
+                if (*curr == entry) {
+                    *curr = entry->next;
+                    break;
+                }
+                curr = &(*curr)->next;
+            }
+            pthread_mutex_unlock(&srv->pending_lock);
+            srv_free(ctx, entry);
+        }
+        return st;
+    }
+
+    return MCP_OK;
+}
+
+mcp_status_t mcp_server_request_client(mcp_context_t *ctx, mcp_server_t *srv,
+                                       const char *method, mcp_json_value_t *params) {
+    return mcp_server_request_client_with_response(ctx, srv, NULL, method, params, 0, NULL, NULL, NULL);
+}
+
+mcp_status_t mcp_server_request_sampling(mcp_context_t *ctx,
+                                         mcp_server_t *server,
+                                         mcp_session_t *session,
+                                         mcp_json_value_t *params,
+                                         uint64_t timeout_ms,
+                                         mcp_client_response_fn cb,
+                                         void *user_data,
+                                         uint64_t *assigned_id_out) {
+    return mcp_server_request_client_with_response(ctx, server, session,
+                                                   "sampling/createMessage",
+                                                   params, timeout_ms, cb,
+                                                   user_data, assigned_id_out);
+}
+
+mcp_status_t mcp_server_request_roots(mcp_context_t *ctx,
+                                      mcp_server_t *server,
+                                      mcp_session_t *session,
+                                      uint64_t timeout_ms,
+                                      mcp_client_response_fn cb,
+                                      void *user_data,
+                                      uint64_t *assigned_id_out) {
+    return mcp_server_request_client_with_response(ctx, server, session,
+                                                   "roots/list",
+                                                   NULL, timeout_ms, cb,
+                                                   user_data, assigned_id_out);
+}
+
+mcp_status_t mcp_server_request_elicitation(mcp_context_t *ctx,
+                                            mcp_server_t *server,
+                                            mcp_session_t *session,
+                                            mcp_json_value_t *params,
+                                            uint64_t timeout_ms,
+                                            mcp_client_response_fn cb,
+                                            void *user_data,
+                                            uint64_t *assigned_id_out) {
+    return mcp_server_request_client_with_response(ctx, server, session,
+                                                   "elicitation/create",
+                                                   params, timeout_ms, cb,
+                                                   user_data, assigned_id_out);
+}
+
+mcp_status_t mcp_server_dispatch_response(mcp_context_t *ctx, mcp_server_t *server,
+                                          mcp_session_t *session, const mcp_message_t *resp) {
+    if (server == NULL || resp == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (mcp_message_kind(ctx, resp) != MCP_MSG_RESPONSE) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_id_type_t id_type = mcp_message_id_type(ctx, resp);
+    if (id_type == MCP_ID_NONE) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+
+    uint64_t num_id = 0;
+    bool has_num_id = false;
+    const char *str_id = NULL;
+
+    if (id_type == MCP_ID_NUMBER) {
+        double d = 0;
+        if (mcp_message_id_number(ctx, resp, &d) == MCP_OK) {
+            num_id = (uint64_t)d;
+            has_num_id = true;
+        }
+    } else if (id_type == MCP_ID_STRING) {
+        str_id = mcp_message_id_string(ctx, resp);
+        if (str_id != NULL) {
+            char *end = NULL;
+            unsigned long long parsed = strtoull(str_id, &end, 10);
+            if (end != str_id && *end == '\0') {
+                num_id = (uint64_t)parsed;
+                has_num_id = true;
+            }
+        }
+    }
+
+    mcp_pending_req_t *matched = NULL;
+    pthread_mutex_lock(&server->pending_lock);
+    mcp_pending_req_t **curr = &server->pending_requests;
+    while (*curr != NULL) {
+        mcp_pending_req_t *node = *curr;
+        bool match = false;
+        if (node->str_id != NULL && str_id != NULL && strcmp(node->str_id, str_id) == 0) {
+            match = true;
+        } else if (has_num_id && node->req_id == num_id) {
+            match = true;
+        }
+        if (match) {
+            *curr = node->next;
+            node->next = NULL;
+            matched = node;
+            break;
+        }
+        curr = &node->next;
+    }
+    pthread_mutex_unlock(&server->pending_lock);
+
+    if (matched == NULL) {
+        dlogf_srv(ctx, server, MCP_LOG_WARN, "event=unmatched_response");
+        return MCP_ERR_NOT_FOUND;
+    }
+
+    if (matched->callback != NULL) {
+        const mcp_json_value_t *result = mcp_message_result(ctx, resp);
+        const mcp_json_value_t *error = mcp_message_error(ctx, resp);
+        matched->callback(ctx, server, session != NULL ? session : matched->session,
+                          matched->req_id, result, error, matched->user_data);
+    }
+
+    if (matched->str_id != NULL) {
+        srv_free(ctx, matched->str_id);
+    }
+    srv_free(ctx, matched);
+    return MCP_OK;
+}
+
+size_t mcp_server_sweep_pending_requests(mcp_context_t *ctx, mcp_server_t *server, uint64_t now_ms) {
+    if (server == NULL) {
+        return 0;
+    }
+    if (now_ms == 0) {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        now_ms = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
+    }
+    mcp_pending_req_t *expired_head = NULL;
+    mcp_pending_req_t **expired_tail = &expired_head;
+    size_t count = 0;
+
+    pthread_mutex_lock(&server->pending_lock);
+    mcp_pending_req_t **curr = &server->pending_requests;
+    while (*curr != NULL) {
+        mcp_pending_req_t *node = *curr;
+        if (node->expire_at_ms > 0 && now_ms >= node->expire_at_ms) {
+            *curr = node->next;
+            node->next = NULL;
+            *expired_tail = node;
+            expired_tail = &node->next;
+            count++;
+        } else {
+            curr = &node->next;
+        }
+    }
+    pthread_mutex_unlock(&server->pending_lock);
+
+    mcp_pending_req_t *node = expired_head;
+    while (node != NULL) {
+        mcp_pending_req_t *next = node->next;
+        if (node->callback != NULL) {
+            mcp_json_value_t *err_obj = mcp_json_object_new(ctx);
+            if (err_obj != NULL) {
+                mcp_json_object_set(ctx, err_obj, "code", mcp_json_number_new(ctx, (double)MCP_RPC_REQUEST_TIMEOUT));
+                mcp_json_object_set(ctx, err_obj, "message", mcp_json_string_new(ctx, "Request timed out"));
+            }
+            node->callback(ctx, server, node->session, node->req_id, NULL, err_obj, node->user_data);
+            if (err_obj != NULL) {
+                mcp_json_destroy(ctx, err_obj);
+            }
+        }
+        if (node->str_id != NULL) {
+            srv_free(ctx, node->str_id);
+        }
+        srv_free(ctx, node);
+        node = next;
+    }
+    return count;
 }
 
 mcp_status_t mcp_server_set_list_cache(mcp_context_t *ctx, mcp_server_t *srv,

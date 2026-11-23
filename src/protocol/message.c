@@ -176,6 +176,10 @@ static const mcp_json_value_t *error_obj(mcp_context_t *ctx, const mcp_message_t
     return err;
 }
 
+const mcp_json_value_t *mcp_message_error(mcp_context_t *ctx, const mcp_message_t *msg) {
+    return error_obj(ctx, msg);
+}
+
 mcp_status_t mcp_message_error_code(mcp_context_t *ctx, const mcp_message_t *msg, int *out) {
     if (out == NULL) {
         return MCP_ERR_INVALID_ARGUMENT;
