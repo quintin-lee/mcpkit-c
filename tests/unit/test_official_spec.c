@@ -769,6 +769,111 @@ static void test_item5_client_apis_and_notifications(void) {
     printf("PASS: test_item5_client_apis_and_notifications\n");
 }
 
+static void test_item6_multimedia_content(void) {
+    mcp_context_t *ctx = NULL;
+
+    /* 1. Null handling */
+    assert(mcp_content_text_new(ctx, NULL) == NULL);
+    assert(mcp_content_image_new(ctx, NULL, "image/png") == NULL);
+    assert(mcp_content_image_new(ctx, "abc", NULL) == NULL);
+    assert(mcp_content_audio_new(ctx, NULL, "audio/wav") == NULL);
+    assert(mcp_content_audio_new(ctx, "abc", NULL) == NULL);
+    assert(mcp_content_audio_new_annotated(ctx, NULL, "audio/wav", NULL) == NULL);
+    assert(mcp_content_audio_new_annotated(ctx, "abc", NULL, NULL) == NULL);
+    assert(mcp_tool_result_image_new(ctx, NULL, "image/png") == NULL);
+    assert(mcp_tool_result_image_new(ctx, "abc", NULL) == NULL);
+    assert(mcp_tool_result_audio_new(ctx, NULL, "audio/wav") == NULL);
+    assert(mcp_tool_result_audio_new(ctx, "abc", NULL) == NULL);
+
+    /* 2. Unannotated convenience builders */
+    mcp_json_value_t *txt = mcp_content_text_new(ctx, "sample text");
+    assert(txt != NULL);
+    const char *s_val = NULL;
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, txt, "type"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "text") == 0);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, txt, "text"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "sample text") == 0);
+    assert(mcp_json_object_get(ctx, txt, "annotations") == NULL);
+    mcp_json_destroy(ctx, txt);
+
+    mcp_json_value_t *img = mcp_content_image_new(ctx, "iVBORw0KGgo=", "image/png");
+    assert(img != NULL);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, img, "type"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "image") == 0);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, img, "data"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "iVBORw0KGgo=") == 0);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, img, "mimeType"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "image/png") == 0);
+    assert(mcp_json_object_get(ctx, img, "annotations") == NULL);
+    mcp_json_destroy(ctx, img);
+
+    /* 3. AudioContent unannotated and annotated */
+    mcp_json_value_t *aud = mcp_content_audio_new(ctx, "UklGRg==", "audio/wav");
+    assert(aud != NULL);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, aud, "type"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "audio") == 0);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, aud, "data"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "UklGRg==") == 0);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, aud, "mimeType"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "audio/wav") == 0);
+    assert(mcp_json_object_get(ctx, aud, "annotations") == NULL);
+    mcp_json_destroy(ctx, aud);
+
+    mcp_content_annotations_t ann;
+    memset(&ann, 0, sizeof(ann));
+    ann.audience = MCP_AUDIENCE_USER;
+    ann.priority = 0.95;
+    strncpy(ann.last_modified, "2026-11-23T12:00:00Z", sizeof(ann.last_modified) - 1);
+
+    mcp_json_value_t *aud_ann = mcp_content_audio_new_annotated(ctx, "UklGRg==", "audio/wav", &ann);
+    assert(aud_ann != NULL);
+    mcp_content_annotations_t extracted;
+    memset(&extracted, 0, sizeof(extracted));
+    assert(mcp_content_extract_annotations(ctx, aud_ann, &extracted) == MCP_OK);
+    assert(extracted.audience == MCP_AUDIENCE_USER);
+    assert(extracted.priority >= 0.949 && extracted.priority <= 0.951);
+    assert(strcmp(extracted.last_modified, "2026-11-23T12:00:00Z") == 0);
+    mcp_json_destroy(ctx, aud_ann);
+
+    /* 4. Tool result with ImageContent */
+    mcp_json_value_t *img_res = mcp_tool_result_image_new(ctx, "iVBORw0KGgo=", "image/png");
+    assert(img_res != NULL);
+    const mcp_json_value_t *is_err = mcp_json_object_get(ctx, img_res, "isError");
+    bool b_err = true;
+    assert(is_err != NULL && mcp_json_bool_value(ctx, is_err, &b_err) == MCP_OK && b_err == false);
+    const mcp_json_value_t *c_arr = mcp_json_object_get(ctx, img_res, "content");
+    assert(c_arr != NULL && mcp_json_array_size(ctx, c_arr) == 1);
+    const mcp_json_value_t *item0 = mcp_json_array_get(ctx, c_arr, 0);
+    assert(item0 != NULL);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, item0, "type"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "image") == 0);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, item0, "data"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "iVBORw0KGgo=") == 0);
+    mcp_json_destroy(ctx, img_res);
+
+    /* 5. Tool result with AudioContent */
+    mcp_json_value_t *aud_res = mcp_tool_result_audio_new(ctx, "UklGRg==", "audio/wav");
+    assert(aud_res != NULL);
+    is_err = mcp_json_object_get(ctx, aud_res, "isError");
+    b_err = true;
+    assert(is_err != NULL && mcp_json_bool_value(ctx, is_err, &b_err) == MCP_OK && b_err == false);
+    c_arr = mcp_json_object_get(ctx, aud_res, "content");
+    assert(c_arr != NULL && mcp_json_array_size(ctx, c_arr) == 1);
+    item0 = mcp_json_array_get(ctx, c_arr, 0);
+    assert(item0 != NULL);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, item0, "type"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "audio") == 0);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, item0, "data"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "UklGRg==") == 0);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, item0, "mimeType"), &s_val) == MCP_OK);
+    assert(strcmp(s_val, "audio/wav") == 0);
+    mcp_json_destroy(ctx, aud_res);
+
+    (void)b_err;
+    (void)s_val;
+    printf("PASS: test_item6_multimedia_content\n");
+}
+
 int main(void) {
     printf("Starting Official MCP Spec Compliance Tests...\n");
     test_item1_capabilities_and_resource_notifications();
@@ -776,6 +881,7 @@ int main(void) {
     test_item3_cancellation_mechanism();
     test_item4_server_logging_notifications();
     test_item5_client_apis_and_notifications();
+    test_item6_multimedia_content();
     printf("All Official MCP Spec Compliance Tests Passed!\n");
     return 0;
 }

@@ -162,6 +162,10 @@ mcp_json_value_t *mcp_content_text_new_annotated(mcp_context_t *ctx,
     return obj;
 }
 
+mcp_json_value_t *mcp_content_text_new(mcp_context_t *ctx, const char *text) {
+    return mcp_content_text_new_annotated(ctx, text, NULL);
+}
+
 mcp_json_value_t *mcp_content_image_new_annotated(mcp_context_t *ctx,
                                                   const char *data_base64,
                                                   const char *mime_type,
@@ -199,6 +203,57 @@ mcp_json_value_t *mcp_content_image_new_annotated(mcp_context_t *ctx,
     }
 
     return obj;
+}
+
+mcp_json_value_t *mcp_content_image_new(mcp_context_t *ctx,
+                                        const char *data_base64,
+                                        const char *mime_type) {
+    return mcp_content_image_new_annotated(ctx, data_base64, mime_type, NULL);
+}
+
+mcp_json_value_t *mcp_content_audio_new_annotated(mcp_context_t *ctx,
+                                                  const char *data_base64,
+                                                  const char *mime_type,
+                                                  const mcp_content_annotations_t *annotations) {
+    if (data_base64 == NULL || mime_type == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *obj = mcp_json_object_new(ctx);
+    mcp_json_value_t *type_v = obj != NULL ? mcp_json_string_new(ctx, "audio") : NULL;
+    mcp_json_value_t *data_v = obj != NULL ? mcp_json_string_new(ctx, data_base64) : NULL;
+    mcp_json_value_t *mime_v = obj != NULL ? mcp_json_string_new(ctx, mime_type) : NULL;
+    if (obj == NULL || type_v == NULL || data_v == NULL || mime_v == NULL) {
+        mcp_json_destroy(ctx, type_v);
+        mcp_json_destroy(ctx, data_v);
+        mcp_json_destroy(ctx, mime_v);
+        mcp_json_destroy(ctx, obj);
+        return NULL;
+    }
+    if (mcp_json_object_set_take(ctx, obj, "type", type_v) != MCP_OK ||
+        mcp_json_object_set_take(ctx, obj, "data", data_v) != MCP_OK ||
+        mcp_json_object_set_take(ctx, obj, "mimeType", mime_v) != MCP_OK) {
+        mcp_json_destroy(ctx, mime_v);
+        mcp_json_destroy(ctx, obj);
+        return NULL;
+    }
+
+    if (annotations != NULL) {
+        mcp_json_value_t *ann_json = mcp_annotations_to_json(ctx, annotations);
+        if (ann_json != NULL) {
+            if (mcp_json_object_set_take(ctx, obj, "annotations", ann_json) != MCP_OK) {
+                mcp_json_destroy(ctx, obj);
+                return NULL;
+            }
+        }
+    }
+
+    return obj;
+}
+
+mcp_json_value_t *mcp_content_audio_new(mcp_context_t *ctx,
+                                        const char *data_base64,
+                                        const char *mime_type) {
+    return mcp_content_audio_new_annotated(ctx, data_base64, mime_type, NULL);
 }
 
 mcp_json_value_t *mcp_content_resource_new_annotated(mcp_context_t *ctx,
@@ -345,6 +400,88 @@ mcp_json_value_t *mcp_tool_result_resource_new(mcp_context_t *ctx,
         return NULL;
     }
     mcp_json_value_t *item = mcp_content_resource_new(ctx, uri, mime_type, text_or_blob, is_binary);
+    if (item == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *arr = mcp_json_array_new(ctx);
+    if (arr == NULL) {
+        mcp_json_destroy(ctx, item);
+        return NULL;
+    }
+    if (mcp_json_array_append(ctx, arr, item) != MCP_OK) {
+        mcp_json_destroy(ctx, item);
+        mcp_json_destroy(ctx, arr);
+        return NULL;
+    }
+    mcp_json_value_t *result = mcp_json_object_new(ctx);
+    if (result == NULL) {
+        mcp_json_destroy(ctx, arr);
+        return NULL;
+    }
+    if (mcp_json_object_set_take(ctx, result, "content", arr) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    mcp_json_value_t *err_v = mcp_json_bool_new(ctx, false);
+    if (err_v == NULL) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    if (mcp_json_object_set_take(ctx, result, "isError", err_v) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    return result;
+}
+
+mcp_json_value_t *mcp_tool_result_image_new(mcp_context_t *ctx,
+                                            const char *data_base64,
+                                            const char *mime_type) {
+    if (data_base64 == NULL || mime_type == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *item = mcp_content_image_new(ctx, data_base64, mime_type);
+    if (item == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *arr = mcp_json_array_new(ctx);
+    if (arr == NULL) {
+        mcp_json_destroy(ctx, item);
+        return NULL;
+    }
+    if (mcp_json_array_append(ctx, arr, item) != MCP_OK) {
+        mcp_json_destroy(ctx, item);
+        mcp_json_destroy(ctx, arr);
+        return NULL;
+    }
+    mcp_json_value_t *result = mcp_json_object_new(ctx);
+    if (result == NULL) {
+        mcp_json_destroy(ctx, arr);
+        return NULL;
+    }
+    if (mcp_json_object_set_take(ctx, result, "content", arr) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    mcp_json_value_t *err_v = mcp_json_bool_new(ctx, false);
+    if (err_v == NULL) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    if (mcp_json_object_set_take(ctx, result, "isError", err_v) != MCP_OK) {
+        mcp_json_destroy(ctx, result);
+        return NULL;
+    }
+    return result;
+}
+
+mcp_json_value_t *mcp_tool_result_audio_new(mcp_context_t *ctx,
+                                            const char *data_base64,
+                                            const char *mime_type) {
+    if (data_base64 == NULL || mime_type == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *item = mcp_content_audio_new(ctx, data_base64, mime_type);
     if (item == NULL) {
         return NULL;
     }

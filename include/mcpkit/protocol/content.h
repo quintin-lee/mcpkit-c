@@ -4,7 +4,7 @@
  *
  * Implements audience tagging ("user", "assistant"), priority (0.0 - 1.0),
  * and lastModified ISO-8601 annotations for TextContent, ImageContent,
- * and EmbeddedResource content items.
+ * AudioContent, and EmbeddedResource content items.
  */
 
 #ifndef MCPKIT_PROTOCOL_CONTENT_H
@@ -72,6 +72,17 @@ mcp_json_value_t *mcp_content_text_new_annotated(mcp_context_t *ctx,
                                                  const mcp_content_annotations_t *annotations);
 
 /**
+ * @brief Creates a TextContent item without annotations.
+ *
+ * Result shape: {"type":"text","text":"..."}
+ *
+ * @param ctx Context; may be NULL.
+ * @param text UTF-8 text string; not owned, copied internally.
+ * @return Owned JSON object, or NULL on OOM.
+ */
+mcp_json_value_t *mcp_content_text_new(mcp_context_t *ctx, const char *text);
+
+/**
  * @brief Creates an ImageContent item with optional annotations.
  *
  * Result shape: {"type":"image","data":"...","mimeType":"...","annotations":{...}}
@@ -86,6 +97,50 @@ mcp_json_value_t *mcp_content_image_new_annotated(mcp_context_t *ctx,
                                                   const char *data_base64,
                                                   const char *mime_type,
                                                   const mcp_content_annotations_t *annotations);
+
+/**
+ * @brief Creates an ImageContent item without annotations.
+ *
+ * Result shape: {"type":"image","data":"...","mimeType":"..."}
+ *
+ * @param ctx Context; may be NULL.
+ * @param data_base64 Base64-encoded image data; not owned.
+ * @param mime_type MIME type string (e.g. "image/png"); not owned.
+ * @return Owned JSON object, or NULL on OOM.
+ */
+mcp_json_value_t *mcp_content_image_new(mcp_context_t *ctx,
+                                        const char *data_base64,
+                                        const char *mime_type);
+
+/**
+ * @brief Creates an AudioContent item with optional annotations.
+ *
+ * Result shape: {"type":"audio","data":"...","mimeType":"...","annotations":{...}}
+ *
+ * @param ctx Context; may be NULL.
+ * @param data_base64 Base64-encoded audio data; not owned.
+ * @param mime_type MIME type string (e.g. "audio/wav"); not owned.
+ * @param annotations Optional annotations; may be NULL.
+ * @return Owned JSON object, or NULL on OOM.
+ */
+mcp_json_value_t *mcp_content_audio_new_annotated(mcp_context_t *ctx,
+                                                  const char *data_base64,
+                                                  const char *mime_type,
+                                                  const mcp_content_annotations_t *annotations);
+
+/**
+ * @brief Creates an AudioContent item without annotations.
+ *
+ * Result shape: {"type":"audio","data":"...","mimeType":"..."}
+ *
+ * @param ctx Context; may be NULL.
+ * @param data_base64 Base64-encoded audio data; not owned.
+ * @param mime_type MIME type string (e.g. "audio/wav"); not owned.
+ * @return Owned JSON object, or NULL on OOM.
+ */
+mcp_json_value_t *mcp_content_audio_new(mcp_context_t *ctx,
+                                        const char *data_base64,
+                                        const char *mime_type);
 
 /**
  * @brief Creates an EmbeddedResource item with optional annotations.
@@ -181,6 +236,34 @@ mcp_json_value_t *mcp_tool_result_resource_new(mcp_context_t *ctx,
                                                const char *mime_type,
                                                const char *text_or_blob,
                                                bool is_binary);
+
+/**
+ * @brief Creates a standard tool result JSON object containing an ImageContent item.
+ *
+ * Result shape: {"content":[{"type":"image","data":"...","mimeType":"..."}],"isError":false}
+ *
+ * @param ctx         Context; may be NULL.
+ * @param data_base64 Base64-encoded image data; must not be NULL.
+ * @param mime_type   MIME type string (e.g. "image/png"); must not be NULL.
+ * @return Owned JSON object, or NULL on OOM or invalid argument.
+ */
+mcp_json_value_t *mcp_tool_result_image_new(mcp_context_t *ctx,
+                                            const char *data_base64,
+                                            const char *mime_type);
+
+/**
+ * @brief Creates a standard tool result JSON object containing an AudioContent item.
+ *
+ * Result shape: {"content":[{"type":"audio","data":"...","mimeType":"..."}],"isError":false}
+ *
+ * @param ctx         Context; may be NULL.
+ * @param data_base64 Base64-encoded audio data; must not be NULL.
+ * @param mime_type   MIME type string (e.g. "audio/wav"); must not be NULL.
+ * @return Owned JSON object, or NULL on OOM or invalid argument.
+ */
+mcp_json_value_t *mcp_tool_result_audio_new(mcp_context_t *ctx,
+                                            const char *data_base64,
+                                            const char *mime_type);
 
 #ifdef __cplusplus
 }
