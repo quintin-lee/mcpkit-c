@@ -1,11 +1,17 @@
 #define _DEFAULT_SOURCE
+#undef NDEBUG
 
 #include <assert.h>
+
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "mcpkit/mcpkit.h"
+
 
 typedef struct {
     int call_count;
@@ -285,6 +291,11 @@ static void test_item2_completion_schema_alignment(void) {
         mcp_json_object_set_take(ctx, ref_obj, "uri", mcp_json_string_new(ctx, "resource/docs/api"));
         mcp_json_object_set_take(ctx, params, "ref", ref_obj);
 
+        mcp_json_value_t *arg_obj = mcp_json_object_new(ctx);
+        mcp_json_object_set_take(ctx, arg_obj, "name", mcp_json_string_new(ctx, "uri"));
+        mcp_json_object_set_take(ctx, arg_obj, "value", mcp_json_string_new(ctx, "res"));
+        mcp_json_object_set_take(ctx, params, "argument", arg_obj);
+
         mcp_message_t *req = mcp_request_new_string_id(ctx, "comp-2", "completion/complete", params);
         mcp_message_t *resp = NULL;
         assert(mcp_server_dispatch(ctx, srv, sess, req, &resp) == MCP_OK);
@@ -311,6 +322,12 @@ static void test_item2_completion_schema_alignment(void) {
         mcp_json_object_set_take(ctx, ref_obj, "value", mcp_json_string_new(ctx, "code_template"));
         mcp_json_object_set_take(ctx, params, "ref", ref_obj);
 
+        mcp_json_value_t *arg_obj = mcp_json_object_new(ctx);
+        mcp_json_object_set_take(ctx, arg_obj, "name", mcp_json_string_new(ctx, "lang"));
+        mcp_json_object_set_take(ctx, arg_obj, "value", mcp_json_string_new(ctx, "p"));
+        mcp_json_object_set_take(ctx, params, "argument", arg_obj);
+
+
         mcp_message_t *req = mcp_request_new_string_id(ctx, "comp-3", "completion/complete", params);
         mcp_message_t *resp = NULL;
         assert(mcp_server_dispatch(ctx, srv, sess, req, &resp) == MCP_OK);
@@ -333,10 +350,143 @@ static void test_item2_completion_schema_alignment(void) {
     printf("PASS: test_item2_completion_schema_alignment\n");
 }
 
+/* =========================================================================
+ * Item 3: Request-level cancellation mechanism and notifications/cancelled
+ * ========================================================================= */
+typedef struct {
+    mcp_server_t *srv;
+    mcp_session_t *sess;
+    atomic_bool tool_started;
+} cancel_test_env_t;
+
+static void *cancel_notifier_thread(void *arg) {
+    cancel_test_env_t *env = (cancel_test_env_t *)arg;
+    while (!atomic_load(&env->tool_started)) {
+        usleep(1000); /* 1ms */
+    }
+    usleep(5000); /* 5ms */
+
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    mcp_json_object_set_take(ctx, params, "requestId", mcp_json_string_new(ctx, "long-tool-1"));
+    mcp_json_object_set_take(ctx, params, "reason", mcp_json_string_new(ctx, "user cancelled operation"));
+    mcp_message_t *notif = mcp_notification_new(ctx, "notifications/cancelled", params);
+
+    mcp_server_notify(ctx, env->srv, env->sess, notif);
+    mcp_message_destroy(ctx, notif);
+    mcp_context_destroy(ctx);
+    return NULL;
+}
+
+static mcp_status_t cancelling_tool_v2(mcp_context_t *ctx,
+                                      mcp_session_t *session,
+                                      const mcp_tool_call_ctx_t *call_ctx,
+                                      void *user_data,
+                                      mcp_json_value_t **result) {
+    (void)session;
+    cancel_test_env_t *env = (cancel_test_env_t *)user_data;
+    atomic_store(&env->tool_started, true);
+
+    int elapsed_ms = 0;
+    while (!mcp_tool_is_cancelled(call_ctx) && elapsed_ms < 500) {
+        usleep(5000); /* 5ms */
+        elapsed_ms += 5;
+    }
+
+    if (mcp_tool_is_cancelled(call_ctx)) {
+        const char *reason = mcp_tool_cancel_reason(call_ctx);
+        assert(reason != NULL && strcmp(reason, "user cancelled operation") == 0);
+        return MCP_ERR_CANCELLED;
+    }
+
+    *result = mcp_json_object_new(ctx);
+    return MCP_OK;
+}
+
+static void test_item3_cancellation_mechanism(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    assert(ctx != NULL);
+
+    mcp_server_t *srv = mcp_server_create(ctx, "test-item3-srv", "1.0.0");
+    assert(srv != NULL);
+
+    cancel_test_env_t env;
+    memset(&env, 0, sizeof(env));
+    env.srv = srv;
+    atomic_init(&env.tool_started, false);
+
+    mcp_tool_t *tool = mcp_tool_new_v2(ctx, "long_op", "A long operation tool", NULL,
+                                       cancelling_tool_v2, &env);
+    assert(tool != NULL);
+    assert(mcp_server_add_tool(ctx, srv, tool) == MCP_OK);
+
+    mcp_session_t *sess = mcp_server_create_session(ctx, srv);
+    assert(sess != NULL);
+    env.sess = sess;
+
+    mock_sink_t sink = {0};
+    mcp_session_set_sink(sess, mock_session_sink, &sink);
+
+    /* Initialize session */
+    mcp_json_value_t *ip = mcp_initialize_params_new(ctx, "test-client", "1.0.0");
+    mcp_message_t *ireq = mcp_request_new_string_id(ctx, "init-3", "initialize", ip);
+    mcp_message_t *iresp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, ireq, &iresp) == MCP_OK);
+    mcp_message_destroy(ctx, ireq);
+    mcp_message_destroy(ctx, iresp);
+
+    mcp_message_t *init_notif = mcp_initialized_notification_new(ctx);
+    assert(mcp_server_notify(ctx, srv, sess, init_notif) == MCP_OK);
+    mcp_message_destroy(ctx, init_notif);
+
+    /* Test 1: Server cancel request notification */
+    assert(mcp_server_cancel_request(ctx, srv, sess, "srv-req-1", 0, "server abort") == MCP_OK);
+    assert(sink.call_count == 1);
+    assert(strstr(sink.last_payload, "notifications/cancelled") != NULL);
+    assert(strstr(sink.last_payload, "srv-req-1") != NULL);
+    assert(strstr(sink.last_payload, "server abort") != NULL);
+
+    /* Test 2: In-flight tool cancellation */
+    pthread_t th;
+    int rc = pthread_create(&th, NULL, cancel_notifier_thread, &env);
+    assert(rc == 0);
+    (void)rc;
+
+    mcp_json_value_t *call_params = mcp_json_object_new(ctx);
+    mcp_json_object_set_take(ctx, call_params, "name", mcp_json_string_new(ctx, "long_op"));
+    mcp_json_object_set_take(ctx, call_params, "arguments", mcp_json_object_new(ctx));
+
+    mcp_message_t *req = mcp_request_new_string_id(ctx, "long-tool-1", "tools/call", call_params);
+    mcp_message_t *resp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, req, &resp) == MCP_OK);
+    assert(resp != NULL);
+
+    pthread_join(th, NULL);
+
+    /* Verify response is tool error with cancelled status */
+    const mcp_json_value_t *res = mcp_message_result(ctx, resp);
+    assert(res != NULL);
+    const mcp_json_value_t *is_err = mcp_json_object_get(ctx, res, "isError");
+    bool b_err = false;
+    assert(is_err != NULL && mcp_json_bool_value(ctx, is_err, &b_err) == MCP_OK && b_err == true);
+    (void)is_err;
+    (void)b_err;
+    (void)tool;
+
+
+    mcp_message_destroy(ctx, req);
+    mcp_message_destroy(ctx, resp);
+
+    mcp_server_destroy(ctx, srv);
+    mcp_context_destroy(ctx);
+    printf("PASS: test_item3_cancellation_mechanism\n");
+}
+
 int main(void) {
     printf("Starting Official MCP Spec Compliance Tests...\n");
     test_item1_capabilities_and_resource_notifications();
     test_item2_completion_schema_alignment();
+    test_item3_cancellation_mechanism();
     printf("All Official MCP Spec Compliance Tests Passed!\n");
     return 0;
 }

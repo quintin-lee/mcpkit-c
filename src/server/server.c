@@ -1192,6 +1192,7 @@ static inline uint64_t fnv1a64_update(uint64_t hash, const void *data, size_t le
 }
 
 uint64_t mcp_server_get_tools_revision(const mcp_server_t *server, mcp_tool_visibility_t vis) {
+
     if (server == NULL) {
         return 0;
     }
@@ -1269,3 +1270,39 @@ uint64_t mcp_server_get_prompts_revision(const mcp_server_t *server) {
     }
     return hash;
 }
+
+mcp_status_t mcp_server_cancel_request(mcp_context_t *ctx, mcp_server_t *server,
+                                       mcp_session_t *session,
+                                       const char *req_id_str, double req_id_num,
+                                       const char *reason) {
+    if (server == NULL || session == NULL || (req_id_str == NULL && req_id_num == 0)) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    if (params == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_value_t *id_val = req_id_str != NULL ? mcp_json_string_new(ctx, req_id_str)
+                                                  : mcp_json_number_new(ctx, req_id_num);
+    if (id_val == NULL) {
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_object_set_take(ctx, params, "requestId", id_val);
+
+    if (reason != NULL) {
+        mcp_json_value_t *r_val = mcp_json_string_new(ctx, reason);
+        if (r_val != NULL) {
+            mcp_json_object_set_take(ctx, params, "reason", r_val);
+        }
+    }
+
+    mcp_message_t *notif = mcp_notification_new(ctx, "notifications/cancelled", params);
+    if (notif == NULL) {
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    return mcp_server_deliver_notification(ctx, server, session, notif);
+}
+
+

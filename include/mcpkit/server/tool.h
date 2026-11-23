@@ -74,7 +74,27 @@ typedef struct mcp_tool_call_ctx {
 
     /** Borrowed pointer to current session; non-NULL during dispatch. */
     mcp_session_t *session;
+
+    /** Opaque cancellation token tracking in-flight request state. */
+    void *cancellation_token;
 } mcp_tool_call_ctx_t;
+
+/**
+ * @brief Returns whether the currently executing tool call has been cancelled.
+ *
+ * @param call_ctx The tool call context passed to the handler.
+ * @return true if cancelled; false otherwise.
+ */
+bool mcp_tool_is_cancelled(const mcp_tool_call_ctx_t *call_ctx);
+
+/**
+ * @brief Returns the reason for cancellation if provided, or NULL.
+ *
+ * @param call_ctx The tool call context passed to the handler.
+ * @return Borrowed reason string or NULL.
+ */
+const char *mcp_tool_cancel_reason(const mcp_tool_call_ctx_t *call_ctx);
+
 
 /**
  * @brief Reports intermediate execution progress for an in-flight tool call.

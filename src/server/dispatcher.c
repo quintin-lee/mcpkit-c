@@ -121,11 +121,13 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
     }
     mcp_context_t *id_ctx = (session != NULL && session->ctx != NULL) ? session->ctx : ctx;
     mcp_id_type_t id_type = mcp_message_id_type(ctx, req);
+    const char *id_str = NULL;
+    double id_num = 0;
     if (id_type != MCP_ID_NONE) {
-        const char *id_str = mcp_message_id_string(ctx, req);
-        double id_num = 0;
+        id_str = mcp_message_id_string(ctx, req);
         mcp_message_id_number(ctx, req, &id_num);
         if (mcp_idset_contains(id_ctx, session->ids, id_type, id_str, id_num)) {
+
             dlogf_srv(ctx, srv, MCP_LOG_WARN, "event=duplicate_id method=%s", method);
             atomic_fetch_add(&srv->c_requests_error, 1);
             *resp_out = err_resp(ctx, req, MCP_RPC_INVALID_REQUEST, "duplicate request id");
@@ -138,9 +140,42 @@ mcp_status_t mcp_server_dispatch(mcp_context_t *ctx, mcp_server_t *srv, mcp_sess
             return *resp_out == NULL ? MCP_ERR_NOMEM : MCP_OK;
         }
     }
+    mcp_in_flight_req_t *in_flight = NULL;
+    if (id_type != MCP_ID_NONE) {
+        in_flight = srv_malloc(ctx, sizeof(*in_flight));
+        if (in_flight != NULL) {
+            memset(in_flight, 0, sizeof(*in_flight));
+            in_flight->id_type = id_type;
+            if (id_type == MCP_ID_STRING && id_str != NULL) {
+                in_flight->id_str = srv_strdup(ctx, id_str);
+            }
+            in_flight->id_num = id_num;
+            atomic_init(&in_flight->is_cancelled, false);
+
+            pthread_mutex_lock(&session->active_req_lock);
+            in_flight->next = session->active_requests;
+            session->active_requests = in_flight;
+            pthread_mutex_unlock(&session->active_req_lock);
+        }
+    }
     uint64_t t0 = srv->tracer != NULL ? trace_now() : 0;
     trace_begin(ctx, srv, method);
     mcp_message_t *resp = mcp_server_route_request(ctx, srv, session, req, method);
+    if (in_flight != NULL) {
+        pthread_mutex_lock(&session->active_req_lock);
+        mcp_in_flight_req_t **pp = &session->active_requests;
+        while (*pp != NULL) {
+            if (*pp == in_flight) {
+                *pp = in_flight->next;
+                break;
+            }
+            pp = &(*pp)->next;
+        }
+        pthread_mutex_unlock(&session->active_req_lock);
+        srv_free(ctx, in_flight->id_str);
+        srv_free(ctx, in_flight->cancel_reason);
+        srv_free(ctx, in_flight);
+    }
     if (resp == NULL) {
         dlogf_srv(ctx, srv, MCP_LOG_ERROR, "event=route_failed method=%s", method);
         atomic_fetch_add(&srv->c_requests_error, 1);
@@ -173,8 +208,36 @@ mcp_status_t mcp_server_notify(mcp_context_t *ctx, mcp_server_t *srv, mcp_sessio
     if (strcmp(method, "notifications/initialized") == 0) {
         session->initialized = true;
     } else if (strcmp(method, "notifications/cancelled") == 0) {
-        session->subscription_active = false;
+        const mcp_json_value_t *params = mcp_message_params(ctx, notif);
+        if (params != NULL) {
+            const mcp_json_value_t *req_id_val = mcp_json_object_get(ctx, params, "requestId");
+            const char *reason = NULL;
+            const mcp_json_value_t *reason_val = mcp_json_object_get(ctx, params, "reason");
+            if (reason_val != NULL && mcp_json_type(ctx, reason_val) == MCP_JSON_STRING) {
+                mcp_json_string_value(ctx, reason_val, &reason);
+            }
+            if (req_id_val != NULL) {
+                mcp_id_type_t cid_type = MCP_ID_NONE;
+                const char *cid_str = NULL;
+                double cid_num = 0;
+                if (mcp_json_type(ctx, req_id_val) == MCP_JSON_STRING) {
+                    cid_type = MCP_ID_STRING;
+                    mcp_json_string_value(ctx, req_id_val, &cid_str);
+                } else if (mcp_json_type(ctx, req_id_val) == MCP_JSON_NUMBER) {
+                    cid_type = MCP_ID_NUMBER;
+                    mcp_json_number_value(ctx, req_id_val, &cid_num);
+                }
+                if (cid_type != MCP_ID_NONE) {
+                    mcp_session_cancel_in_flight(session, cid_type, cid_str, cid_num, reason);
+                }
+            } else {
+                session->subscription_active = false;
+            }
+        } else {
+            session->subscription_active = false;
+        }
     }
+
     bool advanced = false;
     for (int i = 0; i < (int)MCP_SERVER_NOTIFICATION_COUNT; i++) {
         if (strcmp(method, k_mcp_server_notifications[i]) == 0) {

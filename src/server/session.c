@@ -30,6 +30,7 @@ static mcp_session_t *session_new(mcp_context_t *ctx) {
         return NULL;
     }
     pthread_mutex_init(&s->direct_sub_lock, NULL);
+    pthread_mutex_init(&s->active_req_lock, NULL);
     return s;
 }
 
@@ -60,6 +61,20 @@ void session_free(mcp_context_t *ctx, mcp_session_t *s) {
     }
     pthread_mutex_unlock(&s->direct_sub_lock);
     pthread_mutex_destroy(&s->direct_sub_lock);
+
+    pthread_mutex_lock(&s->active_req_lock);
+    mcp_in_flight_req_t *cur = s->active_requests;
+    while (cur != NULL) {
+        mcp_in_flight_req_t *nxt = cur->next;
+        srv_free(ctx, cur->id_str);
+        srv_free(ctx, cur->cancel_reason);
+        srv_free(ctx, cur);
+        cur = nxt;
+    }
+    s->active_requests = NULL;
+    pthread_mutex_unlock(&s->active_req_lock);
+    pthread_mutex_destroy(&s->active_req_lock);
+
     if (s->server != NULL) {
         pthread_mutex_lock(&s->server->pending_lock);
         for (mcp_pending_req_t *p = s->server->pending_requests; p != NULL; p = p->next) {
@@ -488,3 +503,60 @@ mcp_status_t mcp_session_notify_progress(mcp_context_t *ctx, mcp_session_t *sess
 
     return mcp_server_deliver_notification(ctx, session->server, session, notif);
 }
+
+mcp_in_flight_req_t *mcp_session_find_in_flight(mcp_session_t *session,
+                                               mcp_id_type_t id_type,
+                                               const char *id_str,
+                                               double id_num) {
+    if (session == NULL || id_type == MCP_ID_NONE) {
+        return NULL;
+    }
+    pthread_mutex_lock(&session->active_req_lock);
+    for (mcp_in_flight_req_t *cur = session->active_requests; cur != NULL; cur = cur->next) {
+        if (cur->id_type == id_type) {
+            if (id_type == MCP_ID_STRING && cur->id_str != NULL && id_str != NULL) {
+                if (strcmp(cur->id_str, id_str) == 0) {
+                    pthread_mutex_unlock(&session->active_req_lock);
+                    return cur;
+                }
+            } else if (id_type == MCP_ID_NUMBER && cur->id_num == id_num) {
+                pthread_mutex_unlock(&session->active_req_lock);
+                return cur;
+            }
+        }
+    }
+    pthread_mutex_unlock(&session->active_req_lock);
+    return NULL;
+}
+
+void mcp_session_cancel_in_flight(mcp_session_t *session,
+                                 mcp_id_type_t id_type,
+                                 const char *id_str,
+                                 double id_num,
+                                 const char *reason) {
+    if (session == NULL || id_type == MCP_ID_NONE) {
+        return;
+    }
+    pthread_mutex_lock(&session->active_req_lock);
+    for (mcp_in_flight_req_t *cur = session->active_requests; cur != NULL; cur = cur->next) {
+        bool match = false;
+        if (cur->id_type == id_type) {
+            if (id_type == MCP_ID_STRING && cur->id_str != NULL && id_str != NULL) {
+                if (strcmp(cur->id_str, id_str) == 0) {
+                    match = true;
+                }
+            } else if (id_type == MCP_ID_NUMBER && cur->id_num == id_num) {
+                match = true;
+            }
+        }
+        if (match) {
+            atomic_store(&cur->is_cancelled, true);
+            if (reason != NULL && cur->cancel_reason == NULL) {
+                cur->cancel_reason = srv_strdup(session->ctx, reason);
+            }
+            break;
+        }
+    }
+    pthread_mutex_unlock(&session->active_req_lock);
+}
+

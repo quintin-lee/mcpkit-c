@@ -595,6 +595,23 @@ mcp_status_t mcp_tool_report_progress(mcp_context_t *ctx,
                                        progress, total, message_or_null);
 }
 
+bool mcp_tool_is_cancelled(const mcp_tool_call_ctx_t *call_ctx) {
+    if (call_ctx == NULL || call_ctx->cancellation_token == NULL) {
+        return false;
+    }
+    mcp_in_flight_req_t *in_flight = (mcp_in_flight_req_t *)call_ctx->cancellation_token;
+    return atomic_load(&in_flight->is_cancelled);
+}
+
+const char *mcp_tool_cancel_reason(const mcp_tool_call_ctx_t *call_ctx) {
+    if (call_ctx == NULL || call_ctx->cancellation_token == NULL) {
+        return NULL;
+    }
+    mcp_in_flight_req_t *in_flight = (mcp_in_flight_req_t *)call_ctx->cancellation_token;
+    return in_flight->cancel_reason;
+}
+
+
 static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mcp_session_t *s,
                                        const mcp_message_t *req) {
     const mcp_json_value_t *params = mcp_message_params(ctx, req);
@@ -653,7 +670,13 @@ static mcp_message_t *route_tools_call(mcp_context_t *ctx, mcp_server_t *srv, mc
         call_ctx.request_state  = rs_str;
         call_ctx.progress_token = progress_token;
         call_ctx.session        = s;
+        mcp_id_type_t id_t = mcp_message_id_type(ctx, req);
+        const char *ids = mcp_message_id_string(ctx, req);
+        double idn = 0;
+        mcp_message_id_number(ctx, req, &idn);
+        call_ctx.cancellation_token = mcp_session_find_in_flight(s, id_t, ids, idn);
         st = tool->handler_v2(ctx, s, &call_ctx, tool->user_data, &result);
+
     } else {
         /* V1 path: unchanged */
         st = tool->handler(ctx, s, args, tool->user_data, &result);

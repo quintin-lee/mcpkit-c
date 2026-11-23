@@ -471,6 +471,23 @@ mcp_status_t mcp_client_cancel_subscription(mcp_context_t *ctx, mcp_client_t *cl
                                             const char *subscription_id);
 
 /**
+ * @brief Cancels an in-flight request by sending notifications/cancelled.
+ *
+ * Implements official MCP cancellation specification with params.requestId and optional reason.
+ *
+ * @param ctx         Context; may be NULL.
+ * @param client      Target client.
+ * @param req_id_str  Request ID string, or NULL if number ID is provided.
+ * @param req_id_num  Request ID number (used if req_id_str is NULL).
+ * @param reason      Optional human-readable reason; may be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_client_cancel_request(mcp_context_t *ctx, mcp_client_t *client,
+                                       const char *req_id_str, double req_id_num,
+                                       const char *reason);
+
+
+/**
  * @brief Receives the next message from the transport (notification or response).
  *
  * @param ctx       Context; may be NULL.

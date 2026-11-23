@@ -568,6 +568,23 @@ mcp_status_t mcp_server_request_elicitation(mcp_context_t *ctx,
                                             uint64_t *assigned_id_out);
 
 /**
+ * @brief Sends notifications/cancelled to cancel an in-flight server-initiated request.
+ *
+ * @param ctx         Context; may be NULL.
+ * @param server      Server handle.
+ * @param session     Target session.
+ * @param req_id_str  Request ID string, or NULL if number ID is provided.
+ * @param req_id_num  Request ID number (used if req_id_str is NULL).
+ * @param reason      Optional human-readable reason; may be NULL.
+ * @return MCP_OK on success.
+ */
+mcp_status_t mcp_server_cancel_request(mcp_context_t *ctx, mcp_server_t *server,
+                                       mcp_session_t *session,
+                                       const char *req_id_str, double req_id_num,
+                                       const char *reason);
+
+
+/**
  * @brief Dispatches an incoming client response message to its pending request callback.
  *
  * Matches the response message's ID against registered pending requests.

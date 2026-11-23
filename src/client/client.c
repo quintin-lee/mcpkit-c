@@ -1081,6 +1081,47 @@ mcp_status_t mcp_client_cancel_subscription(mcp_context_t *ctx, mcp_client_t *cl
     return st;
 }
 
+mcp_status_t mcp_client_cancel_request(mcp_context_t *ctx, mcp_client_t *client,
+                                       const char *req_id_str, double req_id_num,
+                                       const char *reason) {
+    if (client == NULL || (req_id_str == NULL && req_id_num == 0)) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *params = mcp_json_object_new(ctx);
+    if (params == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_value_t *id_val = req_id_str != NULL ? mcp_json_string_new(ctx, req_id_str)
+                                                  : mcp_json_number_new(ctx, req_id_num);
+    if (id_val == NULL) {
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_object_set_take(ctx, params, "requestId", id_val);
+
+    if (reason != NULL) {
+        mcp_json_value_t *r_val = mcp_json_string_new(ctx, reason);
+        if (r_val != NULL) {
+            mcp_json_object_set_take(ctx, params, "reason", r_val);
+        }
+    }
+
+    mcp_message_t *ntf = mcp_notification_new(ctx, "notifications/cancelled", params);
+    if (ntf == NULL) {
+        mcp_json_destroy(ctx, params);
+        return MCP_ERR_NOMEM;
+    }
+    char *out = mcp_message_serialize(ctx, ntf);
+    mcp_message_destroy(ctx, ntf);
+    if (out == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_status_t st = mcp_transport_send(ctx, client->t, out, strlen(out));
+    mcp_json_free_string(ctx, out);
+    return st;
+}
+
+
 mcp_status_t mcp_client_recv_message(mcp_context_t *ctx, mcp_client_t *client,
                                      mcp_message_t **msg_out) {
     if (client == NULL || msg_out == NULL) {

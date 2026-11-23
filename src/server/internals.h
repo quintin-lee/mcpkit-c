@@ -113,11 +113,34 @@ struct mcp_session {
     size_t n_direct_subscribed;
     size_t cap_direct_subscribed;
     pthread_mutex_t direct_sub_lock;
+    // In-flight active requests tracking and cooperative cancellation
+    struct mcp_in_flight_req *active_requests;
+    pthread_mutex_t active_req_lock;
     // Notification sink
     mcp_session_sink_fn notify_sink;
     void *notify_userdata;
     mcp_server_t *server;
 };
+
+typedef struct mcp_in_flight_req {
+    mcp_id_type_t id_type;
+    char *id_str;
+    double id_num;
+    atomic_bool is_cancelled;
+    char *cancel_reason;
+    struct mcp_in_flight_req *next;
+} mcp_in_flight_req_t;
+
+mcp_in_flight_req_t *mcp_session_find_in_flight(mcp_session_t *session,
+                                               mcp_id_type_t id_type,
+                                               const char *id_str,
+                                               double id_num);
+void mcp_session_cancel_in_flight(mcp_session_t *session,
+                                 mcp_id_type_t id_type,
+                                 const char *id_str,
+                                 double id_num,
+                                 const char *reason);
+
 
 struct mcp_server {
     mcp_context_t *ctx;
