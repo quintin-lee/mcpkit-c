@@ -224,6 +224,7 @@ void mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *srv) {
     }
     mcp_json_destroy(ctx, srv->response_meta);
     mcp_json_destroy(ctx, srv->custom_capabilities);
+    srv_free(ctx, srv->instructions);
     srv_free(ctx, srv->list_cache_scope);
     pthread_mutex_destroy(&srv->subscribed_lock);
     pthread_mutex_destroy(&srv->sessions_lock);
@@ -994,6 +995,24 @@ mcp_status_t mcp_server_set_capabilities(mcp_context_t *ctx, mcp_server_t *srv,
     mcp_json_destroy(ctx, srv->custom_capabilities);
     srv->custom_capabilities = clone;
     return MCP_OK;
+}
+
+mcp_status_t mcp_server_set_instructions(mcp_server_t *srv, const char *instructions) {
+    if (srv == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_context_t *ctx = srv->ctx;
+    char *copy = srv_strdup(ctx, instructions);
+    if (instructions != NULL && copy == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    srv_free(ctx, srv->instructions);
+    srv->instructions = copy;
+    return MCP_OK;
+}
+
+const char *mcp_server_get_instructions(const mcp_server_t *srv) {
+    return srv != NULL ? srv->instructions : NULL;
 }
 
 mcp_status_t mcp_server_enable_tasks(mcp_context_t *ctx, mcp_server_t *srv) {

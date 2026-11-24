@@ -137,6 +137,23 @@ const mcp_json_value_t *mcp_session_client_meta(mcp_context_t *ctx,
                                                  const mcp_session_t *session);
 
 /**
+ * @brief Returns the client capabilities received during initialize.
+ *
+ * @param session Target session; must not be NULL.
+ * @return Borrowed JSON object of client capabilities, or NULL if none.
+ */
+const mcp_json_value_t *mcp_session_client_capabilities(const mcp_session_t *session);
+
+/**
+ * @brief Checks if the client advertised a specific capability.
+ *
+ * @param session Target session; must not be NULL.
+ * @param cap_name Capability name (e.g. "roots", "sampling", "experimental").
+ * @return true if capability was advertised by the client; false otherwise.
+ */
+bool mcp_session_has_client_capability(const mcp_session_t *session, const char *cap_name);
+
+/**
  * @brief Sets the client _meta object for the session by cloning @p meta.
  *
  * @param ctx     Context; may be NULL.

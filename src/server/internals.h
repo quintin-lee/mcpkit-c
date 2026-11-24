@@ -107,6 +107,8 @@ struct mcp_session {
     // Deep clone of the "_meta" field carried in the initialize request.
     // NULL if the client did not send one. Destroyed with the session.
     mcp_json_value_t *client_meta;
+    // Deep clone of the "capabilities" object from the initialize request.
+    mcp_json_value_t *client_capabilities;
     // Session-specific log level floor (MCP logging utility)
     bool session_log_level_set;
     mcp_log_level_t session_log_floor;
@@ -215,6 +217,8 @@ struct mcp_server {
     mcp_json_value_t *response_meta;
     // Host-supplied custom capabilities merged into initialize responses.
     mcp_json_value_t *custom_capabilities;
+    // Host-supplied markdown instructions describing how to use the server.
+    char *instructions;
     // Guards all reads/writes of subscribed_uris, n_subscribed, cap_subscribed
     // from concurrent dispatch threads (route_advanced subscribe/unsubscribe).
     pthread_mutex_t subscribed_lock;

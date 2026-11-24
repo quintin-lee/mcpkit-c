@@ -666,6 +666,25 @@ mcp_status_t mcp_server_set_capabilities(mcp_context_t *ctx, mcp_server_t *srv,
                                          const mcp_json_value_t *caps_json);
 
 /**
+ * @brief Sets markdown instructions describing how to use the server and its features.
+ *
+ * Included in the initialize response under "instructions" to guide the LLM.
+ *
+ * @param srv Target server; must not be NULL.
+ * @param instructions Optional markdown string; copied internally; may be NULL to clear.
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_server_set_instructions(mcp_server_t *srv, const char *instructions);
+
+/**
+ * @brief Returns the instructions configured on the server, or NULL.
+ *
+ * @param srv Target server; must not be NULL.
+ * @return Borrowed instructions string or NULL.
+ */
+const char *mcp_server_get_instructions(const mcp_server_t *srv);
+
+/**
  * @brief Enables the MCP Tasks extension (SEP-2663) on the server.
  *
  * Allocates and initializes the server's task manager if not already enabled.

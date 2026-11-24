@@ -417,6 +417,20 @@ static mcp_message_t *route_initialize(mcp_context_t *ctx, mcp_server_t *srv, mc
             }
         }
     }
+    const mcp_json_value_t *client_caps = mcp_json_object_get(ctx, params, "capabilities");
+    if (client_caps != NULL) {
+        mcp_json_value_t *caps_clone = mcp_json_clone(pctx, client_caps);
+        if (caps_clone != NULL) {
+            mcp_json_destroy(pctx, s->client_capabilities);
+            s->client_capabilities = caps_clone;
+        }
+    }
+    if (srv->instructions != NULL && srv->instructions[0] != '\0') {
+        if (set_string(ctx, result, "instructions", srv->instructions) != MCP_OK) {
+            mcp_json_destroy(ctx, result);
+            return NULL;
+        }
+    }
     const mcp_json_value_t *meta = mcp_message_meta(ctx, req);
     if (meta != NULL) {
         mcp_json_value_t *clone = mcp_json_clone(pctx, meta);

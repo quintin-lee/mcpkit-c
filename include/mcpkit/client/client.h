@@ -94,6 +94,29 @@ mcp_status_t mcp_client_initialize(mcp_context_t *ctx, mcp_client_t *client,
                                    mcp_json_value_t **server_info_out);
 
 /**
+ * @brief Sets custom capabilities to be merged into the client's initialize request.
+ *
+ * "roots" and "sampling" capabilities are automatically advertised if
+ * providers are registered via mcp_client_set_roots_provider / mcp_client_set_sampling_provider,
+ * but may also be explicitly customized or extended here.
+ *
+ * @param ctx          Context; may be NULL.
+ * @param client       Target client; must not be NULL.
+ * @param capabilities Capabilities JSON object (cloned); pass NULL to clear.
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_client_set_capabilities(mcp_context_t *ctx, mcp_client_t *client,
+                                         const mcp_json_value_t *capabilities);
+
+/**
+ * @brief Returns instructions provided by the server during initialize, if any.
+ *
+ * @param client Target client; must not be NULL.
+ * @return Borrowed instructions string or NULL if none was sent by server.
+ */
+const char *mcp_client_get_server_instructions(const mcp_client_t *client);
+
+/**
  * @brief Returns the negotiated protocol version string.
  *
  * @param ctx Context; may be NULL.

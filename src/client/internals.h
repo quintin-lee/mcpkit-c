@@ -41,6 +41,10 @@ struct mcp_client {
     /* Notification callback for server-initiated notifications. */
     mcp_client_notification_fn notification_handler;
     void *notification_ud;
+    /* Server instructions received during initialize (NULL if none). */
+    char *server_instructions;
+    /* Custom client capabilities to advertise during initialize. */
+    mcp_json_value_t *custom_capabilities;
     /* Stored OAuth 2.1 Bearer token (NULL if unauthenticated). */
 
     char *bearer_token;

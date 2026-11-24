@@ -43,6 +43,7 @@ void session_free(mcp_context_t *ctx, mcp_session_t *s) {
     }
     mcp_idset_destroy(ctx, s->ids);
     mcp_json_destroy(ctx, s->client_meta);
+    mcp_json_destroy(ctx, s->client_capabilities);
     srv_free(ctx, s->client_name);
     srv_free(ctx, s->client_version);
     srv_free(ctx, s->sub_id_str);
@@ -152,6 +153,19 @@ const mcp_json_value_t *mcp_session_client_meta(mcp_context_t *ctx,
         return NULL;
     }
     return session->client_meta;
+}
+
+const mcp_json_value_t *mcp_session_client_capabilities(const mcp_session_t *session) {
+    return session != NULL ? session->client_capabilities : NULL;
+}
+
+bool mcp_session_has_client_capability(const mcp_session_t *session, const char *cap_name) {
+    if (session == NULL || session->client_capabilities == NULL || cap_name == NULL) {
+        return false;
+    }
+    mcp_context_t *ctx = session->ctx;
+    const mcp_json_value_t *v = mcp_json_object_get(ctx, session->client_capabilities, cap_name);
+    return v != NULL;
 }
 
 mcp_status_t mcp_session_set_client_meta(mcp_context_t *ctx, mcp_session_t *session,

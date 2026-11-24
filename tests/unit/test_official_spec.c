@@ -585,6 +585,8 @@ static void test_item4_server_logging_notifications(void) {
 typedef struct {
     char sent[4096];
     size_t sent_len;
+    char all_sent[16384];
+    size_t all_sent_len;
     const char **script;
     size_t nscript;
     size_t cursor;
@@ -604,6 +606,11 @@ static mcp_status_t fake_t_send(mcp_context_t *ctx, mcp_transport_t *t, const ch
     memcpy(f->sent, data, len);
     f->sent[len] = '\0';
     f->sent_len = len;
+    if (f->all_sent_len + len < sizeof(f->all_sent) - 1) {
+        memcpy(f->all_sent + f->all_sent_len, data, len);
+        f->all_sent_len += len;
+        f->all_sent[f->all_sent_len] = '\0';
+    }
     f->nsent++;
     return MCP_OK;
 }
@@ -1024,6 +1031,99 @@ static void test_p2_item2_prompt_arguments(void) {
     printf("PASS: test_p2_item2_prompt_arguments\n");
 }
 
+static mcp_json_value_t *dummy_roots_fn(mcp_context_t *ctx, void *user_data) {
+    (void)user_data;
+    mcp_json_value_t *res = mcp_json_object_new(ctx);
+    mcp_json_object_set_take(ctx, res, "roots", mcp_json_array_new(ctx));
+    return res;
+}
+
+static void test_p2_item3_instructions_and_client_capabilities(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    assert(ctx != NULL);
+
+    /* 1. Server instructions and session capabilities storage */
+    mcp_server_t *srv = mcp_server_create(ctx, "instr-srv", "1.0.0");
+    assert(srv != NULL);
+    assert(mcp_server_set_instructions(srv, "Guidance for LLM") == MCP_OK);
+    assert(strcmp(mcp_server_get_instructions(srv), "Guidance for LLM") == 0);
+
+    mcp_session_t *sess = mcp_server_create_session(ctx, srv);
+    assert(sess != NULL);
+
+    /* Client sends initialize with capabilities */
+    mcp_json_value_t *ip = mcp_initialize_params_new(ctx, "test-client", "1.0.0");
+    mcp_json_value_t *caps = (mcp_json_value_t *)mcp_json_object_get(ctx, ip, "capabilities");
+    mcp_json_value_t *rc = mcp_json_object_new(ctx);
+    mcp_json_object_set_take(ctx, rc, "listChanged", mcp_json_bool_new(ctx, true));
+    mcp_json_object_set_take(ctx, caps, "roots", rc);
+    mcp_json_object_set_take(ctx, caps, "sampling", mcp_json_object_new(ctx));
+
+    mcp_message_t *ireq = mcp_request_new_string_id(ctx, "i-caps", "initialize", ip);
+    mcp_message_t *iresp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, ireq, &iresp) == MCP_OK);
+    assert(iresp != NULL);
+
+    /* Verify response contains instructions */
+    const mcp_json_value_t *ires = mcp_message_result(ctx, iresp);
+    assert(ires != NULL);
+    const mcp_json_value_t *inst_v = mcp_json_object_get(ctx, ires, "instructions");
+    assert(inst_v != NULL);
+    const char *instr_str = NULL;
+    assert(mcp_json_string_value(ctx, inst_v, &instr_str) == MCP_OK);
+    assert(strcmp(instr_str, "Guidance for LLM") == 0);
+
+    /* Verify server session stored client capabilities */
+    assert(mcp_session_has_client_capability(sess, "roots") == true);
+    assert(mcp_session_has_client_capability(sess, "sampling") == true);
+    assert(mcp_session_has_client_capability(sess, "experimental") == false);
+    assert(mcp_session_client_capabilities(sess) != NULL);
+
+    mcp_message_destroy(ctx, ireq);
+    mcp_message_destroy(ctx, iresp);
+    mcp_server_destroy(ctx, srv);
+
+    /* 2. Client-side automatic capabilities and instructions retrieval */
+    fake_client_transport_t fake;
+    memset(&fake, 0, sizeof(fake));
+    const char *script[] = {
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2024-11-05\",\"serverInfo\":{\"name\":\"s\",\"version\":\"1.0\"},\"instructions\":\"LLM instructions from server\"}}"
+    };
+    fake.script = script;
+    fake.nscript = 1;
+
+    mcp_transport_t *t = mcp_transport_create(ctx, &kFakeClientOps, &fake);
+    assert(t != NULL);
+    mcp_client_t *c = mcp_client_create(ctx, t);
+    assert(c != NULL);
+
+    /* Register roots provider on client -> should auto-advertise roots capability */
+    mcp_client_set_roots_provider(ctx, c, dummy_roots_fn, NULL);
+
+    /* Set custom capabilities */
+    mcp_json_value_t *custom_caps = mcp_json_object_new(ctx);
+    mcp_json_object_set_take(ctx, custom_caps, "custom_mod", mcp_json_object_new(ctx));
+    assert(mcp_client_set_capabilities(ctx, c, custom_caps) == MCP_OK);
+    mcp_json_destroy(ctx, custom_caps);
+
+    assert(mcp_client_initialize(ctx, c, "my-client", "1.0", NULL) == MCP_OK);
+
+    /* Check that client sent roots and custom_mod capabilities in request */
+    assert(strstr(fake.all_sent, "\"roots\":{\"listChanged\":true}") != NULL);
+    assert(strstr(fake.all_sent, "\"custom_mod\":{}") != NULL);
+
+    /* Check that client extracted instructions from server */
+    assert(mcp_client_get_server_instructions(c) != NULL);
+    assert(strcmp(mcp_client_get_server_instructions(c), "LLM instructions from server") == 0);
+
+    mcp_client_destroy(ctx, c);
+    mcp_transport_destroy(ctx, t);
+    mcp_context_destroy(ctx);
+
+    (void)instr_str;
+    printf("PASS: test_p2_item3_instructions_and_client_capabilities\n");
+}
+
 int main(void) {
     printf("Starting Official MCP Spec Compliance Tests...\n");
     test_item1_capabilities_and_resource_notifications();
@@ -1034,6 +1134,7 @@ int main(void) {
     test_item6_multimedia_content();
     test_p2_item1_tool_default_input_schema();
     test_p2_item2_prompt_arguments();
+    test_p2_item3_instructions_and_client_capabilities();
     printf("All Official MCP Spec Compliance Tests Passed!\n");
     return 0;
 }

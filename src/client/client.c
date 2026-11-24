@@ -52,6 +52,10 @@ mcp_client_t *mcp_client_create(mcp_context_t *ctx, mcp_transport_t *transport) 
     c->elicitation_ud = NULL;
     c->mrtr_elicit_fn = NULL;
     c->mrtr_elicit_ud = NULL;
+    c->notification_handler = NULL;
+    c->notification_ud = NULL;
+    c->server_instructions = NULL;
+    c->custom_capabilities = NULL;
     c->bearer_token = NULL;
     c->schema_cache.tool_names = NULL;
     c->schema_cache.schemas = NULL;
@@ -70,6 +74,12 @@ void mcp_client_destroy(mcp_context_t *ctx, mcp_client_t *client) {
     const mcp_allocator_t *a = alloc_of(ctx);
     if (client->version != NULL) {
         a->free_fn(client->version, a->userdata);
+    }
+    if (client->server_instructions != NULL) {
+        a->free_fn(client->server_instructions, a->userdata);
+    }
+    if (client->custom_capabilities != NULL) {
+        mcp_json_destroy(ctx, client->custom_capabilities);
     }
     if (client->bearer_token != NULL) {
         a->free_fn(client->bearer_token, a->userdata);
@@ -224,6 +234,35 @@ mcp_status_t mcp_client_initialize(mcp_context_t *ctx, mcp_client_t *client,
     if (params == NULL) {
         return MCP_ERR_NOMEM;
     }
+    mcp_json_value_t *caps = (mcp_json_value_t *)mcp_json_object_get(ctx, params, "capabilities");
+    if (caps != NULL) {
+        if (client->roots_fn != NULL) {
+            mcp_json_value_t *rc = mcp_json_object_new(ctx);
+            if (rc != NULL) {
+                mcp_json_object_set_take(ctx, rc, "listChanged", mcp_json_bool_new(ctx, true));
+                mcp_json_object_set_take(ctx, caps, "roots", rc);
+            }
+        }
+        if (client->sample_fn != NULL) {
+            mcp_json_value_t *sc = mcp_json_object_new(ctx);
+            if (sc != NULL) {
+                mcp_json_object_set_take(ctx, caps, "sampling", sc);
+            }
+        }
+        if (client->custom_capabilities != NULL) {
+            size_t n_c = mcp_json_object_size(ctx, client->custom_capabilities);
+            for (size_t i = 0; i < n_c; i++) {
+                const char *k = mcp_json_object_key_at(ctx, client->custom_capabilities, i);
+                const mcp_json_value_t *v = mcp_json_object_get(ctx, client->custom_capabilities, k);
+                if (k != NULL && v != NULL) {
+                    mcp_json_value_t *v_clone = mcp_json_clone(ctx, v);
+                    if (v_clone != NULL) {
+                        mcp_json_object_set_take(ctx, caps, k, v_clone);
+                    }
+                }
+            }
+        }
+    }
     mcp_message_t *resp = NULL;
     mcp_status_t st = roundtrip(ctx, client, "initialize", params, &resp);
     if (st != MCP_OK) {
@@ -259,6 +298,19 @@ mcp_status_t mcp_client_initialize(mcp_context_t *ctx, mcp_client_t *client,
         }
         *server_info_out = info;
     }
+    const mcp_json_value_t *inst_val = mcp_json_object_get(ctx, result, "instructions");
+    const char *inst_str = NULL;
+    if (inst_val != NULL && mcp_json_string_value(ctx, inst_val, &inst_str) == MCP_OK && inst_str != NULL) {
+        if (client->server_instructions != NULL) {
+            a->free_fn(client->server_instructions, a->userdata);
+            client->server_instructions = NULL;
+        }
+        size_t inst_len = strlen(inst_str) + 1;
+        client->server_instructions = a->malloc_fn(inst_len, a->userdata);
+        if (client->server_instructions != NULL) {
+            memcpy(client->server_instructions, inst_str, inst_len);
+        }
+    }
     if (client->version != NULL) {
         a->free_fn(client->version, a->userdata);
     }
@@ -276,6 +328,26 @@ mcp_status_t mcp_client_initialize(mcp_context_t *ctx, mcp_client_t *client,
     st = mcp_transport_send(ctx, client->t, out, strlen(out));
     mcp_json_free_string(ctx, out);
     return st;
+}
+
+mcp_status_t mcp_client_set_capabilities(mcp_context_t *ctx, mcp_client_t *client,
+                                         const mcp_json_value_t *capabilities) {
+    if (client == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *clone = (capabilities != NULL) ? mcp_json_clone(ctx, capabilities) : NULL;
+    if (capabilities != NULL && clone == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    if (client->custom_capabilities != NULL) {
+        mcp_json_destroy(ctx, client->custom_capabilities);
+    }
+    client->custom_capabilities = clone;
+    return MCP_OK;
+}
+
+const char *mcp_client_get_server_instructions(const mcp_client_t *client) {
+    return client != NULL ? client->server_instructions : NULL;
 }
 
 mcp_status_t mcp_client_ping(mcp_context_t *ctx, mcp_client_t *client) {
