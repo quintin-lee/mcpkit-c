@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include "mcpkit/mcpkit.h"
+#include "mcpkit/protocol/sampling.h"
 
 
 typedef struct {
@@ -874,6 +875,81 @@ static void test_item6_multimedia_content(void) {
     printf("PASS: test_item6_multimedia_content\n");
 }
 
+static mcp_status_t dummy_tool_no_schema(mcp_context_t *ctx, mcp_session_t *session,
+                                        const mcp_json_value_t *args, void *user_data,
+                                        mcp_json_value_t **result_out) {
+    (void)session; (void)args; (void)user_data;
+    *result_out = mcp_tool_result_text_new(ctx, "ok");
+    return MCP_OK;
+}
+
+static void test_p2_item1_tool_default_input_schema(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    assert(ctx != NULL);
+    mcp_server_t *srv = mcp_server_create(ctx, "test-srv", "1.0.0");
+    assert(srv != NULL);
+    mcp_session_t *sess = mcp_server_create_session(ctx, srv);
+    assert(sess != NULL);
+
+    /* Tool created with NULL input_schema */
+    mcp_tool_t *t = mcp_tool_new(ctx, "no_schema_tool", "desc", NULL, dummy_tool_no_schema, NULL);
+    assert(t != NULL);
+    assert(mcp_server_add_tool(ctx, srv, t) == MCP_OK);
+
+    /* Initialize session */
+    mcp_json_value_t *ip = mcp_initialize_params_new(ctx, "c", "1.0");
+    mcp_message_t *ireq = mcp_request_new_string_id(ctx, "i1", "initialize", ip);
+    mcp_message_t *iresp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, ireq, &iresp) == MCP_OK);
+    mcp_message_destroy(ctx, ireq);
+    mcp_message_destroy(ctx, iresp);
+
+    mcp_message_t *init_notif = mcp_initialized_notification_new(ctx);
+    assert(mcp_server_notify(ctx, srv, sess, init_notif) == MCP_OK);
+    mcp_message_destroy(ctx, init_notif);
+
+    /* Dispatch tools/list */
+    mcp_message_t *treq = mcp_request_new_string_id(ctx, "t1", "tools/list", NULL);
+    mcp_message_t *tresp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, treq, &tresp) == MCP_OK);
+    assert(tresp != NULL);
+
+    const mcp_json_value_t *res = mcp_message_result(ctx, tresp);
+    assert(res != NULL);
+    const mcp_json_value_t *tools_arr = mcp_json_object_get(ctx, res, "tools");
+    assert(tools_arr != NULL && mcp_json_array_size(ctx, tools_arr) == 1);
+    const mcp_json_value_t *tool0 = mcp_json_array_get(ctx, tools_arr, 0);
+    assert(tool0 != NULL);
+
+    /* inputSchema MUST be present per official MCP spec */
+    const mcp_json_value_t *in_schema = mcp_json_object_get(ctx, tool0, "inputSchema");
+    assert(in_schema != NULL && mcp_json_type(ctx, in_schema) == MCP_JSON_OBJECT);
+    const char *stype = NULL;
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, in_schema, "type"), &stype) == MCP_OK);
+    assert(strcmp(stype, "object") == 0);
+
+    mcp_message_destroy(ctx, treq);
+    mcp_message_destroy(ctx, tresp);
+    mcp_server_destroy(ctx, srv);
+
+    /* Also verify sampling tool addition with NULL input_schema */
+    mcp_json_value_t *sparams = mcp_sampling_params_new(ctx, 100);
+    assert(sparams != NULL);
+    mcp_sampling_tool_def_t sdef = { "sample_tool", "desc", NULL };
+    assert(mcp_sampling_params_add_tool(ctx, sparams, &sdef) == MCP_OK);
+    const mcp_json_value_t *st0 = mcp_sampling_params_get_tool_at(ctx, sparams, 0);
+    assert(st0 != NULL);
+    const mcp_json_value_t *sin_schema = mcp_json_object_get(ctx, st0, "inputSchema");
+    assert(sin_schema != NULL && mcp_json_type(ctx, sin_schema) == MCP_JSON_OBJECT);
+    stype = NULL;
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, sin_schema, "type"), &stype) == MCP_OK);
+    assert(strcmp(stype, "object") == 0);
+    mcp_json_destroy(ctx, sparams);
+
+    mcp_context_destroy(ctx);
+    printf("PASS: test_p2_item1_tool_default_input_schema\n");
+}
+
 int main(void) {
     printf("Starting Official MCP Spec Compliance Tests...\n");
     test_item1_capabilities_and_resource_notifications();
@@ -882,6 +958,7 @@ int main(void) {
     test_item4_server_logging_notifications();
     test_item5_client_apis_and_notifications();
     test_item6_multimedia_content();
+    test_p2_item1_tool_default_input_schema();
     printf("All Official MCP Spec Compliance Tests Passed!\n");
     return 0;
 }

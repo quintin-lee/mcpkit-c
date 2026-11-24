@@ -496,6 +496,19 @@ static mcp_message_t *route_tools_list(mcp_context_t *ctx, mcp_server_t *srv,
                 srv_free(ctx, (void *)tlist);
                 return NULL;
             }
+        } else {
+            /* Official MCP Schema requires inputSchema to be present and of type "object" */
+            mcp_json_value_t *def_schema = mcp_json_object_new(ctx);
+            if (def_schema == NULL ||
+                mcp_json_object_set_take(ctx, def_schema, "type", mcp_json_string_new(ctx, "object")) != MCP_OK ||
+                mcp_json_object_set_take(ctx, entry, "inputSchema", def_schema) != MCP_OK) {
+                mcp_json_destroy(ctx, def_schema);
+                mcp_json_destroy(ctx, entry);
+                mcp_json_destroy(ctx, result);
+                mcp_json_destroy(ctx, arr);
+                srv_free(ctx, (void *)tlist);
+                return NULL;
+            }
         }
         if (t->output_schema != NULL) {
             mcp_json_value_t *copy = mcp_json_clone(ctx, t->output_schema);

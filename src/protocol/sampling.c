@@ -59,6 +59,12 @@ mcp_status_t mcp_sampling_params_add_tool(mcp_context_t *ctx, mcp_json_value_t *
         if (cloned_schema != NULL) {
             mcp_json_object_set_take(ctx, tobj, "inputSchema", cloned_schema);
         }
+    } else {
+        mcp_json_value_t *def_schema = mcp_json_object_new(ctx);
+        if (def_schema != NULL) {
+            mcp_json_object_set_take(ctx, def_schema, "type", mcp_json_string_new(ctx, "object"));
+            mcp_json_object_set_take(ctx, tobj, "inputSchema", def_schema);
+        }
     }
 
     if (mcp_json_array_append(ctx, tools, tobj) != MCP_OK) {
