@@ -896,8 +896,50 @@ static mcp_message_t *route_prompts_list(mcp_context_t *ctx, mcp_server_t *srv,
         mcp_json_value_t *entry = mcp_json_object_new(ctx);
         if (entry == NULL || set_string(ctx, entry, "name", p->name) != MCP_OK ||
             (p->description != NULL &&
-             set_string(ctx, entry, "description", p->description) != MCP_OK) ||
-            mcp_json_array_append(ctx, arr, entry) != MCP_OK) {
+             set_string(ctx, entry, "description", p->description) != MCP_OK)) {
+            mcp_json_destroy(ctx, entry);
+            mcp_json_destroy(ctx, result);
+            mcp_json_destroy(ctx, arr);
+            srv_free(ctx, (void *)plist);
+            return NULL;
+        }
+        if (p->n_args > 0) {
+            mcp_json_value_t *args_arr = mcp_json_array_new(ctx);
+            if (args_arr == NULL) {
+                mcp_json_destroy(ctx, entry);
+                mcp_json_destroy(ctx, result);
+                mcp_json_destroy(ctx, arr);
+                srv_free(ctx, (void *)plist);
+                return NULL;
+            }
+            for (size_t a_idx = 0; a_idx < p->n_args; a_idx++) {
+                mcp_json_value_t *arg_obj = mcp_json_object_new(ctx);
+                if (arg_obj == NULL ||
+                    set_string(ctx, arg_obj, "name", p->args[a_idx].name) != MCP_OK ||
+                    (p->args[a_idx].description != NULL &&
+                     set_string(ctx, arg_obj, "description", p->args[a_idx].description) != MCP_OK) ||
+                    (p->args[a_idx].required &&
+                     mcp_json_object_set_take(ctx, arg_obj, "required", mcp_json_bool_new(ctx, true)) != MCP_OK) ||
+                    mcp_json_array_append(ctx, args_arr, arg_obj) != MCP_OK) {
+                    mcp_json_destroy(ctx, arg_obj);
+                    mcp_json_destroy(ctx, args_arr);
+                    mcp_json_destroy(ctx, entry);
+                    mcp_json_destroy(ctx, result);
+                    mcp_json_destroy(ctx, arr);
+                    srv_free(ctx, (void *)plist);
+                    return NULL;
+                }
+            }
+            if (mcp_json_object_set_take(ctx, entry, "arguments", args_arr) != MCP_OK) {
+                mcp_json_destroy(ctx, args_arr);
+                mcp_json_destroy(ctx, entry);
+                mcp_json_destroy(ctx, result);
+                mcp_json_destroy(ctx, arr);
+                srv_free(ctx, (void *)plist);
+                return NULL;
+            }
+        }
+        if (mcp_json_array_append(ctx, arr, entry) != MCP_OK) {
             mcp_json_destroy(ctx, entry);
             mcp_json_destroy(ctx, result);
             mcp_json_destroy(ctx, arr);

@@ -79,11 +79,20 @@ struct mcp_resource_template {
     void *user_data;
 };
 
+typedef struct mcp_prompt_arg {
+    char *name;
+    char *description;
+    bool required;
+} mcp_prompt_arg_t;
+
 struct mcp_prompt {
     char *name;
     char *description;
     mcp_prompt_get_fn on_get;
     void *user_data;
+    mcp_prompt_arg_t *args;
+    size_t n_args;
+    size_t cap_args;
 };
 
 struct mcp_session {

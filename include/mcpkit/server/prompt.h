@@ -53,6 +53,21 @@ mcp_prompt_t *mcp_prompt_new(mcp_context_t *ctx, const char *name,
                              mcp_prompt_get_fn on_get, void *user_data);
 
 /**
+ * @brief Adds an argument descriptor to the prompt (official MCP PromptArgument).
+ *
+ * @param ctx Context; may be NULL (default allocator).
+ * @param prompt Target prompt; must not be NULL.
+ * @param name Argument name; strdup'd internally; must not be NULL.
+ * @param description_or_null Optional description; strdup'd internally; may be NULL.
+ * @param required True if this argument is required, false if optional.
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_prompt_add_argument(mcp_context_t *ctx, mcp_prompt_t *prompt,
+                                     const char *name,
+                                     const char *description_or_null,
+                                     bool required);
+
+/**
  * @brief Destroys a prompt descriptor.
  * @param ctx Context; may be NULL.
  * @param prompt Prompt to destroy; NULL is a no-op.

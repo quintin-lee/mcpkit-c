@@ -950,6 +950,80 @@ static void test_p2_item1_tool_default_input_schema(void) {
     printf("PASS: test_p2_item1_tool_default_input_schema\n");
 }
 
+static void test_p2_item2_prompt_arguments(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    assert(ctx != NULL);
+    mcp_server_t *srv = mcp_server_create(ctx, "test-prompt-srv", "1.0.0");
+    assert(srv != NULL);
+    mcp_session_t *sess = mcp_server_create_session(ctx, srv);
+    assert(sess != NULL);
+
+    /* 1. Register a prompt with arguments */
+    mcp_prompt_t *p = mcp_prompt_new(ctx, "search_prompt", "Searches things", dummy_prompt_get, NULL);
+    assert(p != NULL);
+    assert(mcp_prompt_add_argument(ctx, NULL, "q", "query", true) == MCP_ERR_INVALID_ARGUMENT);
+    assert(mcp_prompt_add_argument(ctx, p, NULL, "query", true) == MCP_ERR_INVALID_ARGUMENT);
+    assert(mcp_prompt_add_argument(ctx, p, "q", "query", true) == MCP_OK);
+    assert(mcp_prompt_add_argument(ctx, p, "limit", "max results", false) == MCP_OK);
+    assert(mcp_server_add_prompt(ctx, srv, p) == MCP_OK);
+
+    /* Initialize session */
+    mcp_json_value_t *ip = mcp_initialize_params_new(ctx, "c", "1.0");
+    mcp_message_t *ireq = mcp_request_new_string_id(ctx, "i2", "initialize", ip);
+    mcp_message_t *iresp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, ireq, &iresp) == MCP_OK);
+    mcp_message_destroy(ctx, ireq);
+    mcp_message_destroy(ctx, iresp);
+
+    mcp_message_t *init_notif = mcp_initialized_notification_new(ctx);
+    assert(mcp_server_notify(ctx, srv, sess, init_notif) == MCP_OK);
+    mcp_message_destroy(ctx, init_notif);
+
+    /* Dispatch prompts/list */
+    mcp_message_t *preq = mcp_request_new_string_id(ctx, "pl1", "prompts/list", NULL);
+    mcp_message_t *presp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, preq, &presp) == MCP_OK);
+    assert(presp != NULL);
+
+    const mcp_json_value_t *res = mcp_message_result(ctx, presp);
+    assert(res != NULL);
+    const mcp_json_value_t *prompts_arr = mcp_json_object_get(ctx, res, "prompts");
+    assert(prompts_arr != NULL && mcp_json_array_size(ctx, prompts_arr) == 1);
+    const mcp_json_value_t *prompt0 = mcp_json_array_get(ctx, prompts_arr, 0);
+    assert(prompt0 != NULL);
+
+    /* Verify arguments array */
+    const mcp_json_value_t *args_arr = mcp_json_object_get(ctx, prompt0, "arguments");
+    assert(args_arr != NULL && mcp_json_array_size(ctx, args_arr) == 2);
+
+    const mcp_json_value_t *arg0 = mcp_json_array_get(ctx, args_arr, 0);
+    assert(arg0 != NULL);
+    const char *str = NULL;
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, arg0, "name"), &str) == MCP_OK);
+    assert(strcmp(str, "q") == 0);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, arg0, "description"), &str) == MCP_OK);
+    assert(strcmp(str, "query") == 0);
+    bool req_val = false;
+    assert(mcp_json_bool_value(ctx, mcp_json_object_get(ctx, arg0, "required"), &req_val) == MCP_OK);
+    assert(req_val == true);
+
+    const mcp_json_value_t *arg1 = mcp_json_array_get(ctx, args_arr, 1);
+    assert(arg1 != NULL);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, arg1, "name"), &str) == MCP_OK);
+    assert(strcmp(str, "limit") == 0);
+    assert(mcp_json_string_value(ctx, mcp_json_object_get(ctx, arg1, "description"), &str) == MCP_OK);
+    assert(strcmp(str, "max results") == 0);
+
+    mcp_message_destroy(ctx, preq);
+    mcp_message_destroy(ctx, presp);
+    mcp_server_destroy(ctx, srv);
+    mcp_context_destroy(ctx);
+
+    (void)str;
+    (void)req_val;
+    printf("PASS: test_p2_item2_prompt_arguments\n");
+}
+
 int main(void) {
     printf("Starting Official MCP Spec Compliance Tests...\n");
     test_item1_capabilities_and_resource_notifications();
@@ -959,6 +1033,7 @@ int main(void) {
     test_item5_client_apis_and_notifications();
     test_item6_multimedia_content();
     test_p2_item1_tool_default_input_schema();
+    test_p2_item2_prompt_arguments();
     printf("All Official MCP Spec Compliance Tests Passed!\n");
     return 0;
 }

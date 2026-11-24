@@ -235,13 +235,53 @@ mcp_prompt_t *mcp_prompt_new(mcp_context_t *ctx, const char *name, const char *d
     }
     prompt->on_get = on_get;
     prompt->user_data = user_data;
+    prompt->args = NULL;
+    prompt->n_args = 0;
+    prompt->cap_args = 0;
     return prompt;
+}
+
+mcp_status_t mcp_prompt_add_argument(mcp_context_t *ctx, mcp_prompt_t *prompt,
+                                     const char *name,
+                                     const char *description_or_null,
+                                     bool required) {
+    if (prompt == NULL || name == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    char *name_copy = srv_strdup(ctx, name);
+    char *desc_copy = srv_strdup(ctx, description_or_null);
+    if (name_copy == NULL || (description_or_null != NULL && desc_copy == NULL)) {
+        srv_free(ctx, name_copy);
+        srv_free(ctx, desc_copy);
+        return MCP_ERR_NOMEM;
+    }
+    if (prompt->n_args >= prompt->cap_args) {
+        size_t new_cap = prompt->cap_args == 0 ? 4 : prompt->cap_args * 2;
+        mcp_prompt_arg_t *new_args = srv_realloc(ctx, prompt->args, sizeof(mcp_prompt_arg_t) * new_cap);
+        if (new_args == NULL) {
+            srv_free(ctx, name_copy);
+            srv_free(ctx, desc_copy);
+            return MCP_ERR_NOMEM;
+        }
+        prompt->args = new_args;
+        prompt->cap_args = new_cap;
+    }
+    prompt->args[prompt->n_args].name = name_copy;
+    prompt->args[prompt->n_args].description = desc_copy;
+    prompt->args[prompt->n_args].required = required;
+    prompt->n_args++;
+    return MCP_OK;
 }
 
 void mcp_prompt_destroy(mcp_context_t *ctx, mcp_prompt_t *prompt) {
     if (prompt == NULL) {
         return;
     }
+    for (size_t i = 0; i < prompt->n_args; i++) {
+        srv_free(ctx, prompt->args[i].name);
+        srv_free(ctx, prompt->args[i].description);
+    }
+    srv_free(ctx, prompt->args);
     srv_free(ctx, prompt->name);
     srv_free(ctx, prompt->description);
     srv_free(ctx, prompt);
