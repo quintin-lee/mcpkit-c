@@ -1421,6 +1421,19 @@ mcp_status_t mcp_client_handle_server_request(mcp_context_t *ctx, mcp_client_t *
 
     const mcp_json_value_t *params = mcp_message_params(ctx, req);
 
+    if (strcmp(method, "ping") == 0) {
+        mcp_json_value_t *result = mcp_json_object_new(ctx);
+        if (result == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+        *resp_out = mcp_response_ok_new(ctx, req, result);
+        if (*resp_out == NULL) {
+            mcp_json_destroy(ctx, result);
+            return MCP_ERR_NOMEM;
+        }
+        return MCP_OK;
+    }
+
     if (strcmp(method, "roots/list") == 0) {
         if (c->roots_fn == NULL) {
             *resp_out = mcp_response_err_new(ctx, req, MCP_RPC_METHOD_NOT_FOUND,

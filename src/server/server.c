@@ -813,6 +813,19 @@ mcp_status_t mcp_server_request_roots(mcp_context_t *ctx,
                                                    user_data, assigned_id_out);
 }
 
+mcp_status_t mcp_server_ping(mcp_context_t *ctx,
+                             mcp_server_t *server,
+                             mcp_session_t *session,
+                             uint64_t timeout_ms,
+                             mcp_client_response_fn cb,
+                             void *user_data,
+                             uint64_t *assigned_id_out) {
+    return mcp_server_request_client_with_response(ctx, server, session,
+                                                   "ping",
+                                                   NULL, timeout_ms, cb,
+                                                   user_data, assigned_id_out);
+}
+
 mcp_status_t mcp_server_request_elicitation(mcp_context_t *ctx,
                                             mcp_server_t *server,
                                             mcp_session_t *session,

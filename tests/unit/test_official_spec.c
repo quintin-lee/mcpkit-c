@@ -1124,6 +1124,95 @@ static void test_p2_item3_instructions_and_client_capabilities(void) {
     printf("PASS: test_p2_item3_instructions_and_client_capabilities\n");
 }
 
+/* =========================================================================
+ * Phase 2 - Item 4: Bidirectional Ping Symmetry
+ * ========================================================================= */
+typedef struct {
+    bool invoked;
+    bool had_error;
+} ping_test_cb_ctx_t;
+
+static void test_ping_response_cb(mcp_context_t *ctx,
+                                  mcp_server_t *server,
+                                  mcp_session_t *session,
+                                  uint64_t request_id,
+                                  const mcp_json_value_t *result,
+                                  const mcp_json_value_t *error,
+                                  void *user_data) {
+    (void)ctx;
+    (void)server;
+    (void)session;
+    (void)request_id;
+    (void)result;
+    ping_test_cb_ctx_t *tc = (ping_test_cb_ctx_t *)user_data;
+    tc->invoked = true;
+    tc->had_error = (error != NULL);
+}
+
+static void test_p2_item4_bidirectional_ping(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    assert(ctx != NULL);
+
+    /* 1. Client handling incoming server ping */
+    fake_client_transport_t fake;
+    memset(&fake, 0, sizeof(fake));
+    mcp_transport_t *t = mcp_transport_create(ctx, &kFakeClientOps, &fake);
+    assert(t != NULL);
+    mcp_client_t *c = mcp_client_create(ctx, t);
+    assert(c != NULL);
+
+    mcp_message_t *srv_ping_req = mcp_request_new_string_id(ctx, "ping-req-42", "ping", NULL);
+    assert(srv_ping_req != NULL);
+
+    mcp_message_t *client_resp = NULL;
+    assert(mcp_client_handle_server_request(ctx, c, srv_ping_req, &client_resp) == MCP_OK);
+    assert(client_resp != NULL);
+    assert(mcp_message_kind(ctx, client_resp) == MCP_MSG_RESPONSE);
+    assert(mcp_message_error(ctx, client_resp) == NULL);
+
+    const mcp_json_value_t *ping_res = mcp_message_result(ctx, client_resp);
+    assert(ping_res != NULL);
+    assert(mcp_json_type(ctx, ping_res) == MCP_JSON_OBJECT);
+
+    mcp_message_destroy(ctx, srv_ping_req);
+    mcp_message_destroy(ctx, client_resp);
+    mcp_client_destroy(ctx, c);
+    mcp_transport_destroy(ctx, t);
+
+    /* 2. Server sending ping to client via mcp_server_ping */
+    mcp_server_t *srv = mcp_server_create(ctx, "test-ping-srv", "1.0.0");
+    assert(srv != NULL);
+    mcp_session_t *sess = mcp_server_create_session(ctx, srv);
+    assert(sess != NULL);
+
+    mock_sink_t sink = {0};
+    mcp_session_set_sink(sess, mock_session_sink, &sink);
+
+    ping_test_cb_ctx_t cb_ctx = {0};
+    uint64_t ping_req_id = 0;
+    assert(mcp_server_ping(ctx, srv, sess, 5000, test_ping_response_cb, &cb_ctx, &ping_req_id) == MCP_OK);
+
+    assert(sink.call_count == 1);
+    assert(strstr(sink.last_payload, "\"method\":\"ping\"") != NULL);
+
+    /* Now simulate client responding with {} */
+    mcp_json_value_t *empty_res = mcp_json_object_new(ctx);
+    mcp_message_t *dummy_req = mcp_request_new_number_id(ctx, ping_req_id, "ping", NULL);
+    mcp_message_t *mock_resp = mcp_response_ok_new(ctx, dummy_req, empty_res);
+    assert(mock_resp != NULL);
+
+    assert(mcp_server_dispatch_response(ctx, srv, sess, mock_resp) == MCP_OK);
+    assert(cb_ctx.invoked == true);
+    assert(cb_ctx.had_error == false);
+
+    mcp_message_destroy(ctx, dummy_req);
+    mcp_message_destroy(ctx, mock_resp);
+    mcp_server_destroy(ctx, srv);
+    mcp_context_destroy(ctx);
+
+    printf("PASS: test_p2_item4_bidirectional_ping\n");
+}
+
 int main(void) {
     printf("Starting Official MCP Spec Compliance Tests...\n");
     test_item1_capabilities_and_resource_notifications();
@@ -1135,6 +1224,7 @@ int main(void) {
     test_p2_item1_tool_default_input_schema();
     test_p2_item2_prompt_arguments();
     test_p2_item3_instructions_and_client_capabilities();
+    test_p2_item4_bidirectional_ping();
     printf("All Official MCP Spec Compliance Tests Passed!\n");
     return 0;
 }

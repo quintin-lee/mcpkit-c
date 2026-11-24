@@ -553,6 +553,28 @@ mcp_status_t mcp_server_request_roots(mcp_context_t *ctx,
                                       uint64_t *assigned_id_out);
 
 /**
+ * @brief Sends a "ping" request to the client.
+ *
+ * Convenience wrapper over mcp_server_request_client_with_response().
+ *
+ * @param ctx              Context.
+ * @param server           Server instance.
+ * @param session          Target session (may be NULL for single-session servers).
+ * @param timeout_ms       Timeout in milliseconds (0 for default timeout).
+ * @param cb               Callback invoked when response arrives or times out (may be NULL).
+ * @param user_data        User data passed to @p cb.
+ * @param assigned_id_out  Optional pointer to receive the assigned 64-bit request ID.
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_server_ping(mcp_context_t *ctx,
+                             mcp_server_t *server,
+                             mcp_session_t *session,
+                             uint64_t timeout_ms,
+                             mcp_client_response_fn cb,
+                             void *user_data,
+                             uint64_t *assigned_id_out);
+
+/**
  * @brief Sends an "elicitation/create" request to the client.
  *
  * Convenience wrapper over mcp_server_request_client_with_response().
