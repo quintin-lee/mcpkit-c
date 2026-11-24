@@ -224,6 +224,9 @@ struct mcp_server {
     pthread_mutex_t subscribed_lock;
     // Guards sessions array and n_sessions/cap_sessions from concurrent worker threads.
     pthread_mutex_t sessions_lock;
+    // Server-side roots list changed notification callback
+    mcp_server_roots_changed_fn roots_changed_fn;
+    void *roots_changed_ud;
     // MCP Tasks extension manager (SEP-2663). NULL if not enabled.
     mcp_task_mgr_t *task_mgr;
     // MCP Skills extension registry (SEP-2640). NULL if not enabled.

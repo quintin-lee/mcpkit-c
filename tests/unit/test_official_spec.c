@@ -1213,6 +1213,57 @@ static void test_p2_item4_bidirectional_ping(void) {
     printf("PASS: test_p2_item4_bidirectional_ping\n");
 }
 
+/* =========================================================================
+ * Phase 2 - Item 5: Server Roots Changed Notification Callback
+ * ========================================================================= */
+typedef struct {
+    bool invoked;
+    mcp_session_t *session;
+} roots_changed_test_ctx_t;
+
+static void test_roots_changed_cb(mcp_context_t *ctx,
+                                  mcp_server_t *server,
+                                  mcp_session_t *session,
+                                  void *user_data) {
+    (void)ctx;
+    (void)server;
+    roots_changed_test_ctx_t *tc = (roots_changed_test_ctx_t *)user_data;
+    tc->invoked = true;
+    tc->session = session;
+}
+
+static void test_p2_item5_roots_changed_handler(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    assert(ctx != NULL);
+
+    mcp_server_t *srv = mcp_server_create(ctx, "test-roots-srv", "1.0.0");
+    assert(srv != NULL);
+    mcp_session_t *sess = mcp_server_create_session(ctx, srv);
+    assert(sess != NULL);
+
+    roots_changed_test_ctx_t tc = {0};
+    assert(mcp_server_set_roots_changed_handler(srv, test_roots_changed_cb, &tc) == MCP_OK);
+
+    /* Send notifications/initialized first */
+    mcp_message_t *init_notif = mcp_initialized_notification_new(ctx);
+    assert(mcp_server_notify(ctx, srv, sess, init_notif) == MCP_OK);
+    mcp_message_destroy(ctx, init_notif);
+
+    /* Send notifications/roots/list_changed */
+    mcp_message_t *roots_notif = mcp_notification_new(ctx, "notifications/roots/list_changed", NULL);
+    assert(roots_notif != NULL);
+    assert(mcp_server_notify(ctx, srv, sess, roots_notif) == MCP_OK);
+    mcp_message_destroy(ctx, roots_notif);
+
+    assert(tc.invoked == true);
+    assert(tc.session == sess);
+
+    mcp_server_destroy(ctx, srv);
+    mcp_context_destroy(ctx);
+
+    printf("PASS: test_p2_item5_roots_changed_handler\n");
+}
+
 int main(void) {
     printf("Starting Official MCP Spec Compliance Tests...\n");
     test_item1_capabilities_and_resource_notifications();
@@ -1225,6 +1276,7 @@ int main(void) {
     test_p2_item2_prompt_arguments();
     test_p2_item3_instructions_and_client_capabilities();
     test_p2_item4_bidirectional_ping();
+    test_p2_item5_roots_changed_handler();
     printf("All Official MCP Spec Compliance Tests Passed!\n");
     return 0;
 }

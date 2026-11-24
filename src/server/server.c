@@ -800,6 +800,17 @@ mcp_status_t mcp_server_request_sampling(mcp_context_t *ctx,
                                                    user_data, assigned_id_out);
 }
 
+mcp_status_t mcp_server_set_roots_changed_handler(mcp_server_t *server,
+                                                  mcp_server_roots_changed_fn cb,
+                                                  void *user_data) {
+    if (server == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    server->roots_changed_fn = cb;
+    server->roots_changed_ud = user_data;
+    return MCP_OK;
+}
+
 mcp_status_t mcp_server_request_roots(mcp_context_t *ctx,
                                       mcp_server_t *server,
                                       mcp_session_t *session,

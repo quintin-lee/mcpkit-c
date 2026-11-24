@@ -207,6 +207,10 @@ mcp_status_t mcp_server_notify(mcp_context_t *ctx, mcp_server_t *srv, mcp_sessio
     }
     if (strcmp(method, "notifications/initialized") == 0) {
         session->initialized = true;
+    } else if (strcmp(method, "notifications/roots/list_changed") == 0) {
+        if (srv->roots_changed_fn != NULL) {
+            srv->roots_changed_fn(ctx, srv, session, srv->roots_changed_ud);
+        }
     } else if (strcmp(method, "notifications/cancelled") == 0) {
         const mcp_json_value_t *params = mcp_message_params(ctx, notif);
         if (params != NULL) {

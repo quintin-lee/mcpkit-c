@@ -553,6 +553,31 @@ mcp_status_t mcp_server_request_roots(mcp_context_t *ctx,
                                       uint64_t *assigned_id_out);
 
 /**
+ * @brief Callback invoked when the server receives a "notifications/roots/list_changed" notification.
+ *
+ * @param ctx       Context.
+ * @param server    Server instance.
+ * @param session   Session that sent the notification.
+ * @param user_data User data pointer registered with the callback.
+ */
+typedef void (*mcp_server_roots_changed_fn)(mcp_context_t *ctx,
+                                            mcp_server_t *server,
+                                            mcp_session_t *session,
+                                            void *user_data);
+
+/**
+ * @brief Sets a callback to be invoked when a client notifies that its roots list has changed.
+ *
+ * @param server    Server instance.
+ * @param cb        Callback function, or NULL to disable.
+ * @param user_data User data pointer passed to callback.
+ * @return MCP_OK on success; MCP_ERR_INVALID_ARGUMENT if server is NULL.
+ */
+mcp_status_t mcp_server_set_roots_changed_handler(mcp_server_t *server,
+                                                  mcp_server_roots_changed_fn cb,
+                                                  void *user_data);
+
+/**
  * @brief Sends a "ping" request to the client.
  *
  * Convenience wrapper over mcp_server_request_client_with_response().
