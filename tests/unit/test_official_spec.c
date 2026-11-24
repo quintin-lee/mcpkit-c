@@ -1400,6 +1400,83 @@ static void test_p2_item6_resource_metadata_and_annotations(void) {
     printf("PASS: test_p2_item6_resource_metadata_and_annotations\n");
 }
 
+/* =========================================================================
+ * Phase 2 - Item 7: Sampling and Prompt Message Builders
+ * ========================================================================= */
+static void test_p2_item7_sampling_and_prompt_builders(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    assert(ctx != NULL);
+
+    /* 1. Sampling parameters builders */
+    mcp_json_value_t *sparams = mcp_sampling_params_new(ctx, 1024);
+    assert(sparams != NULL);
+
+    assert(mcp_sampling_params_set_system_prompt(ctx, sparams, "You are a helpful coding assistant.") == MCP_OK);
+    assert(mcp_sampling_params_set_temperature(ctx, sparams, 0.7) == MCP_OK);
+    assert(mcp_sampling_params_set_include_context(ctx, sparams, "thisServer") == MCP_OK);
+
+    assert(mcp_sampling_params_add_text_message(ctx, sparams, "user", "Hello, who are you?") == MCP_OK);
+    assert(mcp_sampling_params_add_message(ctx, sparams, "assistant",
+                                           mcp_content_text_new(ctx, "I am an AI assistant.")) == MCP_OK);
+
+    /* Verify fields in sparams */
+    const mcp_json_value_t *v_sp = mcp_json_object_get(ctx, sparams, "systemPrompt");
+    assert(v_sp != NULL);
+    const char *sp_str = NULL;
+    assert(mcp_json_string_value(ctx, v_sp, &sp_str) == MCP_OK);
+    assert(strcmp(sp_str, "You are a helpful coding assistant.") == 0);
+
+    const mcp_json_value_t *v_temp = mcp_json_object_get(ctx, sparams, "temperature");
+    assert(v_temp != NULL);
+    double temp_val = 0;
+    assert(mcp_json_number_value(ctx, v_temp, &temp_val) == MCP_OK);
+    assert(temp_val > 0.69 && temp_val < 0.71);
+
+    const mcp_json_value_t *v_ic = mcp_json_object_get(ctx, sparams, "includeContext");
+    assert(v_ic != NULL);
+    const char *ic_str = NULL;
+    assert(mcp_json_string_value(ctx, v_ic, &ic_str) == MCP_OK);
+    assert(strcmp(ic_str, "thisServer") == 0);
+
+    const mcp_json_value_t *msgs = mcp_json_object_get(ctx, sparams, "messages");
+    assert(msgs != NULL && mcp_json_array_size(ctx, msgs) == 2);
+
+    const mcp_json_value_t *m0 = mcp_json_array_get(ctx, msgs, 0);
+    const mcp_json_value_t *m0_role = mcp_json_object_get(ctx, m0, "role");
+    const char *role_str = NULL;
+    assert(mcp_json_string_value(ctx, m0_role, &role_str) == MCP_OK && strcmp(role_str, "user") == 0);
+
+    mcp_json_destroy(ctx, sparams);
+
+    /* 2. Prompt message builders */
+    mcp_json_value_t *pm1 = mcp_prompt_message_new_text(ctx, "user", "Explain quantum computing");
+    assert(pm1 != NULL);
+    const mcp_json_value_t *pm1_role = mcp_json_object_get(ctx, pm1, "role");
+    assert(mcp_json_string_value(ctx, pm1_role, &role_str) == MCP_OK && strcmp(role_str, "user") == 0);
+    const mcp_json_value_t *pm1_content = mcp_json_object_get(ctx, pm1, "content");
+    assert(pm1_content != NULL);
+    const mcp_json_value_t *pm1_text = mcp_json_object_get(ctx, pm1_content, "text");
+    const char *text_str = NULL;
+    assert(mcp_json_string_value(ctx, pm1_text, &text_str) == MCP_OK && strcmp(text_str, "Explain quantum computing") == 0);
+
+    mcp_json_value_t *pm2 = mcp_prompt_message_new(ctx, "assistant",
+                                                   mcp_content_text_new(ctx, "Quantum computing utilizes superposition."));
+    assert(pm2 != NULL);
+    const mcp_json_value_t *pm2_role = mcp_json_object_get(ctx, pm2, "role");
+    assert(mcp_json_string_value(ctx, pm2_role, &role_str) == MCP_OK && strcmp(role_str, "assistant") == 0);
+
+    mcp_json_destroy(ctx, pm1);
+    mcp_json_destroy(ctx, pm2);
+
+    mcp_context_destroy(ctx);
+
+    (void)sp_str;
+    (void)ic_str;
+    (void)role_str;
+    (void)text_str;
+    printf("PASS: test_p2_item7_sampling_and_prompt_builders\n");
+}
+
 int main(void) {
     printf("Starting Official MCP Spec Compliance Tests...\n");
     test_item1_capabilities_and_resource_notifications();
@@ -1414,6 +1491,7 @@ int main(void) {
     test_p2_item4_bidirectional_ping();
     test_p2_item5_roots_changed_handler();
     test_p2_item6_resource_metadata_and_annotations();
+    test_p2_item7_sampling_and_prompt_builders();
     printf("All Official MCP Spec Compliance Tests Passed!\n");
     return 0;
 }

@@ -244,3 +244,95 @@ mcp_json_value_t *mcp_sampling_content_tool_result_new(mcp_context_t *ctx, const
     mcp_json_object_set_take(ctx, obj, "isError", mcp_json_bool_new(ctx, is_error));
     return obj;
 }
+
+mcp_status_t mcp_sampling_params_add_message(mcp_context_t *ctx,
+                                             mcp_json_value_t *params,
+                                             const char *role,
+                                             mcp_json_value_t *content) {
+    if (params == NULL || role == NULL || content == NULL) {
+        if (content != NULL) {
+            mcp_json_destroy(ctx, content);
+        }
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *msgs = (mcp_json_value_t *)mcp_json_object_get(ctx, params, "messages");
+    if (msgs == NULL) {
+        msgs = mcp_json_array_new(ctx);
+        if (msgs == NULL) {
+            mcp_json_destroy(ctx, content);
+            return MCP_ERR_NOMEM;
+        }
+        if (mcp_json_object_set_take(ctx, params, "messages", msgs) != MCP_OK) {
+            mcp_json_destroy(ctx, msgs);
+            mcp_json_destroy(ctx, content);
+            return MCP_ERR_NOMEM;
+        }
+    }
+    mcp_json_value_t *msg = mcp_json_object_new(ctx);
+    if (msg == NULL) {
+        mcp_json_destroy(ctx, content);
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_object_set_take(ctx, msg, "role", mcp_json_string_new(ctx, role));
+    mcp_json_object_set_take(ctx, msg, "content", content);
+    if (mcp_json_array_append(ctx, msgs, msg) != MCP_OK) {
+        mcp_json_destroy(ctx, msg);
+        return MCP_ERR_NOMEM;
+    }
+    return MCP_OK;
+}
+
+mcp_status_t mcp_sampling_params_add_text_message(mcp_context_t *ctx,
+                                                  mcp_json_value_t *params,
+                                                  const char *role,
+                                                  const char *text) {
+    if (text == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *content = mcp_json_object_new(ctx);
+    if (content == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    mcp_json_object_set_take(ctx, content, "type", mcp_json_string_new(ctx, "text"));
+    mcp_json_object_set_take(ctx, content, "text", mcp_json_string_new(ctx, text));
+    return mcp_sampling_params_add_message(ctx, params, role, content);
+}
+
+mcp_status_t mcp_sampling_params_set_system_prompt(mcp_context_t *ctx,
+                                                   mcp_json_value_t *params,
+                                                   const char *system_prompt) {
+    if (params == NULL || system_prompt == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *sp = mcp_json_string_new(ctx, system_prompt);
+    if (sp == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    return mcp_json_object_set_take(ctx, params, "systemPrompt", sp);
+}
+
+mcp_status_t mcp_sampling_params_set_temperature(mcp_context_t *ctx,
+                                                 mcp_json_value_t *params,
+                                                 double temperature) {
+    if (params == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *t = mcp_json_number_new(ctx, temperature);
+    if (t == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    return mcp_json_object_set_take(ctx, params, "temperature", t);
+}
+
+mcp_status_t mcp_sampling_params_set_include_context(mcp_context_t *ctx,
+                                                     mcp_json_value_t *params,
+                                                     const char *include_context) {
+    if (params == NULL || include_context == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    mcp_json_value_t *ic = mcp_json_string_new(ctx, include_context);
+    if (ic == NULL) {
+        return MCP_ERR_NOMEM;
+    }
+    return mcp_json_object_set_take(ctx, params, "includeContext", ic);
+}

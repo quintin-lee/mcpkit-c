@@ -74,4 +74,30 @@ mcp_status_t mcp_prompt_add_argument(mcp_context_t *ctx, mcp_prompt_t *prompt,
  */
 void mcp_prompt_destroy(mcp_context_t *ctx, mcp_prompt_t *prompt);
 
+/**
+ * @brief Creates a PromptMessage JSON object (for returning in prompts/get messages array).
+ *
+ * Takes ownership of @p content on success.
+ *
+ * @param ctx Context; may be NULL.
+ * @param role "user" or "assistant".
+ * @param content Owned JSON value for content (e.g. TextContent or ImageContent).
+ * @return Owned JSON object {"role": ..., "content": ...}, or NULL on OOM.
+ */
+mcp_json_value_t *mcp_prompt_message_new(mcp_context_t *ctx,
+                                         const char *role,
+                                         mcp_json_value_t *content);
+
+/**
+ * @brief Creates a PromptMessage JSON object with text content.
+ *
+ * @param ctx Context; may be NULL.
+ * @param role "user" or "assistant".
+ * @param text UTF-8 text string.
+ * @return Owned JSON object {"role": ..., "content": {"type": "text", "text": ...}}, or NULL on OOM.
+ */
+mcp_json_value_t *mcp_prompt_message_new_text(mcp_context_t *ctx,
+                                              const char *role,
+                                              const char *text);
+
 #endif

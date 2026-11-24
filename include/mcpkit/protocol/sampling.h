@@ -134,6 +134,72 @@ mcp_json_value_t *mcp_sampling_content_tool_use_new(mcp_context_t *ctx, const ch
 mcp_json_value_t *mcp_sampling_content_tool_result_new(mcp_context_t *ctx, const char *tool_use_id,
                                                        const char *content, bool is_error);
 
+/**
+ * @brief Appends a message to the sampling parameters.
+ *
+ * Takes ownership of @p content on success.
+ *
+ * @param ctx Context; may be NULL.
+ * @param params Target sampling parameters object.
+ * @param role "user" or "assistant".
+ * @param content Owned JSON value for content (e.g. TextContent or array of content blocks).
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_sampling_params_add_message(mcp_context_t *ctx,
+                                             mcp_json_value_t *params,
+                                             const char *role,
+                                             mcp_json_value_t *content);
+
+/**
+ * @brief Appends a text message to the sampling parameters.
+ *
+ * @param ctx Context; may be NULL.
+ * @param params Target sampling parameters object.
+ * @param role "user" or "assistant".
+ * @param text UTF-8 text message.
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_sampling_params_add_text_message(mcp_context_t *ctx,
+                                                  mcp_json_value_t *params,
+                                                  const char *role,
+                                                  const char *text);
+
+/**
+ * @brief Sets the system prompt on the sampling parameters.
+ *
+ * @param ctx Context; may be NULL.
+ * @param params Target sampling parameters object.
+ * @param system_prompt System prompt string (or NULL to remove).
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_sampling_params_set_system_prompt(mcp_context_t *ctx,
+                                                   mcp_json_value_t *params,
+                                                   const char *system_prompt);
+
+/**
+ * @brief Sets the temperature on the sampling parameters.
+ *
+ * @param ctx Context; may be NULL.
+ * @param params Target sampling parameters object.
+ * @param temperature Model sampling temperature.
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_sampling_params_set_temperature(mcp_context_t *ctx,
+                                                 mcp_json_value_t *params,
+                                                 double temperature);
+
+/**
+ * @brief Sets the includeContext field on sampling parameters ("none", "thisServer", "allServers").
+ *
+ * @param ctx Context; may be NULL.
+ * @param params Target sampling parameters object.
+ * @param include_context Context inclusion policy.
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_sampling_params_set_include_context(mcp_context_t *ctx,
+                                                     mcp_json_value_t *params,
+                                                     const char *include_context);
+
 #ifdef __cplusplus
 }
 #endif

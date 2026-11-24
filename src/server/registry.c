@@ -358,6 +358,40 @@ void mcp_prompt_destroy(mcp_context_t *ctx, mcp_prompt_t *prompt) {
     srv_free(ctx, prompt);
 }
 
+mcp_json_value_t *mcp_prompt_message_new(mcp_context_t *ctx,
+                                         const char *role,
+                                         mcp_json_value_t *content) {
+    if (role == NULL || content == NULL) {
+        if (content != NULL) {
+            mcp_json_destroy(ctx, content);
+        }
+        return NULL;
+    }
+    mcp_json_value_t *msg = mcp_json_object_new(ctx);
+    if (msg == NULL) {
+        mcp_json_destroy(ctx, content);
+        return NULL;
+    }
+    mcp_json_object_set_take(ctx, msg, "role", mcp_json_string_new(ctx, role));
+    mcp_json_object_set_take(ctx, msg, "content", content);
+    return msg;
+}
+
+mcp_json_value_t *mcp_prompt_message_new_text(mcp_context_t *ctx,
+                                              const char *role,
+                                              const char *text) {
+    if (role == NULL || text == NULL) {
+        return NULL;
+    }
+    mcp_json_value_t *content = mcp_json_object_new(ctx);
+    if (content == NULL) {
+        return NULL;
+    }
+    mcp_json_object_set_take(ctx, content, "type", mcp_json_string_new(ctx, "text"));
+    mcp_json_object_set_take(ctx, content, "text", mcp_json_string_new(ctx, text));
+    return mcp_prompt_message_new(ctx, role, content);
+}
+
 mcp_resource_template_t *mcp_resource_template_new(mcp_context_t *ctx,
                                                    const char *uri_template,
                                                    const char *name,
