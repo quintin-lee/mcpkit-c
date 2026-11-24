@@ -190,6 +190,10 @@ mcp_resource_t *mcp_resource_new(mcp_context_t *ctx, const char *uri, const char
     res->on_read = on_read;
     res->user_data = user_data;
     res->cleanup = NULL;
+    res->description = NULL;
+    res->size = 0;
+    res->has_size = false;
+    res->annotations = NULL;
     return res;
 }
 
@@ -202,8 +206,75 @@ void mcp_resource_destroy(mcp_context_t *ctx, mcp_resource_t *res) {
     }
     srv_free(ctx, res->uri);
     srv_free(ctx, res->name);
+    srv_free(ctx, res->description);
     srv_free(ctx, res->mime_type);
+    if (res->annotations != NULL) {
+        mcp_json_destroy(ctx, res->annotations);
+    }
     srv_free(ctx, res);
+}
+
+mcp_status_t mcp_resource_set_description(mcp_context_t *ctx, mcp_resource_t *res,
+                                          const char *description_or_null) {
+    if (res == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (res->description != NULL) {
+        srv_free(ctx, res->description);
+        res->description = NULL;
+    }
+    if (description_or_null != NULL) {
+        res->description = srv_strdup(ctx, description_or_null);
+        if (res->description == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+    }
+    return MCP_OK;
+}
+
+const char *mcp_resource_get_description(const mcp_resource_t *res) {
+    return res != NULL ? res->description : NULL;
+}
+
+mcp_status_t mcp_resource_set_size(mcp_resource_t *res, int64_t size) {
+    if (res == NULL || size < 0) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    res->size = size;
+    res->has_size = true;
+    return MCP_OK;
+}
+
+bool mcp_resource_get_size(const mcp_resource_t *res, int64_t *size_out) {
+    if (res == NULL || !res->has_size) {
+        return false;
+    }
+    if (size_out != NULL) {
+        *size_out = res->size;
+    }
+    return true;
+}
+
+mcp_status_t mcp_resource_set_annotations(mcp_context_t *ctx, mcp_resource_t *res,
+                                          const mcp_json_value_t *annotations) {
+    if (res == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (res->annotations != NULL) {
+        mcp_json_destroy(ctx, res->annotations);
+        res->annotations = NULL;
+    }
+    if (annotations != NULL) {
+        res->annotations = mcp_json_clone(ctx, annotations);
+        if (res->annotations == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+    }
+    return MCP_OK;
+}
+
+const mcp_json_value_t *mcp_resource_get_annotations(const mcp_resource_t *res) {
+    return res != NULL ? res->annotations : NULL;
 }
 
 mcp_status_t mcp_resource_set_cleanup(mcp_context_t *ctx, mcp_resource_t *res,
@@ -317,6 +388,7 @@ mcp_resource_template_t *mcp_resource_template_new(mcp_context_t *ctx,
     }
     tmpl->on_read = on_read;
     tmpl->user_data = user_data;
+    tmpl->annotations = NULL;
     return tmpl;
 }
 
@@ -328,5 +400,31 @@ void mcp_resource_template_destroy(mcp_context_t *ctx, mcp_resource_template_t *
     srv_free(ctx, tmpl->name);
     srv_free(ctx, tmpl->description);
     srv_free(ctx, tmpl->mime_type);
+    if (tmpl->annotations != NULL) {
+        mcp_json_destroy(ctx, tmpl->annotations);
+    }
     srv_free(ctx, tmpl);
+}
+
+mcp_status_t mcp_resource_template_set_annotations(mcp_context_t *ctx,
+                                                   mcp_resource_template_t *tmpl,
+                                                   const mcp_json_value_t *annotations) {
+    if (tmpl == NULL) {
+        return MCP_ERR_INVALID_ARGUMENT;
+    }
+    if (tmpl->annotations != NULL) {
+        mcp_json_destroy(ctx, tmpl->annotations);
+        tmpl->annotations = NULL;
+    }
+    if (annotations != NULL) {
+        tmpl->annotations = mcp_json_clone(ctx, annotations);
+        if (tmpl->annotations == NULL) {
+            return MCP_ERR_NOMEM;
+        }
+    }
+    return MCP_OK;
+}
+
+const mcp_json_value_t *mcp_resource_template_get_annotations(const mcp_resource_template_t *tmpl) {
+    return tmpl != NULL ? tmpl->annotations : NULL;
 }

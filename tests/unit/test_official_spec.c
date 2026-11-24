@@ -1264,6 +1264,142 @@ static void test_p2_item5_roots_changed_handler(void) {
     printf("PASS: test_p2_item5_roots_changed_handler\n");
 }
 
+/* =========================================================================
+ * Phase 2 - Item 6: Resource and Template Metadata & Annotations
+ * ========================================================================= */
+static mcp_status_t dummy_res_reader(mcp_context_t *ctx, mcp_session_t *session,
+                                    const char *uri, void *user_data,
+                                    mcp_json_value_t **contents_out) {
+    (void)session;
+    (void)uri;
+    (void)user_data;
+    *contents_out = mcp_json_array_new(ctx);
+    return MCP_OK;
+}
+
+static mcp_status_t dummy_tmpl_reader(mcp_context_t *ctx, mcp_session_t *session,
+                                     const char *uri, const mcp_json_value_t *vars,
+                                     void *user_data, mcp_json_value_t **contents_out) {
+    (void)session;
+    (void)uri;
+    (void)vars;
+    (void)user_data;
+    *contents_out = mcp_json_array_new(ctx);
+    return MCP_OK;
+}
+
+static void test_p2_item6_resource_metadata_and_annotations(void) {
+    mcp_context_t *ctx = mcp_context_create(NULL);
+    assert(ctx != NULL);
+
+    mcp_server_t *srv = mcp_server_create(ctx, "test-res-srv", "1.0.0");
+    assert(srv != NULL);
+    mcp_session_t *sess = mcp_server_create_session(ctx, srv);
+    assert(sess != NULL);
+
+    /* 1. Setup Resource with description, size, annotations */
+    mcp_resource_t *res = mcp_resource_new(ctx, "file:///data.csv", "DataCSV", "text/csv", dummy_res_reader, NULL);
+    assert(res != NULL);
+    assert(mcp_resource_set_description(ctx, res, "Monthly financial metrics") == MCP_OK);
+    assert(mcp_resource_set_size(res, 4096) == MCP_OK);
+
+    mcp_json_value_t *res_ann = mcp_json_object_new(ctx);
+    mcp_json_value_t *aud_arr = mcp_json_array_new(ctx);
+    mcp_json_array_append(ctx, aud_arr, mcp_json_string_new(ctx, "analysts"));
+    mcp_json_object_set_take(ctx, res_ann, "audience", aud_arr);
+    mcp_json_object_set_take(ctx, res_ann, "priority", mcp_json_number_new(ctx, 0.8));
+    assert(mcp_resource_set_annotations(ctx, res, res_ann) == MCP_OK);
+    mcp_json_destroy(ctx, res_ann);
+
+    /* Verify getters */
+    assert(strcmp(mcp_resource_get_description(res), "Monthly financial metrics") == 0);
+    int64_t sz = 0;
+    assert(mcp_resource_get_size(res, &sz) == true && sz == 4096);
+    assert(mcp_resource_get_annotations(res) != NULL);
+
+    assert(mcp_server_add_resource(ctx, srv, res) == MCP_OK);
+
+    /* 2. Setup Resource Template with annotations */
+    mcp_resource_template_t *tmpl = mcp_resource_template_new(ctx, "db://{table}", "DBTable", "Dynamic database table", "application/json", dummy_tmpl_reader, NULL);
+    assert(tmpl != NULL);
+
+    mcp_json_value_t *tmpl_ann = mcp_json_object_new(ctx);
+    mcp_json_object_set_take(ctx, tmpl_ann, "priority", mcp_json_number_new(ctx, 0.5));
+    assert(mcp_resource_template_set_annotations(ctx, tmpl, tmpl_ann) == MCP_OK);
+    mcp_json_destroy(ctx, tmpl_ann);
+
+    assert(mcp_resource_template_get_annotations(tmpl) != NULL);
+    assert(mcp_server_add_resource_template(ctx, srv, tmpl) == MCP_OK);
+
+    /* Initialize session */
+    mcp_json_value_t *ip = mcp_initialize_params_new(ctx, "test-client", "1.0.0");
+    mcp_message_t *ireq = mcp_request_new_string_id(ctx, "init-res", "initialize", ip);
+    mcp_message_t *iresp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, ireq, &iresp) == MCP_OK);
+    mcp_message_destroy(ctx, ireq);
+    mcp_message_destroy(ctx, iresp);
+
+    mcp_message_t *init_notif = mcp_initialized_notification_new(ctx);
+    assert(mcp_server_notify(ctx, srv, sess, init_notif) == MCP_OK);
+    mcp_message_destroy(ctx, init_notif);
+
+    /* 3. Query resources/list and verify fields */
+    mcp_message_t *lreq = mcp_request_new_string_id(ctx, "r-list", "resources/list", NULL);
+    mcp_message_t *lresp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, lreq, &lresp) == MCP_OK);
+    assert(lresp != NULL);
+
+    const mcp_json_value_t *lres = mcp_message_result(ctx, lresp);
+    assert(lres != NULL);
+    const mcp_json_value_t *arr = mcp_json_object_get(ctx, lres, "resources");
+    assert(arr != NULL && mcp_json_array_size(ctx, arr) == 1);
+
+    const mcp_json_value_t *r0 = mcp_json_array_get(ctx, arr, 0);
+    const mcp_json_value_t *v_desc = mcp_json_object_get(ctx, r0, "description");
+    const mcp_json_value_t *v_size = mcp_json_object_get(ctx, r0, "size");
+    const mcp_json_value_t *v_ann = mcp_json_object_get(ctx, r0, "annotations");
+    assert(v_desc != NULL);
+    const char *desc_str = NULL;
+    assert(mcp_json_string_value(ctx, v_desc, &desc_str) == MCP_OK);
+    assert(strcmp(desc_str, "Monthly financial metrics") == 0);
+
+    assert(v_size != NULL);
+    double size_num = 0;
+    assert(mcp_json_number_value(ctx, v_size, &size_num) == MCP_OK);
+    assert((int64_t)size_num == 4096);
+
+    assert(v_ann != NULL);
+    const mcp_json_value_t *v_prio = mcp_json_object_get(ctx, v_ann, "priority");
+    assert(v_prio != NULL);
+
+    mcp_message_destroy(ctx, lreq);
+    mcp_message_destroy(ctx, lresp);
+
+    /* 4. Query resources/templates/list and verify annotations */
+    mcp_message_t *treq = mcp_request_new_string_id(ctx, "t-list", "resources/templates/list", NULL);
+    mcp_message_t *tresp = NULL;
+    assert(mcp_server_dispatch(ctx, srv, sess, treq, &tresp) == MCP_OK);
+    assert(tresp != NULL);
+
+    const mcp_json_value_t *tres = mcp_message_result(ctx, tresp);
+    assert(tres != NULL);
+    const mcp_json_value_t *tarr = mcp_json_object_get(ctx, tres, "resourceTemplates");
+    assert(tarr != NULL && mcp_json_array_size(ctx, tarr) == 1);
+
+    const mcp_json_value_t *t0 = mcp_json_array_get(ctx, tarr, 0);
+    const mcp_json_value_t *t_ann = mcp_json_object_get(ctx, t0, "annotations");
+    assert(t_ann != NULL);
+
+    mcp_message_destroy(ctx, treq);
+    mcp_message_destroy(ctx, tresp);
+
+    mcp_server_destroy(ctx, srv);
+    mcp_context_destroy(ctx);
+
+    (void)desc_str;
+    printf("PASS: test_p2_item6_resource_metadata_and_annotations\n");
+}
+
 int main(void) {
     printf("Starting Official MCP Spec Compliance Tests...\n");
     test_item1_capabilities_and_resource_notifications();
@@ -1277,6 +1413,7 @@ int main(void) {
     test_p2_item3_instructions_and_client_capabilities();
     test_p2_item4_bidirectional_ping();
     test_p2_item5_roots_changed_handler();
+    test_p2_item6_resource_metadata_and_annotations();
     printf("All Official MCP Spec Compliance Tests Passed!\n");
     return 0;
 }

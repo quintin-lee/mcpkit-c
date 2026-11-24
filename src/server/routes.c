@@ -779,7 +779,10 @@ static mcp_message_t *route_resources_list(mcp_context_t *ctx, mcp_server_t *srv
         mcp_json_value_t *entry = mcp_json_object_new(ctx);
         if (entry == NULL || set_string(ctx, entry, "uri", r->uri) != MCP_OK ||
             set_string(ctx, entry, "name", r->name) != MCP_OK ||
+            (r->description != NULL && set_string(ctx, entry, "description", r->description) != MCP_OK) ||
             (r->mime_type != NULL && set_string(ctx, entry, "mimeType", r->mime_type) != MCP_OK) ||
+            (r->has_size && mcp_json_object_set_take(ctx, entry, "size", mcp_json_number_new(ctx, (double)r->size)) != MCP_OK) ||
+            (r->annotations != NULL && mcp_json_object_set_take(ctx, entry, "annotations", mcp_json_clone(ctx, r->annotations)) != MCP_OK) ||
             mcp_json_array_append(ctx, arr, entry) != MCP_OK) {
             mcp_json_destroy(ctx, entry);
             mcp_json_destroy(ctx, result);
@@ -1357,6 +1360,9 @@ static mcp_message_t *route_advanced(mcp_context_t *ctx, mcp_server_t *srv, mcp_
             }
             if (t->mime_type != NULL) {
                 set_string(ctx, item, "mimeType", t->mime_type);
+            }
+            if (t->annotations != NULL) {
+                mcp_json_object_set_take(ctx, item, "annotations", mcp_json_clone(ctx, t->annotations));
             }
             mcp_json_array_append(ctx, arr, item);
         }

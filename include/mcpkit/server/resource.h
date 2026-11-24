@@ -15,6 +15,8 @@
 #ifndef MCPKIT_SERVER_RESOURCE_H
 #define MCPKIT_SERVER_RESOURCE_H
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "mcpkit/core/error.h"
 #include "mcpkit/json/value.h"
 
@@ -132,5 +134,72 @@ mcp_resource_template_t *mcp_resource_template_new(mcp_context_t *ctx,
  * @param tmpl Resource template to destroy; NULL is a no-op.
  */
 void mcp_resource_template_destroy(mcp_context_t *ctx, mcp_resource_template_t *tmpl);
+
+/**
+ * @brief Sets the description of a resource.
+ *
+ * @param ctx Context; may be NULL.
+ * @param res Target resource.
+ * @param description_or_null Description text (strdup'd internally; may be NULL to clear).
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_resource_set_description(mcp_context_t *ctx, mcp_resource_t *res,
+                                          const char *description_or_null);
+
+/**
+ * @brief Gets the description of a resource.
+ */
+const char *mcp_resource_get_description(const mcp_resource_t *res);
+
+/**
+ * @brief Sets the size (in bytes) of a resource.
+ *
+ * @param res Target resource.
+ * @param size Size in bytes.
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_resource_set_size(mcp_resource_t *res, int64_t size);
+
+/**
+ * @brief Gets the size of a resource if set.
+ *
+ * @param res Target resource.
+ * @param size_out Pointer to receive size in bytes.
+ * @return true if size was set, false otherwise.
+ */
+bool mcp_resource_get_size(const mcp_resource_t *res, int64_t *size_out);
+
+/**
+ * @brief Sets the annotations object of a resource.
+ *
+ * @param ctx Context; may be NULL.
+ * @param res Target resource.
+ * @param annotations JSON object containing annotations (cloned internally; NULL to clear).
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_resource_set_annotations(mcp_context_t *ctx, mcp_resource_t *res,
+                                          const mcp_json_value_t *annotations);
+
+/**
+ * @brief Gets the annotations object of a resource (borrowed).
+ */
+const mcp_json_value_t *mcp_resource_get_annotations(const mcp_resource_t *res);
+
+/**
+ * @brief Sets the annotations object of a resource template.
+ *
+ * @param ctx Context; may be NULL.
+ * @param tmpl Target resource template.
+ * @param annotations JSON object containing annotations (cloned internally; NULL to clear).
+ * @return MCP_OK on success; error code on failure.
+ */
+mcp_status_t mcp_resource_template_set_annotations(mcp_context_t *ctx,
+                                                   mcp_resource_template_t *tmpl,
+                                                   const mcp_json_value_t *annotations);
+
+/**
+ * @brief Gets the annotations object of a resource template (borrowed).
+ */
+const mcp_json_value_t *mcp_resource_template_get_annotations(const mcp_resource_template_t *tmpl);
 
 #endif

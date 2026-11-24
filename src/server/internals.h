@@ -64,7 +64,11 @@ struct mcp_tool {
 struct mcp_resource {
     char *uri;
     char *name;
+    char *description;
     char *mime_type;
+    int64_t size;
+    bool has_size;
+    mcp_json_value_t *annotations;
     mcp_resource_read_fn on_read;
     void *user_data;
     mcp_resource_cleanup_fn cleanup;
@@ -75,6 +79,7 @@ struct mcp_resource_template {
     char *name;
     char *description;
     char *mime_type;
+    mcp_json_value_t *annotations;
     mcp_resource_template_read_fn on_read;
     void *user_data;
 };
