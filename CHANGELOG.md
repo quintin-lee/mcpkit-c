@@ -4,6 +4,8 @@ Format follows Keep a Changelog. Versions follow SemVer.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-27
+
 ### Added
 
 - **Request-Scoped Monotonic Arena Allocator (`mcp_arena_t`)**:
