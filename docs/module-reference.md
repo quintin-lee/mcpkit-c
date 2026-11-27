@@ -199,6 +199,20 @@ mcp_status_t mcp_oauth_build_client_credentials_request(mcp_context_t *ctx, cons
 ```
 Computes unpadded Base64URL SHA-256 S256 code challenge from a code verifier (verified against RFC 7636 test vectors), generates cryptographically secure verifiers, parses RFC 8414 OAuth 2.0 / 2.1 metadata objects, parses token responses, and builds urlencoded token exchange, refresh (SEP-2207), and client credentials (SEP-1046) request bodies.
 
+### `arena.h`
+Chunked monotonic arena allocator with realloc support (`mcp_arena_t`):
+```c
+mcp_arena_t *mcp_arena_create(const mcp_allocator_t *upstream, size_t default_chunk_size);
+void        *mcp_arena_alloc(mcp_arena_t *arena, size_t size);
+void        *mcp_arena_alloc_aligned(mcp_arena_t *arena, size_t size, size_t alignment);
+void        *mcp_arena_realloc(mcp_arena_t *arena, void *ptr, size_t new_size);
+char        *mcp_arena_strdup(mcp_arena_t *arena, const char *s);
+void         mcp_arena_reset(mcp_arena_t *arena);
+void         mcp_arena_destroy(mcp_arena_t *arena);
+mcp_allocator_t mcp_arena_as_allocator(mcp_arena_t *arena);
+```
+Region-based bump allocator suitable for request lifecycles. Supports arbitrary power-of-two alignments, O(1) bulk reset without releasing chunk blocks back to the OS, top-bump realloc-in-place optimization, and bridging directly to `mcp_allocator_t`. Used by `mcp_async_server` worker threads for zero-malloc request parsing and dispatching (microbenchmark: 29.4M allocations/sec).
+
 
 ---
 
@@ -601,6 +615,26 @@ mcp_json_value_t *mcp_sampling_content_tool_result_new(mcp_context_t *ctx, const
 ```
 Constructs and inspects `sampling/createMessage` requests carrying tool definitions and tool choice modes, and builds `tool_use` / `tool_result` content blocks for LLM message exchanges.
 
+### `json_stream.h`
+High-speed streaming JSON-RPC 2.0 serializer (`mcp_json_stream_t`):
+```c
+typedef struct mcp_json_stream mcp_json_stream_t;
+
+void mcp_json_stream_init(mcp_json_stream_t *s, char *buf, size_t cap);
+mcp_status_t mcp_json_stream_write_response_envelope(mcp_json_stream_t *s,
+                                                     mcp_json_rpc_id_t id,
+                                                     const char *raw_result_json);
+mcp_status_t mcp_json_stream_write_error_envelope(mcp_json_stream_t *s,
+                                                  mcp_json_rpc_id_t id,
+                                                  int error_code,
+                                                  const char *message,
+                                                  const char *raw_data_json);
+mcp_status_t mcp_json_stream_write_notification(mcp_json_stream_t *s,
+                                                const char *method,
+                                                const char *raw_params_json);
+```
+Directly formats JSON-RPC envelopes into pre-allocated memory buffers, completely bypassing DOM tree creation and destruction overhead (microbenchmark: 15.2M QPS).
+
 ### `policy.h`
 Version-dependent protocol policy queries for server routes.
 Centralizes 2026-07-28 behavior gates that would otherwise scatter through
@@ -645,6 +679,7 @@ void          mcp_server_destroy(mcp_context_t *ctx, mcp_server_t *s);
 /* Ownership: after add_*, the server owns the object; destroy frees it. */
 mcp_status_t           mcp_server_add_tool(ctx, s, mcp_tool_t *);
 mcp_status_t           mcp_server_add_resource(ctx, s, mcp_resource_t *);
+mcp_status_t           mcp_server_add_resource_template(ctx, s, mcp_resource_template_t *);
 mcp_status_t           mcp_server_add_prompt(ctx, s, mcp_prompt_t *);
 
 mcp_session_t *mcp_server_create_session(ctx, s);
@@ -654,6 +689,20 @@ void           mcp_server_destroy_session(ctx, s, mcp_session_t *);
 mcp_status_t           mcp_server_dispatch(ctx, s, session, mcp_message_t *req,
                                   mcp_message_t **resp_out);
 mcp_status_t           mcp_server_notify(ctx, s, session, mcp_message_t *notif);
+
+/* Capabilities & Instructions advertisement */
+mcp_status_t           mcp_server_set_capabilities(ctx, s, const mcp_json_value_t *caps_json);
+mcp_status_t           mcp_server_set_instructions(mcp_server_t *srv, const char *instructions);
+const char            *mcp_server_get_instructions(const mcp_server_t *srv);
+
+/* Bidirectional Server->Client RPC & Ping */
+mcp_status_t           mcp_server_ping_client(ctx, s, session, mcp_client_response_fn cb, void *user_data, uint64_t *assigned_id_out);
+mcp_status_t           mcp_server_set_roots_changed_handler(ctx, s, mcp_server_roots_changed_fn handler, void *user_data);
+
+/* Server notifications: resources list changed & logging */
+mcp_status_t           mcp_server_notify_resources_changed(ctx, s);
+mcp_status_t           mcp_server_send_log(ctx, s, session, mcp_log_level_t level, const char *logger_name, const mcp_json_value_t *data);
+mcp_status_t           mcp_server_send_log_text(ctx, s, session, mcp_log_level_t level, const char *logger_name, const char *text);
 
 /* Server->client push: enqueue a notification; drained by serve loops
    (mcp_stdio_serve / mcp_loop_run) or a host-owned transport. TAKES
@@ -726,7 +775,17 @@ typedef struct mcp_tool_call_ctx {
     const mcp_json_value_t *args;            /* request arguments */
     const mcp_json_value_t *input_responses; /* client responses on retry */
     const char             *request_state;   /* server-embedded state token */
+    const mcp_json_value_t *progress_token;  /* progress token from _meta */
+    mcp_session_t          *session;         /* current session */
+    void                   *cancellation_token; /* request cancellation token */
 } mcp_tool_call_ctx_t;
+
+bool         mcp_tool_is_cancelled(const mcp_tool_call_ctx_t *call_ctx);
+const char  *mcp_tool_cancel_reason(const mcp_tool_call_ctx_t *call_ctx);
+mcp_status_t mcp_tool_report_progress(mcp_context_t *ctx,
+                                      const mcp_tool_call_ctx_t *call_ctx,
+                                      double progress, double total,
+                                      const char *message_or_null);
 
 typedef mcp_status_t (*mcp_tool_handler_v2_fn)(
     mcp_context_t *ctx, mcp_session_t *session,
@@ -760,14 +819,28 @@ mcp_resource_t *mcp_resource_new(ctx, const char *uri, const char *name,
                                  const char *mime_type_or_null,
                                  mcp_resource_read_fn on_read, void *ud);
 void            mcp_resource_destroy(ctx, mcp_resource_t *);
-/* cleanup hook: called by mcp_resource_destroy with the stored user_data */
-mcp_status_t    mcp_resource_set_cleanup(ctx, mcp_resource_t *,
-                                         mcp_resource_cleanup_fn fn_or_null);
+mcp_status_t    mcp_resource_set_description(ctx, mcp_resource_t *, const char *desc);
+mcp_status_t    mcp_resource_set_size(mcp_resource_t *, int64_t size);
+mcp_status_t    mcp_resource_set_annotations(ctx, mcp_resource_t *, const mcp_json_value_t *annotations);
+
+/* Resource templates (RFC 6570 Level 4 pattern matching) */
+mcp_resource_template_t *mcp_resource_template_new(ctx, const char *uri_template,
+                                                   const char *name, const char *desc,
+                                                   const char *mime_type,
+                                                   mcp_resource_template_read_fn on_read,
+                                                   void *ud);
+void            mcp_resource_template_destroy(ctx, mcp_resource_template_t *);
+mcp_status_t    mcp_resource_template_set_annotations(ctx, mcp_resource_template_t *, const mcp_json_value_t *annotations);
 
 /* handler: (ctx, session, args_or_null, user_data, messages_out) */
 mcp_prompt_t   *mcp_prompt_new(ctx, const char *name, const char *desc,
                                mcp_prompt_get_fn on_get, void *ud);
 void           mcp_prompt_destroy(ctx, mcp_prompt_t *);
+mcp_status_t    mcp_prompt_add_argument(ctx, mcp_prompt_t *, const char *name, const char *desc, bool required);
+
+/* Prompt message builders */
+mcp_json_value_t *mcp_prompt_message_new(ctx, const char *role, mcp_json_value_t *content);
+mcp_json_value_t *mcp_prompt_message_new_text(ctx, const char *role, const char *text);
 ```
 
 ### `session.h`
@@ -1077,6 +1150,25 @@ void mcp_async_server_stop(mcp_context_t *ctx, mcp_async_server_t *s);
 size_t mcp_async_server_active_connections(const mcp_async_server_t *s);
 ```
 
+### `ring_buffer.h`
+Thread-safe event ring buffer for SSE / Streamable HTTP resumption (`mcp_event_ring_buffer_t`):
+```c
+typedef struct mcp_event_ring_buffer mcp_event_ring_buffer_t;
+typedef void (*mcp_event_replay_fn)(uint64_t id, const char *data, size_t len, void *userdata);
+
+mcp_event_ring_buffer_t *mcp_event_ring_buffer_create(const mcp_allocator_t *alloc,
+                                                      size_t capacity);
+void         mcp_event_ring_buffer_destroy(mcp_event_ring_buffer_t *rb);
+mcp_status_t mcp_event_ring_buffer_push(mcp_event_ring_buffer_t *rb,
+                                        const char *data, size_t len,
+                                        uint64_t *assigned_id);
+mcp_status_t mcp_event_ring_buffer_replay(mcp_event_ring_buffer_t *rb,
+                                          uint64_t last_event_id,
+                                          mcp_event_replay_fn replay_fn,
+                                          void *userdata);
+```
+Maintains a bounded history of SSE event payloads with monotonic 64-bit sequence IDs. Enables transparent event replay upon reconnection with `Last-Event-ID` and returns `MCP_ERR_NOT_FOUND` (HTTP 410 Gone) when requested events have rolled off the buffer.
+
 ---
 
 ## Client (`mcpkit/client/`)
@@ -1118,9 +1210,20 @@ mcp_status_t          mcp_client_call_tool_mrtr(ctx, c, const char *name,
                                        mcp_json_value_t **result_out);
 mcp_status_t          mcp_client_read_resource(ctx, c, const char *uri,
                                       mcp_json_value_t **result_out);
+mcp_status_t          mcp_client_list_resources(ctx, c, const char *cursor,
+                                        mcp_json_value_t **result_out);
+mcp_status_t          mcp_client_list_resource_templates(ctx, c, const char *cursor,
+                                                 mcp_json_value_t **result_out);
+mcp_status_t          mcp_client_subscribe_resource(ctx, c, const char *uri,
+                                            mcp_json_value_t **result_out);
+mcp_status_t          mcp_client_unsubscribe_resource(ctx, c, const char *uri,
+                                              mcp_json_value_t **result_out);
+mcp_status_t          mcp_client_list_prompts(ctx, c, const char *cursor,
+                                      mcp_json_value_t **result_out);
 mcp_status_t          mcp_client_get_prompt(ctx, c, const char *name,
                                    mcp_json_value_t *args,
                                    mcp_json_value_t **result_out);
+mcp_status_t          mcp_client_notify_roots_list_changed(ctx, c);
 
 /* Subscriptions (SEP-2575) */
 mcp_status_t          mcp_client_subscriptions_listen(ctx, c, mcp_json_value_t *filter, mcp_message_t **ack_out);

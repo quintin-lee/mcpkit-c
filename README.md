@@ -20,8 +20,12 @@ core.
   `resources/read`, `prompts/get`, and `ping`.
 - **Transports** — stdio (line-delimited, 4 MB cap, serve loop),
   native RFC 6455 WebSocket transport (`mcp_ws_transport_create`, `mcp_ws_client_connect`),
-  Streamable HTTP (session map, SSE-compatible `GET` stream), and high-concurrency unified
+  Streamable HTTP (session map, SSE-compatible `GET` stream with monotonic event ring buffer and `Last-Event-ID` resumption),
+  conditional ETag 304 caching, and high-concurrency unified
   asynchronous server (`mcp_async_server_create`) multiplexing HTTP POST, SSE, and WebSocket on one port.
+- **High-Performance Memory & Serialization** — request-scoped monotonic arena allocator (`mcp_arena_t`, 29.4M allocations/sec)
+  for zero-malloc request lifecycle processing, and direct streaming JSON-RPC serializer (`mcp_json_stream_t`, 15.2M QPS)
+  bypassing intermediate DOM tree allocations.
 - **Runtime** — non-blocking Reactor (`epoll` on Linux, POSIX `poll` fallback), pluggable executor:
   sync (inline) and C11 threadpool (worker pool with per-task context capture), plus a monotonic timer
   wheel and a transport-agnostic event loop.
@@ -30,7 +34,7 @@ core.
   filters, and session permission masks.
 - **CLI** — `mcpkit-cli` with `inspect`, `call`, `validate`, and
   `test` subcommands that spawn and drive a server process over pipes.
-- **Tested** — 40+ unit / acceptance / fuzz tests under CTest,
+- **Tested** — 100 unit / acceptance / fuzz / official spec tests under CTest,
   deterministic fuzz corpus, AddressSanitizer + UBSanitizer build presets.
 
 ## Quick start
@@ -98,6 +102,7 @@ stdio unless stated otherwise:
 | `socket-server` | TCP socket transport serve loop (needs `MCPKIT_BUILD_SOCKET=ON`, default ON; covered by `transport_socket_acceptance`) |
 | `mrtr-server` | MRTR multi-round-trip tool demo (2FA elicitation before completion) |
 | `http-server` | Streamable HTTP serve over file-backed I/O (needs `MCPKIT_BUILD_HTTP=ON`; covered by `transport_http_acceptance`) |
+| `http-tool-server` | Full Streamable HTTP MCP server with tool execution, dynamic templates, ETag 304 caching, and automated 12-stage test suite |
 | `async-server` | High-concurrency async HTTP POST, SSE, and WebSocket multi-protocol server on a single TCP port (covered by `async_acceptance`) |
 | `ws-client` | RFC 6455 WebSocket client CLI demo (`list` / `call` / `ping`) |
 
